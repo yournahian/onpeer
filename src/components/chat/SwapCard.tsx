@@ -2,6 +2,7 @@ import { ConnectKitButton } from 'connectkit'
 import { Check, ExternalLink, Info } from 'lucide-react'
 import { SLIPPAGE_OPTIONS, useSwapFlow, type SwapToken } from '@/hooks/useSwapFlow'
 import { Button, Chip } from '@/components/ui'
+import { ChainLogo, CoinLogo } from '@/components/logos'
 
 export function SwapCard({
   tokenIn,
@@ -17,8 +18,14 @@ export function SwapCard({
 
   return (
     <div className="space-y-3 text-sm" aria-live="polite">
-      <p className="font-semibold">
-        Swap {amount} {tokenIn} to {tokenOut} on Arc Testnet
+      <p className="flex flex-wrap items-center gap-1.5 font-semibold">
+        <span>Swap {amount}</span>
+        <CoinLogo symbol={tokenIn} size={16} />
+        <span>{tokenIn} to</span>
+        <CoinLogo symbol={tokenOut} size={16} />
+        <span>{tokenOut} on</span>
+        <ChainLogo chain="Arc_Testnet" size={16} />
+        <span>Arc Testnet</span>
       </p>
 
       {phase === 'quoted' && estimate && (

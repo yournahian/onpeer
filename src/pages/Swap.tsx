@@ -6,13 +6,13 @@ import { erc20Abi, type Address } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import type { SwapEstimate } from '@circle-fin/app-kit'
 import { ArrowDownUp, ExternalLink, Info } from 'lucide-react'
-import { TokenEURC, TokenUSDC } from '@web3icons/react'
 import { toast } from 'sonner'
 import { getUsdc } from '@/onchain-facts'
 import { formatUsdc, parseUsdc } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
 import { SiteBar } from '@/components/SiteBar'
 import { Button } from '@/components/ui'
+import { ChainLogo, CoinLogo } from '@/components/logos'
 import { RollingNumber } from '@/components/fx/RollingNumber'
 import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 
@@ -196,7 +196,7 @@ export default function SwapPage() {
                 className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold transition-transform hover:scale-[1.03] active:scale-[0.98]"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                {tokenIn === 'USDC' ? <TokenUSDC variant="branded" size={20} /> : <TokenEURC variant="branded" size={20} />}
+                <CoinLogo symbol={tokenIn} size={20} />
                 <span>{tokenIn}</span>
                 <motion.span animate={{ rotate: flips * 180 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
                   <ArrowDownUp className="size-3.5 opacity-70" />
@@ -225,7 +225,10 @@ export default function SwapPage() {
           <div className="mt-5 space-y-2.5 border-y py-4 text-xs" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Network</span>
-              <span className="font-semibold">Arc Testnet</span>
+              <span className="inline-flex items-center gap-1.5 font-semibold">
+                <ChainLogo chain="Arc_Testnet" size={16} />
+                Arc Testnet
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Max slippage</span>
@@ -280,7 +283,7 @@ export default function SwapPage() {
                 className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                {tokenOut === 'USDC' ? <TokenUSDC variant="branded" size={20} /> : <TokenEURC variant="branded" size={20} />}
+                <CoinLogo symbol={tokenOut} size={20} />
                 <span>{tokenOut}</span>
               </span>
             </div>

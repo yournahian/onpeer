@@ -14,12 +14,12 @@ import {
 } from 'viem/chains'
 import type { BridgeResult } from '@circle-fin/app-kit'
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, Loader2, X } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import { getUsdc } from '@/onchain-facts'
 import { formatUsdc, parseUsdc } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
 import { SiteBar } from '@/components/SiteBar'
 import { Button } from '@/components/ui'
+import { ChainLogo, CoinLogo } from '@/components/logos'
 import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 
 const PCT_PRESETS = [
@@ -249,7 +249,7 @@ export default function BridgePage() {
                 className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                <TokenUSDC variant="branded" size={20} />
+                <CoinLogo symbol="USDC" size={20} />
                 <span>USDC</span>
               </span>
             </div>
@@ -326,7 +326,9 @@ export default function BridgePage() {
           <div className="mt-4">
             <div className="flex items-center justify-between text-xs" style={{ color: 'var(--subtle)' }}>
               <span>To receive</span>
-              <span>On {to.label}</span>
+              <span className="inline-flex items-center gap-1.5">
+                On <ChainLogo chain={toKit} size={14} /> {to.label}
+              </span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
               <p className="display w-full min-w-0 truncate text-4xl font-bold tabular-nums" style={{ opacity: amount ? 1 : 0.65 }}>
@@ -336,7 +338,7 @@ export default function BridgePage() {
                 className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                <TokenUSDC variant="branded" size={20} />
+                <CoinLogo symbol="USDC" size={20} />
                 <span>USDC</span>
               </span>
             </div>
@@ -488,7 +490,7 @@ function ChainSelect({
           boxShadow: open ? '0 0 0 2px var(--accent-glow)' : undefined,
         }}
       >
-        <span className="size-2 rounded-full" style={{ background: 'var(--accent)' }} />
+        <ChainLogo chain={current.kit} size={16} />
         <span>{current.label}</span>
         <ChevronDown className={`size-3.5 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
@@ -527,10 +529,7 @@ function ChainSelect({
                     }}
                   >
                     <span className="flex items-center gap-2">
-                      <span
-                        className="size-2 rounded-full"
-                        style={{ background: selected ? 'var(--accent)' : 'var(--border-strong)' }}
-                      />
+                      <ChainLogo chain={c.kit} size={16} />
                       {c.label}
                     </span>
                     {selected && <Check className="size-3.5" style={{ color: 'var(--accent)' }} />}

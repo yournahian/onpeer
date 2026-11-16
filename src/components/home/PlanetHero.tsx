@@ -7,6 +7,14 @@ const PLANET_VIDEO_URL =
 
 const ease = [0.22, 1, 0.36, 1] as const
 
+function createStarRand(initial = 4219) {
+  let s = initial
+  return () => {
+    s = (s * 16807) % 2147483647
+    return (s - 1) / 2147483646
+  }
+}
+
 /**
  * Pure-black starfield with a glowing violet planet rim arching across the top.
  * Desktop renders the looping planet-rim video with mix-blend-mode: screen;
@@ -48,11 +56,7 @@ export function PlanetHero() {
       ctx.fillRect(0, 0, w, h)
 
       // Deterministic pseudo-random stars so resizing doesn't flicker wildly
-      let seed = 4219
-      const rand = () => {
-        seed = (seed * 16807) % 2147483647
-        return (seed - 1) / 2147483646
-      }
+      const rand = createStarRand(4219)
 
       const count = Math.min(260, Math.max(110, Math.round((w * h) / 6500)))
       for (let i = 0; i < count; i++) {

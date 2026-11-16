@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowRight, BadgeCheck, Lock, Search, Wallet } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
-import { CountryFlag, MethodLogo } from '@/components/logos'
+import { ChainLogo, CountryFlag, MethodLogo } from '@/components/logos'
 import { Reveal } from '@/components/fx/Reveal'
 
 const STEPS = [
@@ -43,7 +43,7 @@ function Visual({ step }: { step: number }) {
           <Wallet className="size-9" />
         </motion.span>
         <div className="flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold" style={{ background: 'var(--fill-2)', border: '1px solid var(--border)' }}>
-          <TokenUSDC variant="branded" size={18} /> Arc Testnet
+          <ChainLogo chain="Arc_Testnet" size={18} /> Arc Testnet
         </div>
       </div>
     )

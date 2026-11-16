@@ -9,6 +9,7 @@ import {
   type StepState,
 } from '@/hooks/useBridgeFlow'
 import { Button } from '@/components/ui'
+import { ChainLogo, CoinLogo } from '@/components/logos'
 
 export function BridgeCard({
   from,
@@ -27,8 +28,14 @@ export function BridgeCard({
 
   return (
     <div className="space-y-3 text-sm" aria-live="polite">
-      <p className="font-semibold">
-        Bridge {amount} USDC from {chainLabel(from)} to {chainLabel(to)}
+      <p className="flex flex-wrap items-center gap-1.5 font-semibold">
+        <span>Bridge {amount}</span>
+        <CoinLogo symbol="USDC" size={16} />
+        <span>USDC from</span>
+        <ChainLogo chain={from} size={16} />
+        <span>{chainLabel(from)} to</span>
+        <ChainLogo chain={to} size={16} />
+        <span>{chainLabel(to)}</span>
       </p>
 
       {phase === 'quoted' && quote && (

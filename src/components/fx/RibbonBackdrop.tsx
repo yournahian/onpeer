@@ -131,12 +131,15 @@ export function RibbonBackdrop() {
     composer.addPass(new OutputPass())
 
     // Theme-dependent state.
-    let theme: Theme = currentTheme()
-    let stops = PRIMARY[theme].map((c) => new THREE.Color(c))
+    const state = {
+      theme: currentTheme(),
+      stops: PRIMARY[currentTheme()].map((c) => new THREE.Color(c)),
+      halfView: 6, // half the visible width at z = 0, updated on resize
+    }
     const applyTheme = () => {
-      theme = currentTheme()
-      stops = PRIMARY[theme].map((c) => new THREE.Color(c))
-      if (theme === 'dark') {
+      state.theme = currentTheme()
+      state.stops = PRIMARY[state.theme].map((c) => new THREE.Color(c))
+      if (state.theme === 'dark') {
         // Opaque page colour so bloom works, identical to the page background.
         renderer.setClearColor(PAGE_BG.dark, 1)
         ambient.intensity = 0.12
@@ -161,13 +164,12 @@ export function RibbonBackdrop() {
     const SPEED = 0.2 // world units per second, slow drift
     const TWIST = 0.26 // radians of twist per world unit: small offset between neighbours
     const SPIN = 0.3 // radians per second: every block keeps turning on the travel axis
-    let halfView = 6 // half the visible width at z = 0, updated on resize
 
     /** Primary gradient by screen position: purple on the left, fuchsia in the middle, pink on the right. */
     const colorAt = (x: number) => {
-      const u = Math.min(1, Math.max(0, (x + halfView) / (2 * halfView)))
-      if (u < 0.55) tmp.copy(stops[0]).lerp(stops[1], u / 0.55)
-      else tmp.copy(stops[1]).lerp(stops[2], (u - 0.55) / 0.45)
+      const u = Math.min(1, Math.max(0, (x + state.halfView) / (2 * state.halfView)))
+      if (u < 0.55) tmp.copy(state.stops[0]).lerp(state.stops[1], u / 0.55)
+      else tmp.copy(state.stops[1]).lerp(state.stops[2], (u - 0.55) / 0.45)
       return tmp
     }
 
@@ -190,7 +192,7 @@ export function RibbonBackdrop() {
     }
 
     const render = () => {
-      if (theme === 'dark') composer.render()
+      if (state.theme === 'dark') composer.render()
       else renderer.render(scene, camera)
     }
 
@@ -203,7 +205,7 @@ export function RibbonBackdrop() {
       camera.aspect = w / h
       camera.position.z = w / h < 1 ? 11 : 7.2
       camera.updateProjectionMatrix()
-      halfView = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z * camera.aspect
+      state.halfView = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z * camera.aspect
     }
     const ro = new ResizeObserver(resize)
     ro.observe(host)
