@@ -77,7 +77,7 @@ export function BrandKit() {
                   src={item.img}
                   alt={item.name}
                   loading="lazy"
-                  className={item.wide ? 'max-h-12 w-auto object-contain' : 'size-16 rounded-xl object-contain'}
+                  className={'wide' in item && item.wide ? 'max-h-12 w-auto object-contain' : 'size-16 rounded-xl object-contain'}
                 />
               </div>
               <div className="mt-4 flex-1">
