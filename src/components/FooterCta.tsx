@@ -45,7 +45,7 @@ export function FooterCta() {
         <span className="absolute left-[69%] right-0 top-[55%] hidden h-5 -rotate-[2deg] bg-[#0a0712] lg:block" />
       </div>
 
-      <div className="relative mx-auto flex min-h-[560px] w-full max-w-7xl flex-col justify-center px-5 py-14 sm:min-h-[760px] sm:px-8 sm:py-16 lg:px-12">
+      <div className="relative flex min-h-[560px] w-full flex-col justify-center px-5 py-14 sm:min-h-[760px] sm:px-8 sm:py-16 lg:px-12">
         <Reveal className="relative z-20 w-full">
           <h2 className="display text-center font-bold leading-[0.95] lg:text-left" style={{ fontSize: 'clamp(2.5rem, 9.5vw, 8.4rem)', ...outline }}>
             Start trading
