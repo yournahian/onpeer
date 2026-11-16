@@ -46,7 +46,7 @@ export default function AssistantPage() {
         <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <motion.section
             aria-label="Conversation"
-            className="glass flex h-[calc(100dvh-15rem)] min-h-[480px] flex-col overflow-hidden rounded-[2rem]"
+            className="glass flex min-h-[600px] flex-col overflow-hidden rounded-[2rem] lg:h-[min(78dvh,780px)] lg:min-h-[640px]"
             initial={{ opacity: 0, y: 20, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.65, delay: 0.1, ease }}

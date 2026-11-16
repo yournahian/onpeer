@@ -92,7 +92,7 @@ export function Market({
           <div
             role="tablist"
             aria-label="Trade direction"
-            className="inline-flex rounded-2xl p-1"
+            className="inline-flex w-full rounded-2xl p-1 sm:w-auto"
             style={{ background: 'var(--fill-2)' }}
           >
             {(['buy', 'sell'] as const).map((m) => (
@@ -101,7 +101,7 @@ export function Market({
                 role="tab"
                 aria-selected={mode === m}
                 onClick={() => setMode(m)}
-                className="relative min-h-11 rounded-xl px-7 text-sm font-bold transition-colors"
+                className="relative min-h-11 flex-1 rounded-xl px-5 text-sm font-bold transition-colors sm:flex-none sm:px-7"
                 style={{ color: mode === m ? 'var(--on-accent)' : 'var(--muted)' }}
               >
                 {mode === m && (
