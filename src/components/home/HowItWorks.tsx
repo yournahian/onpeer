@@ -220,14 +220,21 @@ function StackingStepCard({
   active: boolean
   progress: MotionValue<number>
 }) {
-  // Card 0 stays anchored at y=0; Cards 1..3 start stacked below with tight gap and slide up onto the deck.
-  const startIn = index === 0 ? 0 : (index - 1) * 0.3 + 0.04
-  const endIn = index === 0 ? 0.01 : index * 0.3
+  // Every unstacked card moves up together at the same rate until it hits its stackedY,
+  // so there is never an empty gap between the active card and the next card below it.
   const restY = index * 188
   const stackedY = index * 12
+  const totalTravel = 3 * 176
 
-  const y = useTransform(progress, [0, startIn, endIn, 1], [restY, restY, stackedY, stackedY])
-  const scale = useTransform(progress, [0, startIn, endIn, 1], [1, 1, 1, 1 - Math.max(0, 3 - index) * 0.012])
+  const y = useTransform(progress, (v) => {
+    if (index === 0) return 0
+    return Math.max(stackedY, restY - v * totalTravel)
+  })
+  const scale = useTransform(progress, (v) => {
+    if (index === 3) return 1
+    const coveredByNext = Math.max(0, Math.min(1, (v * totalTravel - index * 176) / 176))
+    return 1 - coveredByNext * 0.025
+  })
 
   return (
     <motion.li
