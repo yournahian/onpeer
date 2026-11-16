@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant'
+export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant' | 'brand-kit'
 
 const NAV_EVENT = 'app:navigate'
 
@@ -11,6 +11,7 @@ function currentRoute(): Route {
   if (pathname.startsWith('/bridge')) return 'bridge'
   if (pathname.startsWith('/admin')) return 'admin'
   if (pathname.startsWith('/assistant')) return 'assistant'
+  if (pathname.startsWith('/brand-kit')) return 'brand-kit'
   // Older order links were shared as /?order=ID
   if (new URLSearchParams(search).has('order')) return 'p2p'
   return 'home'

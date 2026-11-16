@@ -84,6 +84,11 @@ export function Footer() {
           </Col>
 
           <Col title="Resources">
+            <li>
+              <AppLink to="/brand-kit" className={linkClass}>
+                Brand kit
+              </AppLink>
+            </li>
             {ESCROW_ADDRESS && (
               <li>
                 <a

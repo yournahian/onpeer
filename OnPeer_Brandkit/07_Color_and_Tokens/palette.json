@@ -1,0 +1,58 @@
+{
+  "orange": {
+    "hex": "#FF5A00",
+    "rgb": [
+      255,
+      90,
+      0
+    ],
+    "cmyk_approx_percent": [
+      0,
+      65,
+      100,
+      0
+    ]
+  },
+  "white": {
+    "hex": "#FFFFFF",
+    "rgb": [
+      255,
+      255,
+      255
+    ],
+    "cmyk_approx_percent": [
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  "charcoal": {
+    "hex": "#151515",
+    "rgb": [
+      21,
+      21,
+      21
+    ],
+    "cmyk_approx_percent": [
+      0,
+      0,
+      0,
+      92
+    ]
+  },
+  "black": {
+    "hex": "#000000",
+    "rgb": [
+      0,
+      0,
+      0
+    ],
+    "cmyk_approx_percent": [
+      0,
+      0,
+      0,
+      100
+    ]
+  }
+}

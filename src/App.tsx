@@ -12,6 +12,7 @@ import SwapPage from '@/pages/Swap'
 import BridgePage from '@/pages/Bridge'
 import AdminPage from '@/pages/Admin'
 import AssistantPage from '@/pages/Assistant'
+import BrandKitPage from '@/pages/BrandKit'
 
 export default function App() {
   const route = useRoute()
@@ -28,6 +29,8 @@ export default function App() {
       <AdminPage />
     ) : route === 'assistant' ? (
       <AssistantPage />
+    ) : route === 'brand-kit' ? (
+      <BrandKitPage />
     ) : (
       <Home />
     )
