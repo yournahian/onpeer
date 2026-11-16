@@ -20,27 +20,27 @@ export function Countries() {
           maskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
         }}
       >
-        <ul className="marquee-ltr">
+        <ul className="marquee">
           {row.map((c, idx) => {
             const methods = methodsForCountry(c.code).filter((m) => m.name !== 'Bank transfer').slice(0, 4)
             return (
-              <li key={`${c.code}-${idx}`} className="mr-4 w-[250px] shrink-0 sm:w-[275px]" aria-hidden={idx >= COUNTRIES.length}>
+              <li key={`${c.code}-${idx}`} className="mr-3.5 w-[235px] shrink-0 sm:w-[255px]" aria-hidden={idx >= COUNTRIES.length}>
                 <AppLink
                   to="/p2p"
                   tabIndex={idx >= COUNTRIES.length ? -1 : undefined}
-                  className="glass lift group flex h-full flex-col rounded-3xl p-5"
+                  className="glass lift group flex h-full flex-col rounded-2xl p-4"
                 >
                   <div className="flex items-center justify-between">
-                    <CountryFlag code={c.code} size={44} />
-                    <span className="display text-3xl font-bold transition-transform duration-500 group-hover:scale-110" style={{ color: 'var(--accent)' }}>
+                    <CountryFlag code={c.code} size={36} />
+                    <span className="display text-2xl font-bold transition-transform duration-500 group-hover:scale-110" style={{ color: 'var(--accent)' }}>
                       {c.symbol}
                     </span>
                   </div>
-                  <p className="display mt-4 text-lg font-bold">{c.name}</p>
+                  <p className="display mt-2.5 text-base font-bold">{c.name}</p>
                   <p className="text-xs font-semibold" style={{ color: 'var(--subtle)' }}>{c.currency}</p>
-                  <div className="mt-4 flex flex-wrap gap-1.5">
+                  <div className="mt-2.5 flex flex-wrap gap-1.5">
                     {methods.map((m) => (
-                      <MethodLogo key={m.bit} name={m.name} size={28} />
+                      <MethodLogo key={m.bit} name={m.name} size={24} />
                     ))}
                   </div>
                 </AppLink>
