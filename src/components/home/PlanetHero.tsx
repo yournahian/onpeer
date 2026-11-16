@@ -100,9 +100,9 @@ export function PlanetHero() {
 
       const outerGlow = ctx.createRadialGradient(cx, cy, radius * 0.92, cx, cy, radius + 110)
       outerGlow.addColorStop(0, 'rgba(0, 0, 0, 0)')
-      outerGlow.addColorStop(0.55, 'rgba(255, 90, 0, 0.35)')
-      outerGlow.addColorStop(0.72, 'rgba(255, 138, 61, 0.78)')
-      outerGlow.addColorStop(0.82, 'rgba(255, 90, 0, 0.28)')
+      outerGlow.addColorStop(0.55, 'rgba(255, 90, 0, 0.22)')
+      outerGlow.addColorStop(0.72, 'rgba(255, 138, 61, 0.52)')
+      outerGlow.addColorStop(0.82, 'rgba(255, 90, 0, 0.18)')
       outerGlow.addColorStop(1, 'rgba(0, 0, 0, 0)')
 
       ctx.fillStyle = outerGlow
@@ -111,10 +111,10 @@ export function PlanetHero() {
       // Crisp bright inner plasma arc
       ctx.beginPath()
       ctx.arc(cx, cy, radius, 0.15 * Math.PI, 0.85 * Math.PI)
-      ctx.lineWidth = 3.5
-      ctx.strokeStyle = 'rgba(255, 224, 194, 0.94)'
+      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(255, 200, 158, 0.78)'
       ctx.shadowColor = '#FF5A00'
-      ctx.shadowBlur = 28
+      ctx.shadowBlur = 18
       ctx.stroke()
       ctx.shadowBlur = 0
     }
@@ -151,8 +151,8 @@ export function PlanetHero() {
           style={{
             height: 'min(76vh, 717px)',
             mixBlendMode: 'screen',
-            filter: 'hue-rotate(96deg) saturate(1.35) brightness(1.05)',
-            opacity: videoReady ? 1 : 0,
+            filter: 'hue-rotate(96deg) saturate(1.15) brightness(0.76)',
+            opacity: videoReady ? 0.82 : 0,
           }}
         />
       )}
