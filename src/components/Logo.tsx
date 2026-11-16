@@ -1,25 +1,17 @@
-import { useId } from 'react'
 import { AppLink } from '@/components/AppLink'
 
-/** OnPeer mark: two linked rings, one person on each side of the trade. */
+/** Official OnPeer brand mark from OnPeer_Brandkit. */
 export function LogoMark({ size = 40 }: { size?: number }) {
-  const id = useId()
   return (
-    <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden className="shrink-0">
-      <defs>
-        <linearGradient id={`${id}-a`} x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#c084fc" />
-          <stop offset="1" stopColor="#22d3ee" />
-        </linearGradient>
-        <linearGradient id={`${id}-b`} x1="48" y1="0" x2="0" y2="48" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#f472b6" />
-          <stop offset="1" stopColor="#fb923c" />
-        </linearGradient>
-      </defs>
-      <rect width="48" height="48" rx="14" fill="#12081f" />
-      <circle cx="19" cy="24" r="9.5" stroke={`url(#${id}-a)`} strokeWidth="3.5" />
-      <circle cx="29" cy="24" r="9.5" stroke={`url(#${id}-b)`} strokeWidth="3.5" strokeOpacity="0.95" />
-    </svg>
+    <img
+      src="/brand/onpeer-app-orange.svg"
+      alt=""
+      aria-hidden
+      width={size}
+      height={size}
+      className="shrink-0 rounded-xl object-cover"
+      style={{ width: size, height: size }}
+    />
   )
 }
 
