@@ -25,7 +25,7 @@ export default function AssistantPage() {
 
   return (
     <div className="min-h-dvh">
-      <SiteBar />
+      <SiteBar sticky={false} />
       <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 sm:py-10 lg:px-12">
         <motion.div
           initial={{ opacity: 0, y: 14 }}

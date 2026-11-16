@@ -18,7 +18,7 @@ const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] 
 ]
 
 /** Top bar for Home, Swap and Bridge. The P2P page has its own header with the same product links. */
-export function SiteBar({ overlay = false }: { overlay?: boolean }) {
+export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean; sticky?: boolean }) {
   const route = useRoute()
   const { isAdmin } = useAdminRoles()
   const { scrollY } = useScroll()
@@ -29,7 +29,7 @@ export function SiteBar({ overlay = false }: { overlay?: boolean }) {
   const links = isAdmin ? [...LINKS, { to: '/admin', route: 'admin' as Route, label: 'Admin', icon: ShieldCheck }] : LINKS
   return (
     <header
-      className={`${overlay ? 'fixed inset-x-0' : 'sticky'} top-0 z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
+      className={`${overlay ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
       style={floating ? { background: 'linear-gradient(180deg, rgba(6,3,13,0.7), transparent)' } : { background: 'var(--bar-bg)', backdropFilter: 'blur(20px)' }}
     >
       <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
