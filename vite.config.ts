@@ -27,6 +27,9 @@ export default defineConfig({
       'framer-motion',
       'lucide-react',
       'sonner',
+      '@circle-fin/app-kit',
+      '@circle-fin/adapter-viem-v2',
+      '@web3icons/react',
       'clsx',
       'tailwind-merge',
       'vite-plugin-node-polyfills/shims/buffer',
@@ -37,5 +40,13 @@ export default defineConfig({
   server: {
     allowedHosts: true,
     cors: true,
+    // Assistant backend (bun run server). The browser only ever talks to /api.
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+    },
   },
 })

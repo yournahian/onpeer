@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { format } from 'util';
 
 import { type Abi, type Hex, encodeDeployData, getCreate2Address } from 'viem';
 
@@ -50,6 +51,81 @@ export function sanitizeForLog(value: unknown): string {
 
 export function redactRpcUrl(value: string): string {
   return value.replace(/([?&]_rpc_token=)[^&"'\s]+/gi, '$1[redacted]');
+}
+
+const MIN_REDACTED_SECRET_LENGTH = 8;
+
+export function rpcTokenSecrets(rpcUrl: string, envToken: string | undefined): string[] {
+  let urlToken: string | null = null;
+
+  try {
+    urlToken = new URL(rpcUrl).searchParams.get('_rpc_token');
+  } catch {
+    urlToken = null;
+  }
+
+  return [envToken, urlToken].filter(
+    (secret): secret is string => typeof secret === 'string' && secret.length >= MIN_REDACTED_SECRET_LENGTH,
+  );
+}
+
+export function redactSecrets(value: string, secrets: readonly string[]): string {
+  return secrets.reduce((text, secret) => text.split(secret).join('[redacted]'), redactRpcUrl(value));
+}
+
+type WriteFn = (chunk: unknown, ...rest: unknown[]) => boolean;
+type ConsoleMethod = 'log' | 'info' | 'warn' | 'error' | 'debug';
+
+const CONSOLE_METHODS: readonly ConsoleMethod[] = ['log', 'info', 'warn', 'error', 'debug'];
+
+export function installOutputRedaction(secrets: readonly string[]): () => void {
+  const redactChunk = (chunk: unknown): unknown => {
+    if (typeof chunk === 'string') {
+      return redactSecrets(chunk, secrets);
+    }
+
+    if (chunk instanceof Uint8Array) {
+      const text = Buffer.from(chunk).toString('utf8');
+      const redacted = redactSecrets(text, secrets);
+      return redacted === text ? chunk : Buffer.from(redacted, 'utf8');
+    }
+
+    return chunk;
+  };
+
+  const restores = [process.stdout, process.stderr].map((stream) => {
+    const ownWrite = Object.getOwnPropertyDescriptor(stream, 'write');
+    const bound = stream.write.bind(stream) as WriteFn;
+    stream.write = (chunk: unknown, ...rest: unknown[]) => bound(redactChunk(chunk), ...rest);
+    return () => {
+      if (ownWrite) {
+        Object.defineProperty(stream, 'write', ownWrite);
+      } else {
+        Reflect.deleteProperty(stream, 'write');
+      }
+    };
+  });
+
+  for (const method of CONSOLE_METHODS) {
+    const original = console[method];
+    console[method] = (...args: unknown[]) => original(redactSecrets(format(...args), secrets));
+    restores.push(() => {
+      console[method] = original;
+    });
+  }
+
+  const onFatal = (error: unknown): void => {
+    console.error(redactSecrets(sanitizeForLog(error), secrets));
+    process.exit(1);
+  };
+  process.on('uncaughtException', onFatal);
+  process.on('unhandledRejection', onFatal);
+  restores.push(() => {
+    process.off('uncaughtException', onFatal);
+    process.off('unhandledRejection', onFatal);
+  });
+
+  return () => restores.forEach((restore) => restore());
 }
 
 export function resolveRpcUrl(explicit: string | undefined, compassChain: string): string {

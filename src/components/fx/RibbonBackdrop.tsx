@@ -1,0 +1,254 @@
+import { useEffect, useRef } from 'react'
+import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
+
+type Theme = 'dark' | 'light'
+
+/** The site's primary gradient (`--accent-bg` in index.css), left to right. */
+const PRIMARY: Record<Theme, [string, string, string]> = {
+  dark: ['#9333ea', '#d946ef', '#ec4899'],
+  light: ['#7c3aed', '#c026d3', '#db2777'],
+}
+/** Matches `--bg` in index.css so the canvas blends into the page. */
+const PAGE_BG: Record<Theme, number> = { dark: 0x06030d, light: 0xf8f4ff }
+
+const currentTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+
+/**
+ * Real 3D background for Swap and Bridge: a tight row of thick, rounded blocks in
+ * the site's primary gradient, drifting slowly right to left. Each block turns on
+ * the travel axis with a small offset from its neighbour, so the row reads as one
+ * twisting helix. Follows the site theme: on the dark theme it sits on the dark page
+ * background with a bloom glow, on the light theme the canvas is transparent so the
+ * page's normal light background shows through.
+ */
+export function RibbonBackdrop() {
+  const hostRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.toneMapping = THREE.ACESFilmicToneMapping
+    renderer.toneMappingExposure = 1.0
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.domElement.style.width = '100%'
+    renderer.domElement.style.height = '100%'
+    renderer.domElement.style.display = 'block'
+    host.appendChild(renderer.domElement)
+
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100)
+    camera.position.set(0, 0.15, 7.2)
+    camera.lookAt(0, 0, 0)
+
+    // Neutral lights so the blocks show the real primary colours, plus soft violet rims.
+    const ambient = new THREE.AmbientLight(0xffffff, 0.12)
+    scene.add(ambient)
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x0a0410, 0.4)
+    scene.add(hemi)
+
+    const key = new THREE.DirectionalLight(0xffffff, 2.2)
+    key.position.set(1.5, 7, 6)
+    key.castShadow = true
+    key.shadow.mapSize.set(2048, 2048)
+    key.shadow.camera.left = -14
+    key.shadow.camera.right = 14
+    key.shadow.camera.top = 6
+    key.shadow.camera.bottom = -6
+    key.shadow.camera.near = 0.5
+    key.shadow.camera.far = 30
+    key.shadow.bias = -0.0006
+    key.shadow.normalBias = 0.02
+    scene.add(key)
+
+    const rimL = new THREE.PointLight(0xc084fc, 45, 25, 1.7)
+    rimL.position.set(-6, 3, 2)
+    scene.add(rimL)
+    const rimR = new THREE.PointLight(0xf0abfc, 45, 25, 1.7)
+    rimR.position.set(6, 3, 2)
+    scene.add(rimR)
+    const under = new THREE.PointLight(0xa855f7, 20, 18, 1.8)
+    under.position.set(0, -4, 3)
+    scene.add(under)
+
+    // Thick rounded blocks, tightly packed with thin dark seams.
+    const THICK = 0.24
+    const SIZE = 2.0
+    const SPACING = 0.3
+    const COUNT = 96
+    const LENGTH = COUNT * SPACING
+
+    const geometry = new RoundedBoxGeometry(THICK, SIZE, SIZE, 4, 0.07)
+    // White base: the per-block colour (primary gradient) comes from instance colours.
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.5,
+      metalness: 0.05,
+      emissive: 0x14061f,
+      emissiveIntensity: 0.5,
+    })
+    const blocks = new THREE.InstancedMesh(geometry, material, COUNT)
+    blocks.castShadow = true
+    blocks.receiveShadow = true
+    blocks.instanceMatrix.setUsage(THREE.DynamicDrawUsage)
+    scene.add(blocks)
+
+    // Fine dust drifting right to left.
+    const DUST = 280
+    const dustPos = new Float32Array(DUST * 3)
+    for (let i = 0; i < DUST; i++) {
+      dustPos[i * 3] = (Math.random() - 0.5) * 22
+      dustPos[i * 3 + 1] = (Math.random() - 0.5) * 9
+      dustPos[i * 3 + 2] = -2 - Math.random() * 6
+    }
+    const dustGeo = new THREE.BufferGeometry()
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3))
+    const dustMat = new THREE.PointsMaterial({
+      color: 0xf0abfc,
+      size: 0.03,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+      sizeAttenuation: true,
+    })
+    scene.add(new THREE.Points(dustGeo, dustMat))
+
+    // Bloom (dark theme only) for the soft glow around the band.
+    const composer = new EffectComposer(renderer)
+    composer.addPass(new RenderPass(scene, camera))
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.4, 0.55, 0.7)
+    composer.addPass(bloom)
+    composer.addPass(new OutputPass())
+
+    // Theme-dependent state.
+    let theme: Theme = currentTheme()
+    let stops = PRIMARY[theme].map((c) => new THREE.Color(c))
+    const applyTheme = () => {
+      theme = currentTheme()
+      stops = PRIMARY[theme].map((c) => new THREE.Color(c))
+      if (theme === 'dark') {
+        // Opaque page colour so bloom works, identical to the page background.
+        renderer.setClearColor(PAGE_BG.dark, 1)
+        ambient.intensity = 0.12
+        hemi.intensity = 0.4
+        dustMat.color.set(0xf0abfc)
+        dustMat.opacity = 0.55
+      } else {
+        // Transparent: the page's own light background shows through.
+        renderer.setClearColor(PAGE_BG.light, 0)
+        ambient.intensity = 0.35
+        hemi.intensity = 0.7
+        dustMat.color.set(0x9333ea)
+        dustMat.opacity = 0.35
+      }
+    }
+    applyTheme()
+    const themeObserver = new MutationObserver(applyTheme)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+
+    const dummy = new THREE.Object3D()
+    const tmp = new THREE.Color()
+    const SPEED = 0.2 // world units per second, slow drift
+    const TWIST = 0.26 // radians of twist per world unit: small offset between neighbours
+    const SPIN = 0.3 // radians per second: every block keeps turning on the travel axis
+    let halfView = 6 // half the visible width at z = 0, updated on resize
+
+    /** Primary gradient by screen position: purple on the left, fuchsia in the middle, pink on the right. */
+    const colorAt = (x: number) => {
+      const u = Math.min(1, Math.max(0, (x + halfView) / (2 * halfView)))
+      if (u < 0.55) tmp.copy(stops[0]).lerp(stops[1], u / 0.55)
+      else tmp.copy(stops[1]).lerp(stops[2], (u - 0.55) / 0.45)
+      return tmp
+    }
+
+    const layout = (time: number) => {
+      for (let i = 0; i < COUNT; i++) {
+        const raw = (i * SPACING + time * SPEED) % LENGTH
+        // Blocks drift right -> left.
+        const x = LENGTH / 2 - raw
+        // Continuous rotation with a small offset per block; adding time makes the twist
+        // pattern travel right -> left too. Depends on world x, so wrapping never jumps.
+        const rot = x * TWIST + time * SPIN
+        dummy.position.set(x, 0, 0)
+        dummy.rotation.set(rot, 0, 0)
+        dummy.updateMatrix()
+        blocks.setMatrixAt(i, dummy.matrix)
+        blocks.setColorAt(i, colorAt(x))
+      }
+      blocks.instanceMatrix.needsUpdate = true
+      if (blocks.instanceColor) blocks.instanceColor.needsUpdate = true
+    }
+
+    const render = () => {
+      if (theme === 'dark') composer.render()
+      else renderer.render(scene, camera)
+    }
+
+    const resize = () => {
+      const w = host.clientWidth || 1
+      const h = host.clientHeight || 1
+      renderer.setSize(w, h, false)
+      composer.setSize(w, h)
+      bloom.setSize(w, h)
+      camera.aspect = w / h
+      camera.position.z = w / h < 1 ? 11 : 7.2
+      camera.updateProjectionMatrix()
+      halfView = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z * camera.aspect
+    }
+    const ro = new ResizeObserver(resize)
+    ro.observe(host)
+    resize()
+
+    const clock = new THREE.Clock()
+    let raf = 0
+    const frame = () => {
+      const time = clock.getElapsedTime()
+      layout(time)
+      const p = dustGeo.attributes.position as THREE.BufferAttribute
+      for (let i = 0; i < DUST; i++) {
+        let x = p.getX(i) - 0.002
+        if (x < -11) x = 11
+        p.setX(i, x)
+      }
+      p.needsUpdate = true
+      render()
+      raf = requestAnimationFrame(frame)
+    }
+
+    if (reducedMotion) {
+      layout(0)
+      render()
+    } else {
+      frame()
+    }
+
+    return () => {
+      cancelAnimationFrame(raf)
+      ro.disconnect()
+      themeObserver.disconnect()
+      geometry.dispose()
+      material.dispose()
+      dustGeo.dispose()
+      dustMat.dispose()
+      composer.dispose()
+      renderer.dispose()
+      renderer.domElement.remove()
+    }
+  }, [])
+
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-0">
+      <div ref={hostRef} className="absolute inset-0" />
+    </div>
+  )
+}

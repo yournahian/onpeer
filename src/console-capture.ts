@@ -42,7 +42,9 @@ const LEVELS: ConsoleLevel[] = ['log', 'info', 'warn', 'error', 'debug'];
 // Parent origin resolution (mirrors tracing.ts)
 // ---------------------------------------------------------------------------
 
-const _parentOrigin: string = (() => {
+const DEV = import.meta.env.DEV;
+
+const _parentOrigin: string | null = (() => {
   try {
     if (window.location.ancestorOrigins?.length) {
       return window.location.ancestorOrigins[0];
@@ -59,6 +61,7 @@ const _parentOrigin: string = (() => {
     /* malformed referrer */
   }
 
+  // Dev server only: the preview proxy's frame-ancestors already pins the parent to Studio.
   return '*';
 })();
 
@@ -135,6 +138,7 @@ let _windowCount = 0;
 let _dropped = 0;
 
 function send(entry: ConsoleLogEntry): void {
+  if (!_parentOrigin) return;
   try {
     window.parent.postMessage({ type: MESSAGE_TYPE, entry }, _parentOrigin);
   } catch {
@@ -208,7 +212,7 @@ function isNoise(message: string): boolean {
 // console.* patching
 // ---------------------------------------------------------------------------
 
-for (const level of LEVELS) {
+if (DEV) for (const level of LEVELS) {
   const original = console[level].bind(console);
 
   console[level] = (...args: unknown[]): void => {
@@ -230,7 +234,7 @@ for (const level of LEVELS) {
 // Uncaught errors & unhandled rejections — the signals a blank preview hides
 // ---------------------------------------------------------------------------
 
-window.addEventListener('error', (e: ErrorEvent) => {
+if (DEV) window.addEventListener('error', (e: ErrorEvent) => {
   try {
     flushRepeat();
     const source = e.filename ? `${e.filename}:${e.lineno ?? 0}:${e.colno ?? 0}` : undefined;
@@ -246,7 +250,7 @@ window.addEventListener('error', (e: ErrorEvent) => {
   }
 });
 
-window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+if (DEV) window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
   try {
     flushRepeat();
     const reason: unknown = e.reason;

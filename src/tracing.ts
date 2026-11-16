@@ -10,6 +10,8 @@
  * Built with Arc Studio — https://studio.arc.io
  */
 
+const DEV = import.meta.env.DEV;
+
 // ---------------------------------------------------------------------------
 // Types (inlined — sandbox can't use app module aliases)
 // ---------------------------------------------------------------------------
@@ -132,7 +134,7 @@ function setupTraceAPI(): void {
   (window as unknown as { __studioTrace: StudioTraceAPI }).__studioTrace = api;
 }
 
-setupTraceAPI();
+if (DEV) setupTraceAPI();
 
 // ---------------------------------------------------------------------------
 // emitWithGroups — attaches current group ancestry to RPC/HTTP events
@@ -143,11 +145,7 @@ function emitWithGroups(event: RpcTraceEvent | HttpTraceEvent): void {
   emit(groups.length > 0 ? { ...event, groups } : event);
 }
 
-/**
- * Resolve the parent frame's origin for targeted postMessage.
- * Falls back to '*' only if the origin cannot be determined.
- */
-const _parentOrigin: string = (() => {
+const _parentOrigin: string | null = (() => {
   try {
     // ancestorOrigins is available in Chromium and Safari
     if (window.location.ancestorOrigins?.length) {
@@ -161,10 +159,12 @@ const _parentOrigin: string = (() => {
     }
   } catch { /* malformed referrer */ }
 
+  // Dev server only: the preview proxy's frame-ancestors already pins the parent to Studio.
   return '*';
 })();
 
 function emit(event: TraceEvent): void {
+  if (!_parentOrigin) return;
   try {
     window.parent.postMessage({ type: 'studio-trace-event', event }, _parentOrigin);
   } catch {
@@ -215,7 +215,7 @@ function parseChainId(raw: unknown): number {
 
 let _enabled = false;
 
-window.addEventListener('message', (e: MessageEvent<MessageData>) => {
+if (DEV) window.addEventListener('message', (e: MessageEvent<MessageData>) => {
   if (e.source !== window.parent) {
     return;
   }
@@ -343,7 +343,7 @@ function findResp(resps: JRPCRes[], reqId: unknown): JRPCRes | undefined {
 // Patch globalThis.fetch — captures viem http() transport + regular HTTP
 // ---------------------------------------------------------------------------
 
-try {
+if (DEV) try {
   const _fetch = globalThis.fetch;
   log('patching fetch');
 
@@ -473,7 +473,7 @@ function patchProvider(provider: EIP1193Provider | undefined): void {
   } catch { /* not all providers support .on() */ }
 }
 
-try {
+if (DEV) try {
   // Case 1: provider already exists
   const existingProvider = getEthereum();
   if (existingProvider) {
@@ -498,4 +498,4 @@ try {
   }));
 } catch (e) { log('EIP-1193 patch FAILED', e); }
 
-log('initialized');
+if (DEV) log('initialized');

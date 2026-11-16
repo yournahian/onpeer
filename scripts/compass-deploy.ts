@@ -29,6 +29,7 @@ import {
   containsDeployerPlaceholder,
   deriveSalt,
   getForkRpcUrl,
+  installOutputRedaction,
   isRecord,
   isTransientRpcError,
   parseConstructorArgs,
@@ -40,6 +41,7 @@ import {
   randomDeployerKey,
   redactRpcUrl,
   resolveRpcUrl,
+  rpcTokenSecrets,
   sanitizeForLog,
   substituteDeployerPlaceholder,
   validateAddress,
@@ -683,6 +685,17 @@ function readDeployedContract(result: unknown, contractName: string): { address:
   };
 }
 
+async function compassEncodesConstructorArgs(): Promise<boolean> {
+  const patterns = await loadModule('@circlefin/compass-ecosystem-evm/patterns').catch((probeError: unknown) => {
+    console.warn(
+      'Could not load @circlefin/compass-ecosystem-evm/patterns to check for constructor-arg encoding, so the ' +
+        `rehearsal failure below is treated as real. Detail: ${sanitizeForLog(probeError)}`,
+    );
+    return undefined;
+  });
+  return patterns === undefined || typeof patterns.encodeArtifactConstructorArgs === 'function';
+}
+
 async function runForkRehearsal(config: unknown, options: CliOptions): Promise<string | undefined> {
   const mod = await loadModule('@circlefin/compass-deploy/test-bridge');
   const dryRun = mod.dryRun as (input: unknown) => Promise<unknown>;
@@ -703,20 +716,23 @@ async function runForkRehearsal(config: unknown, options: CliOptions): Promise<s
     console.log(`Fork rehearsal predicted CREATE2 address: ${address}`);
     return address;
   } catch (error) {
-    if (options.constructorArgs.length === 0) {
-      throw error;
+    if (options.constructorArgs.length > 0 && !(await compassEncodesConstructorArgs())) {
+      console.warn(
+        `Fork rehearsal could not run for ${options.name}: this sandbox's Compass predates constructor-arg ` +
+          'encoding, so a non-empty constructor fails inside Compass rather than in your contract. The live ' +
+          'broadcast below encodes the init code itself and is unaffected, and the arg arity/encoding preflight ' +
+          'already ran — but this run has NOT been rehearsed on a fork. Use --mode verify for real pre-deploy ' +
+          `verification. Detail: ${sanitizeForLog(error)}`,
+      );
+
+      return undefined;
     }
 
-    console.warn(
-      `Fork rehearsal could not run for ${options.name}: Compass's default-factory deploy does not ABI-encode ` +
-        'constructor args before computing its CREATE2 address, so any non-empty constructor fails inside ' +
-        'Compass rather than in your contract (traced upstream in crcl-main/compass, ' +
-        'docs/proposals/evm-constructor-args-not-abi-encoded.md). The live broadcast below encodes the init code ' +
-        'itself and is unaffected, and the arg arity/encoding preflight already ran — but this run has NOT been ' +
-        `rehearsed on a fork. Use --mode verify for real pre-deploy verification. Detail: ${sanitizeForLog(error)}`,
-    );
-
-    return undefined;
+    const detail = sanitizeForLog(error);
+    const cause = /revert/i.test(detail)
+      ? 'The constructor reverted with these args on the fork — treat it as a contract bug, not a retry.'
+      : 'The fork rehearsal itself failed.';
+    throw new Error(`Fork rehearsal failed for ${options.name}; nothing was broadcast. ${cause} Detail: ${detail}`);
   } finally {
     if (isRecord(run) && typeof run.shutdown === 'function') {
       await (run.shutdown as () => Promise<void>)();
@@ -815,12 +831,14 @@ function assertLiveDeployIsVerified(options: CliOptions, targetArtifact: Compile
 
 async function verifyOnFork(options: CliOptions, targetArtifact: CompiledArtifact): Promise<void> {
   const deployerKey = randomDeployerKey();
-  const forkDeployer = privateKeyToAccount(deployerKey).address;
+  const factoryArtifact = readCompiledArtifact(CREATE2_FACTORY_ARTIFACT);
   const config = await buildDeploymentConfig({
     ...options,
-    constructorArgs: substituteDeployerPlaceholder(options.constructorArgs, forkDeployer),
+    name: 'Create2Factory',
+    artifactPath: CREATE2_FACTORY_ARTIFACT,
+    constructorArgs: [],
   });
-  console.log(`Fork verify: starting a fork of ${redactRpcUrl(options.rpcUrl)} and deploying ${options.name}...`);
+  console.log(`Fork verify: starting a fork of ${redactRpcUrl(options.rpcUrl)} to deploy ${options.name}...`);
 
   const mod = await loadModule('@circlefin/compass-deploy/test-bridge');
   const dryRun = mod.dryRun as (input: unknown) => Promise<unknown>;
@@ -835,19 +853,6 @@ async function verifyOnFork(options: CliOptions, targetArtifact: CompiledArtifac
   }
 
   try {
-    const compassResult = run.result;
-    let compassForkAddress: string | undefined;
-    try {
-      compassForkAddress = readDeployedContract(compassResult, options.name).address;
-      console.log(`Compass's own fork rehearsal (default factory, logic-only check) predicted: ${compassForkAddress}`);
-    } catch (compassDryRunError) {
-      console.warn(
-        "Compass's own default-factory dry-run didn't produce an address (upstream limitation for " +
-          "contracts with constructor args — see docs/proposals in the compass repo) — continuing with " +
-          `Arc Studio's own fork verification below. Detail: ${sanitizeForLog(compassDryRunError)}`,
-      );
-    }
-
     const forkRpcUrl = getForkRpcUrl(run, ACTIVE_CHAIN.compassChain);
 
     const account = privateKeyToAccount(deployerKey);
@@ -863,7 +868,6 @@ async function verifyOnFork(options: CliOptions, targetArtifact: CompiledArtifac
     }
 
     console.log(`Deploying Arc Studio's Create2Factory onto the fork (${forkRpcUrl})...`);
-    const factoryArtifact = readCompiledArtifact(CREATE2_FACTORY_ARTIFACT);
     const factoryDeployTxHash = await walletClient.deployContract({
       abi: factoryArtifact.abi as Abi,
       bytecode: factoryArtifact.bytecode,
@@ -934,7 +938,6 @@ async function verifyOnFork(options: CliOptions, targetArtifact: CompiledArtifac
         contractName: options.name,
         artifactPath: options.artifactPath,
         deployerAddress: account.address,
-        compassForkAddress,
         note:
           "This fork's throwaway deployer namespaces the salt, so predictedAddress will NOT match the live A′ " +
           "address (which namespaces by the real DCW wallet). This verifies Arc Studio's Create2Factory contract and " +
@@ -1311,6 +1314,7 @@ async function runCustodyDeploy(
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  installOutputRedaction(rpcTokenSecrets(options.rpcUrl, coerceString(process.env.RPC_PROXY_TOKEN)));
   const targetArtifact = readCompiledArtifact(options.artifactPath);
 
   assertConstructorArgs(targetArtifact, options.constructorArgs, options.name);

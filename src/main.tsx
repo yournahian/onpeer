@@ -21,18 +21,31 @@ import { ConnectKitProvider } from 'connectkit'
 import { Toaster } from 'sonner'
 import { config } from './config'
 import App from './App'
+import { installShareSync } from './lib/share'
+import { ThemeProvider, useTheme } from './lib/theme'
 import './index.css'
 
 const queryClient = new QueryClient()
+
+function Themed() {
+  const { resolved } = useTheme()
+  return (
+    <ConnectKitProvider mode={resolved}>
+      <App />
+      <Toaster position="top-center" theme={resolved} />
+    </ConnectKitProvider>
+  )
+}
+
+installShareSync()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <ConnectKitProvider>
-          <App />
-          <Toaster position="top-center" />
-        </ConnectKitProvider>
+        <ThemeProvider>
+          <Themed />
+        </ThemeProvider>
       </QueryClientProvider>
     </WagmiProvider>
   </StrictMode>,
