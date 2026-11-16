@@ -216,11 +216,11 @@ export default function BridgePage() {
   return (
     <div className="relative min-h-dvh overflow-hidden">
       <SiteBar />
-      <div className="relative flex min-h-[calc(100dvh-64px)] w-full flex-col items-center justify-center px-4 py-12">
+      <div className="relative flex min-h-[calc(100dvh-108px)] w-full flex-col items-center justify-center px-4 py-8 sm:min-h-[calc(100dvh-64px)] sm:py-12">
         <RibbonBackdrop />
 
         <motion.section
-          className="relative z-20 w-full max-w-[460px] rounded-[28px] p-5 backdrop-blur-2xl sm:p-6"
+          className="relative z-20 w-full max-w-[460px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[28px] sm:p-6"
           style={{
             background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
             border: '1px solid var(--border-strong)',
@@ -243,7 +243,7 @@ export default function BridgePage() {
                 onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setAmount(e.target.value)}
                 placeholder="0.00"
                 aria-label="USDC amount to bridge"
-                className="no-focus-ring display w-full min-w-0 bg-transparent text-4xl font-bold tabular-nums outline-none"
+                className="no-focus-ring display w-full min-w-0 bg-transparent text-3xl font-bold tabular-nums outline-none sm:text-4xl"
               />
               <span
                 className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
@@ -331,7 +331,7 @@ export default function BridgePage() {
               </span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="display w-full min-w-0 truncate text-4xl font-bold tabular-nums" style={{ opacity: amount ? 1 : 0.65 }}>
+              <p className="display w-full min-w-0 truncate text-3xl font-bold tabular-nums sm:text-4xl" style={{ opacity: amount ? 1 : 0.65 }}>
                 {amount || '0.00'}
               </p>
               <span
@@ -503,7 +503,7 @@ function ChainSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.96 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute right-0 z-40 mt-2 w-52 overflow-hidden rounded-2xl p-1.5 backdrop-blur-2xl"
+            className="absolute right-0 z-40 mt-2 w-52 max-w-[calc(100vw-3rem)] overflow-hidden rounded-2xl p-1.5 backdrop-blur-2xl"
             style={{
               background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
               border: '1px solid var(--border-strong)',

@@ -125,7 +125,7 @@ export function PlanetHero() {
   }, [])
 
   return (
-    <section className="stage relative isolate flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-black px-5 pt-24 pb-16">
+    <section className="stage relative isolate flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-black px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-24">
       {/* Procedural white starfield */}
       <canvas ref={starCanvasRef} aria-hidden className="pointer-events-none absolute inset-0 z-0 size-full" />
 
@@ -157,12 +157,12 @@ export function PlanetHero() {
       )}
 
       {/* Centered Hero Copy & CTAs */}
-      <div className="relative z-10 mt-28 flex max-w-4xl flex-col items-center text-center sm:mt-36">
+      <div className="relative z-10 mt-14 flex w-full max-w-4xl flex-col items-center text-center sm:mt-36">
         <motion.h1
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.75, ease }}
-          className="display text-balance text-4xl font-bold leading-[1.06] tracking-tight text-[#f7f7f8] sm:text-6xl lg:text-[78px]"
+          className="display text-balance text-[2.35rem] font-bold leading-[1.08] tracking-tight text-[#f7f7f8] sm:text-6xl lg:text-[78px]"
         >
           <span
             className="bg-clip-text text-transparent"

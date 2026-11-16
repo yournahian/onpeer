@@ -45,17 +45,17 @@ export function FooterCta() {
         <span className="absolute left-[69%] right-0 top-[55%] hidden h-5 -rotate-[2deg] bg-[#0a0712] lg:block" />
       </div>
 
-      <div className="relative flex min-h-[720px] w-full flex-col justify-center px-5 py-16 sm:min-h-[760px] sm:px-8 lg:px-12">
+      <div className="relative flex min-h-[560px] w-full flex-col justify-center px-5 py-14 sm:min-h-[760px] sm:px-8 sm:py-16 lg:px-12">
         <Reveal className="relative z-20 w-full">
-          <h2 className="display text-center font-bold leading-[0.95] lg:text-left" style={{ fontSize: 'clamp(3.4rem, 9.5vw, 8.4rem)', ...outline }}>
+          <h2 className="display text-center font-bold leading-[0.95] lg:text-left" style={{ fontSize: 'clamp(2.5rem, 9.5vw, 8.4rem)', ...outline }}>
             Start trading
             <br />
             USDC today
           </h2>
 
-          <div className="mt-10 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:mt-10 sm:flex-row sm:items-center">
             <div
-              className="inline-flex h-[52px] items-center gap-3 rounded-full pl-4 pr-5 text-sm"
+              className="inline-flex min-h-[48px] items-center justify-center gap-2.5 rounded-full px-4 py-2 text-xs sm:h-[52px] sm:justify-start sm:gap-3 sm:pl-4 sm:pr-5 sm:text-sm"
               style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.7)' }}
             >
               <span className="flex -space-x-2">

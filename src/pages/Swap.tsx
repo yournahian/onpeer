@@ -156,11 +156,11 @@ export default function SwapPage() {
   return (
     <div className="relative min-h-dvh overflow-hidden">
       <SiteBar />
-      <div className="relative flex min-h-[calc(100dvh-64px)] w-full flex-col items-center justify-center px-4 py-12">
+      <div className="relative flex min-h-[calc(100dvh-108px)] w-full flex-col items-center justify-center px-4 py-8 sm:min-h-[calc(100dvh-64px)] sm:py-12">
         <RibbonBackdrop />
 
         <motion.section
-          className="relative z-20 w-full max-w-[460px] rounded-[28px] p-5 backdrop-blur-2xl sm:p-6"
+          className="relative z-20 w-full max-w-[460px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[28px] sm:p-6"
           style={{
             background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
             border: '1px solid var(--border-strong)',
@@ -183,7 +183,7 @@ export default function SwapPage() {
                 onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setAmount(e.target.value)}
                 placeholder="0.00"
                 aria-label="Amount to swap"
-                className="no-focus-ring display w-full min-w-0 bg-transparent text-4xl font-bold tabular-nums outline-none"
+                className="no-focus-ring display w-full min-w-0 bg-transparent text-3xl font-bold tabular-nums outline-none sm:text-4xl"
               />
               <button
                 type="button"
@@ -276,7 +276,7 @@ export default function SwapPage() {
               <span>Balance: {fmt(balOut)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="display w-full min-w-0 truncate text-4xl font-bold tabular-nums" style={{ opacity: isReviewed ? 1 : 0.65 }}>
+              <p className="display w-full min-w-0 truncate text-3xl font-bold tabular-nums sm:text-4xl" style={{ opacity: isReviewed ? 1 : 0.65 }}>
                 <RollingNumber value={isReviewed ? String(reviewed.estimate.estimatedOutput.amount) : '0.00'} />
               </p>
               <span

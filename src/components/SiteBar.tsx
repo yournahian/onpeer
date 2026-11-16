@@ -35,13 +35,13 @@ export function SiteBar({ overlay = false }: { overlay?: boolean }) {
       <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
         <Brand tagline="USDC for South Asia" />
 
-        <nav className="order-last flex w-full gap-1 sm:order-none sm:w-auto" aria-label="Products">
+        <nav className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Products">
           {links.map((l) => (
             <AppLink
               key={l.to}
               to={l.to}
               aria-current={route === l.route ? 'page' : undefined}
-              className="relative flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg px-4 text-sm font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none"
+              className="relative flex min-h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none sm:px-4 sm:text-sm"
               style={{ color: route === l.route ? 'var(--ink)' : 'var(--subtle)' }}
             >
               {route === l.route && (
