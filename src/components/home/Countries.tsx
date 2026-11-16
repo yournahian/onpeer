@@ -4,6 +4,7 @@ import { Reveal } from '@/components/fx/Reveal'
 import { AppLink } from '@/components/AppLink'
 
 export function Countries() {
+  const row = [...COUNTRIES, ...COUNTRIES]
   return (
     <section className="mt-24" aria-labelledby="countries-title">
       <Reveal>
@@ -12,13 +13,23 @@ export function Countries() {
           Eight currencies, the payment apps you already use
         </h2>
       </Reveal>
-      <ul className="mt-10 grid grid-cols-1 gap-3 min-[460px]:grid-cols-2 lg:grid-cols-4">
-        {COUNTRIES.map((c, i) => {
-          const methods = methodsForCountry(c.code).filter((m) => m.name !== 'Bank transfer').slice(0, 4)
-          return (
-            <li key={c.code}>
-              <Reveal delay={(i % 4) * 0.07} className="h-full">
-                <AppLink to="/p2p" className="glass lift group flex h-full flex-col rounded-3xl p-5">
+      <div
+        className="marquee-wrap relative mt-10 overflow-hidden py-2"
+        style={{
+          WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
+          maskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
+        }}
+      >
+        <ul className="marquee-ltr">
+          {row.map((c, idx) => {
+            const methods = methodsForCountry(c.code).filter((m) => m.name !== 'Bank transfer').slice(0, 4)
+            return (
+              <li key={`${c.code}-${idx}`} className="mr-4 w-[250px] shrink-0 sm:w-[275px]" aria-hidden={idx >= COUNTRIES.length}>
+                <AppLink
+                  to="/p2p"
+                  tabIndex={idx >= COUNTRIES.length ? -1 : undefined}
+                  className="glass lift group flex h-full flex-col rounded-3xl p-5"
+                >
                   <div className="flex items-center justify-between">
                     <CountryFlag code={c.code} size={44} />
                     <span className="display text-3xl font-bold transition-transform duration-500 group-hover:scale-110" style={{ color: 'var(--accent)' }}>
@@ -33,11 +44,11 @@ export function Countries() {
                     ))}
                   </div>
                 </AppLink>
-              </Reveal>
-            </li>
-          )
-        })}
-      </ul>
+              </li>
+            )
+          })}
+        </ul>
+      </div>
     </section>
   )
 }
