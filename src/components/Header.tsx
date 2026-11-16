@@ -40,7 +40,7 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-40" style={{ background: 'var(--bar-bg)', backdropFilter: 'blur(20px)' }}>
-      <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
+      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
         <Brand tagline="P2P market" />
 
         <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export function Header({
         </div>
       </div>
 
-      <nav className="flex w-full gap-1 overflow-x-auto px-4 sm:px-8 lg:px-12" aria-label="Sections">
+      <nav className="mx-auto flex w-full max-w-7xl gap-1 overflow-x-auto px-4 sm:px-8 lg:px-12" aria-label="Sections">
         {tabs.map((t) => (
           <button
             key={t.id}

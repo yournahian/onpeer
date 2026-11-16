@@ -104,7 +104,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-dvh">
       <SiteBar />
-      <main className="w-full px-4 py-8 sm:px-8 lg:px-12">
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 lg:px-12">
         <Reveal>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>

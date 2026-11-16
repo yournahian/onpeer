@@ -51,7 +51,7 @@ export default function P2PPage() {
     <div className="min-h-dvh pb-24">
       <Header tab={tab} onTab={setTab} showArbiter={isArbiter} />
 
-      <main className="w-full space-y-5 px-4 py-6 sm:px-8 lg:px-12">
+      <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-8 lg:px-12">
         {blocked && (
           <div
             role="status"

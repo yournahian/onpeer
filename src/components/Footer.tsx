@@ -29,7 +29,7 @@ export function Footer() {
   return (
     <footer className="relative mt-20 pb-28 sm:pb-24">
       <FooterCta />
-      <div className="mt-14 w-full px-4 sm:px-8 lg:px-12">
+      <div className="mx-auto mt-14 w-full max-w-7xl px-4 sm:px-8 lg:px-12">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <Brand tagline="USDC for South Asia" />

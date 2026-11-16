@@ -67,7 +67,7 @@ export default function BrandKitPage() {
   return (
     <div className="min-h-dvh pb-24">
       <SiteBar />
-      <main className="w-full px-4 py-8 sm:px-8 sm:py-12 lg:px-12">
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 sm:py-12 lg:px-12">
         <Reveal>
           <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
             Brand kit
