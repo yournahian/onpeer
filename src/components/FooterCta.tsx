@@ -108,15 +108,15 @@ export function FooterCta() {
           <AppLink to="/assistant" className="glass lift flex items-center gap-4 rounded-2xl p-3 pr-5">
             <span
               className="relative flex size-[76px] shrink-0 items-center justify-center overflow-hidden rounded-xl"
-              style={{ background: 'linear-gradient(135deg, #7c3aed, #ec4899)' }}
+              style={{ background: 'linear-gradient(135deg, #e04e00, #FF5A00)' }}
             >
-              <span className="flex size-10 items-center justify-center rounded-full bg-white/90 text-[#7c3aed]">
+              <span className="flex size-10 items-center justify-center rounded-full bg-white/95 text-[#FF5A00]">
                 <Play className="size-5 translate-x-px fill-current" />
               </span>
             </span>
             <span className="text-sm font-medium leading-snug text-white">
               Be the first to try the AI assistant
-              <span className="mt-1 flex items-center gap-1 font-semibold" style={{ color: '#e879f9' }}>
+              <span className="mt-1 flex items-center gap-1 font-semibold" style={{ color: '#FF5A00' }}>
                 Meet it <ArrowRight className="size-3.5" />
               </span>
             </span>
