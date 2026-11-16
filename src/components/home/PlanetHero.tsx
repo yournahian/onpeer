@@ -137,7 +137,7 @@ export function PlanetHero() {
         style={{ opacity: allowVideo && videoReady ? 0.12 : 1 }}
       />
 
-      {/* Desktop glowing violet planet-rim video with screen blend so black stays transparent */}
+      {/* Desktop glowing orange planet-rim video with screen blend so black stays transparent */}
       {allowVideo && (
         <video
           src={PLANET_VIDEO_URL}
@@ -147,9 +147,8 @@ export function PlanetHero() {
           playsInline
           aria-hidden
           onCanPlay={() => setVideoReady(true)}
-          className="pointer-events-none absolute left-1/2 top-0 z-[2] w-full max-w-[1672px] -translate-x-1/2 object-cover transition-opacity duration-[800ms]"
+          className="pointer-events-none absolute inset-0 z-[2] size-full object-cover object-top transition-opacity duration-[800ms]"
           style={{
-            height: 'min(76vh, 717px)',
             mixBlendMode: 'screen',
             filter: 'hue-rotate(96deg) saturate(1.25) brightness(0.9)',
             opacity: videoReady ? 0.92 : 0,
