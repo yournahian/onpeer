@@ -125,7 +125,7 @@ export function PlanetHero() {
   }, [])
 
   return (
-    <section className="stage relative isolate flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-black px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-24">
+    <section className="stage planet-hero-blend relative isolate flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-black px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-24">
       {/* Procedural white starfield */}
       <canvas ref={starCanvasRef} aria-hidden className="pointer-events-none absolute inset-0 z-0 size-full" />
 

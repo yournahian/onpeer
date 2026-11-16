@@ -534,16 +534,10 @@ select option {
   animation-play-state: paused;
 }
 
-/* smooth theme switch */
-html.theme-anim,
-html.theme-anim *,
-html.theme-anim *::before,
-html.theme-anim *::after {
-  transition:
-    background-color 0.35s ease,
-    border-color 0.35s ease,
-    color 0.35s ease,
-    box-shadow 0.35s ease !important;
+/* Smooth dark-mode-only blend at the bottom of the planet hero into the page backdrop */
+:root[data-theme='dark'] .planet-hero-blend {
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 84%, transparent 100%);
 }
 
 /* closing call-to-action: turning gradient edge */

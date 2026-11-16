@@ -47,9 +47,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolved])
 
   const setPref = useCallback((p: ThemePref) => {
-    const root = document.documentElement
-    root.classList.add('theme-anim')
-    window.setTimeout(() => root.classList.remove('theme-anim'), 450)
     try {
       localStorage.setItem(KEY, p)
     } catch {
