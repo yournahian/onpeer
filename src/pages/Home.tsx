@@ -13,6 +13,7 @@ import { HowItWorks } from '@/components/home/HowItWorks'
 import { Features } from '@/components/home/Features'
 import { Countries } from '@/components/home/Countries'
 import { Faq } from '@/components/home/Faq'
+import { BrandKit } from '@/components/home/BrandKit'
 import { FinalCta } from '@/components/home/FinalCta'
 
 const PRODUCTS = [
@@ -91,6 +92,7 @@ export default function Home() {
         <Features />
         <Countries />
         <Faq />
+        <BrandKit />
         <FinalCta />
       </main>
     </div>
