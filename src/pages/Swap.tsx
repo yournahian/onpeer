@@ -312,7 +312,6 @@ export default function SwapPage() {
               </ConnectKitButton.Custom>
             ) : isReviewed ? (
               <Button
-                variant="buy"
                 className="w-full rounded-full py-3.5 text-sm font-bold"
                 loading={busy === 'swap'}
                 disabled={busy !== null}

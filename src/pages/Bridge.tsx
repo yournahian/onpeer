@@ -367,7 +367,6 @@ export default function BridgePage() {
               </ConnectKitButton.Custom>
             ) : isQuoted ? (
               <Button
-                variant="buy"
                 className="w-full rounded-full py-3.5 text-sm font-bold"
                 loading={busy === 'bridge'}
                 disabled={busy !== null}
