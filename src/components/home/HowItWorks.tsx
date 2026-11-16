@@ -227,7 +227,7 @@ export function HowItWorks() {
 
       <div className="mt-6 grid items-start gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-10">
         {/* Sticky stacking cards */}
-        <ol className="relative space-y-6 pb-8">
+        <ol className="relative space-y-24 pb-12 sm:space-y-32">
           {STEPS.map((s, i) => {
             const isActive = active === i
             return (
