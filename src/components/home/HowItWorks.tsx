@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { useRef, useState } from 'react'
+import { AnimatePresence, motion, useMotionValueEvent, useScroll, useTransform, type MotionValue } from 'framer-motion'
 import { ArrowRight, BadgeCheck, Lock, Search, ShieldCheck, Sparkles, Wallet } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
 import { ChainLogo, CountryFlag, MethodLogo } from '@/components/logos'
@@ -209,138 +209,200 @@ function Visual({ step }: { step: number }) {
   )
 }
 
-/** Four sticky stacking step cards on the left; a live animated preview panel on the right. */
-export function HowItWorks() {
-  const [active, setActive] = useState(0)
+function StackingStepCard({
+  step,
+  index,
+  active,
+  progress,
+}: {
+  step: (typeof STEPS)[number]
+  index: number
+  active: boolean
+  progress: MotionValue<number>
+}) {
+  // Card 0 stays anchored at y=0; Cards 1..3 start stacked below with tight gap and slide up onto the deck.
+  const startIn = index === 0 ? 0 : (index - 1) * 0.3 + 0.04
+  const endIn = index === 0 ? 0.01 : index * 0.3
+  const restY = index * 188
+  const stackedY = index * 12
+
+  const y = useTransform(progress, [0, startIn, endIn, 1], [restY, restY, stackedY, stackedY])
+  const scale = useTransform(progress, [0, startIn, endIn, 1], [1, 1, 1, 1 - Math.max(0, 3 - index) * 0.012])
+
   return (
-    <section className="mt-24" aria-labelledby="how-title">
-      <Reveal>
-        <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
-          How it works
-        </p>
-        <h2 id="how-title" className="display text-gradient mt-2 text-balance text-3xl font-bold sm:text-5xl">
-          From wallet to local cash in four steps
-        </h2>
-      </Reveal>
-
-      <div className="mt-8 grid items-start gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-10">
-        {/* Sticky stacking cards */}
-        <ol className="relative space-y-4 pb-6 sm:space-y-5">
-          {STEPS.map((s, i) => {
-            const isActive = active === i
-            return (
-              <motion.li
-                key={s.title}
-                onViewportEnter={() => setActive(i)}
-                viewport={{ margin: '-35% 0px -35% 0px' }}
-                onClick={() => setActive(i)}
-                className="sticky cursor-pointer"
-                style={{
-                  top: `calc(6rem + ${i * 12}px)`,
-                  zIndex: i + 1,
-                }}
-              >
-                <motion.div
-                  className="flex items-center justify-between gap-5 rounded-3xl p-6 backdrop-blur-2xl sm:p-7"
-                  animate={{
-                    scale: isActive ? 1 : 0.985,
-                  }}
-                  transition={{ type: 'spring', stiffness: 280, damping: 26 }}
-                  style={{
-                    background: 'color-mix(in srgb, var(--panel-solid) 94%, transparent)',
-                    border: `1px solid ${isActive ? 'var(--border-strong)' : 'var(--border)'}`,
-                    boxShadow: isActive
-                      ? '0 24px 60px -18px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 90, 0, 0.16)'
-                      : '0 16px 40px -16px rgba(0, 0, 0, 0.5)',
-                  }}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: isActive ? 'var(--accent)' : 'var(--subtle)' }}>
-                      STEP 0{i + 1}
-                    </p>
-                    <h3 className="display mt-1.5 text-xl font-bold sm:text-2xl">{s.title}</h3>
-                    <p className="mt-2 text-pretty text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
-                      {s.body}
-                    </p>
-                  </div>
-
-                  <motion.span
-                    className="flex size-14 shrink-0 items-center justify-center rounded-2xl sm:size-16"
-                    animate={{
-                      background: isActive ? 'linear-gradient(135deg, #e04e00, #FF5A00)' : 'var(--fill-2)',
-                      color: isActive ? '#ffffff' : 'var(--muted)',
-                    }}
-                    transition={{ duration: 0.25 }}
-                    style={{
-                      boxShadow: isActive ? '0 12px 28px -8px rgba(255, 90, 0, 0.6)' : undefined,
-                      border: isActive ? 'none' : '1px solid var(--border)',
-                    }}
-                  >
-                    <s.icon className="size-6 sm:size-7" />
-                  </motion.span>
-                </motion.div>
-              </motion.li>
-            )
-          })}
-        </ol>
-
-        {/* Premium sticky right-hand animation stage */}
-        <div className="hidden lg:block lg:sticky lg:top-24">
-          <div
-            className="glass relative flex min-h-[380px] flex-col items-center justify-between overflow-hidden rounded-[2rem] p-8"
-            style={{
-              boxShadow: '0 28px 70px -22px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border)',
-            }}
-          >
-            {/* Ambient radial glow */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -top-24 left-1/2 size-72 -translate-x-1/2 rounded-full"
-              style={{ background: 'radial-gradient(circle, rgba(255, 90, 0, 0.22), transparent 68%)', filter: 'blur(24px)' }}
-            />
-
-            <div className="relative flex w-full items-center justify-between text-xs font-semibold" style={{ color: 'var(--subtle)' }}>
-              <span className="inline-flex items-center gap-1.5">
-                <Sparkles className="size-3.5" style={{ color: 'var(--accent)' }} />
-                Step 0{active + 1} of 04
-              </span>
-              <span className="mono">{STEPS[active].title}</span>
-            </div>
-
-            <div className="relative my-6 flex w-full flex-1 items-center justify-center">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={active}
-                  className="flex w-full justify-center"
-                  initial={{ opacity: 0, y: 18, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -14, scale: 0.96 }}
-                  transition={{ duration: 0.35, ease }}
-                >
-                  <Visual step={active} />
-                </motion.div>
-              </AnimatePresence>
-            </div>
-
-            <div className="relative flex gap-2" aria-hidden>
-              {STEPS.map((s, i) => (
-                <button
-                  key={s.title}
-                  type="button"
-                  onClick={() => setActive(i)}
-                  className="h-1.5 rounded-full transition-all"
-                  style={{
-                    width: active === i ? 30 : 10,
-                    backgroundColor: active === i ? 'var(--accent)' : 'var(--fill-3)',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs" style={{ color: 'var(--subtle)' }}>
-            Keep scrolling or click a step <ArrowRight className="size-3 rotate-90" />
+    <motion.li
+      className="absolute inset-x-0 top-0"
+      style={{
+        y: index === 0 ? 0 : y,
+        scale,
+        zIndex: index + 1,
+      }}
+    >
+      <div
+        className="flex min-h-[168px] items-center justify-between gap-5 rounded-3xl p-6 backdrop-blur-2xl transition-colors duration-300 sm:p-7"
+        style={{
+          background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
+          border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
+          boxShadow: active
+            ? '0 24px 60px -18px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 90, 0, 0.16)'
+            : '0 16px 40px -16px rgba(0, 0, 0, 0.5)',
+        }}
+      >
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }}>
+            STEP 0{index + 1}
+          </p>
+          <h3 className="display mt-1.5 text-xl font-bold sm:text-2xl">{step.title}</h3>
+          <p className="mt-2 text-pretty text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
+            {step.body}
           </p>
         </div>
+
+        <span
+          className="flex size-14 shrink-0 items-center justify-center rounded-2xl transition-all duration-300 sm:size-16"
+          style={{
+            background: active ? 'linear-gradient(135deg, #e04e00, #FF5A00)' : 'var(--fill-2)',
+            color: active ? '#ffffff' : 'var(--muted)',
+            boxShadow: active ? '0 12px 28px -8px rgba(255, 90, 0, 0.6)' : undefined,
+            border: active ? 'none' : '1px solid var(--border)',
+          }}
+        >
+          <step.icon className="size-6 sm:size-7" />
+        </span>
+      </div>
+    </motion.li>
+  )
+}
+
+/**
+ * Desktop pins the entire section (heading + stacking deck + live visual stage)
+ * until all four cards have stacked one over the next, then unpins cleanly.
+ */
+export function HowItWorks() {
+  const sectionRef = useRef<HTMLElement>(null)
+  const [active, setActive] = useState(0)
+
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start 88px', 'end end'],
+  })
+
+  useMotionValueEvent(scrollYProgress, 'change', (v) => {
+    if (v < 0.26) setActive(0)
+    else if (v < 0.56) setActive(1)
+    else if (v < 0.84) setActive(2)
+    else setActive(3)
+  })
+
+  return (
+    <section ref={sectionRef} className="relative mt-24 lg:h-[260vh]" aria-labelledby="how-title">
+      {/* Desktop pinned stage */}
+      <div className="hidden lg:sticky lg:top-24 lg:block">
+        <Reveal>
+          <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
+            How it works
+          </p>
+          <h2 id="how-title" className="display text-gradient mt-2 text-balance text-5xl font-bold">
+            From wallet to local cash in four steps
+          </h2>
+        </Reveal>
+
+        <div className="mt-8 grid items-start gap-10 lg:grid-cols-[1.15fr_0.85fr]">
+          {/* Stacking card deck */}
+          <ol className="relative h-[540px] overflow-hidden">
+            {STEPS.map((s, i) => (
+              <StackingStepCard key={s.title} step={s} index={i} active={active === i} progress={scrollYProgress} />
+            ))}
+          </ol>
+
+          {/* Premium right-hand animation stage */}
+          <div>
+            <div
+              className="glass relative flex min-h-[380px] flex-col items-center justify-between overflow-hidden rounded-[2rem] p-8"
+              style={{
+                boxShadow: '0 28px 70px -22px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border)',
+              }}
+            >
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -top-24 left-1/2 size-72 -translate-x-1/2 rounded-full"
+                style={{ background: 'radial-gradient(circle, rgba(255, 90, 0, 0.22), transparent 68%)', filter: 'blur(24px)' }}
+              />
+
+              <div className="relative flex w-full items-center justify-between text-xs font-semibold" style={{ color: 'var(--subtle)' }}>
+                <span className="inline-flex items-center gap-1.5">
+                  <Sparkles className="size-3.5" style={{ color: 'var(--accent)' }} />
+                  Step 0{active + 1} of 04
+                </span>
+                <span className="mono">{STEPS[active].title}</span>
+              </div>
+
+              <div className="relative my-6 flex w-full flex-1 items-center justify-center">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={active}
+                    className="flex w-full justify-center"
+                    initial={{ opacity: 0, y: 18, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -14, scale: 0.96 }}
+                    transition={{ duration: 0.35, ease }}
+                  >
+                    <Visual step={active} />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              <div className="relative flex gap-2" aria-hidden>
+                {STEPS.map((s, i) => (
+                  <span
+                    key={s.title}
+                    className="h-1.5 rounded-full transition-all duration-300"
+                    style={{
+                      width: active === i ? 30 : 10,
+                      backgroundColor: active === i ? 'var(--accent)' : 'var(--fill-3)',
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+            <p className="mt-4 flex items-center justify-center gap-1.5 text-xs" style={{ color: 'var(--subtle)' }}>
+              Keep scrolling <ArrowRight className="size-3 rotate-90" />
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile clean stacked layout */}
+      <div className="lg:hidden">
+        <Reveal>
+          <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
+            How it works
+          </p>
+          <h2 className="display text-gradient mt-2 text-balance text-3xl font-bold sm:text-4xl">
+            From wallet to local cash in four steps
+          </h2>
+        </Reveal>
+        <ol className="mt-6 space-y-4">
+          {STEPS.map((s, i) => (
+            <li key={s.title} className="glass flex items-center justify-between gap-4 rounded-2xl p-5">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--accent)' }}>
+                  STEP 0{i + 1}
+                </p>
+                <h3 className="display mt-1 text-lg font-bold">{s.title}</h3>
+                <p className="mt-1.5 text-pretty text-sm" style={{ color: 'var(--muted)' }}>
+                  {s.body}
+                </p>
+              </div>
+              <span
+                className="flex size-12 shrink-0 items-center justify-center rounded-2xl"
+                style={{ background: 'linear-gradient(135deg, #e04e00, #FF5A00)', color: '#ffffff' }}
+              >
+                <s.icon className="size-5" />
+              </span>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   )
