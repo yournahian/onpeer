@@ -214,16 +214,18 @@ export function HowItWorks() {
   const [active, setActive] = useState(0)
   return (
     <section className="mt-24" aria-labelledby="how-title">
-      <Reveal>
-        <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
-          How it works
-        </p>
-        <h2 id="how-title" className="display text-gradient mt-2 text-balance text-4xl font-bold sm:text-5xl">
-          From wallet to local cash in four steps
-        </h2>
-      </Reveal>
+      <div className="sticky top-16 z-20 pb-4 pt-2 sm:top-20">
+        <Reveal>
+          <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
+            How it works
+          </p>
+          <h2 id="how-title" className="display text-gradient mt-2 text-balance text-3xl font-bold sm:text-5xl">
+            From wallet to local cash in four steps
+          </h2>
+        </Reveal>
+      </div>
 
-      <div className="mt-10 grid items-start gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-10">
+      <div className="mt-6 grid items-start gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-10">
         {/* Sticky stacking cards */}
         <ol className="relative space-y-6 pb-8">
           {STEPS.map((s, i) => {
@@ -236,7 +238,7 @@ export function HowItWorks() {
                 onClick={() => setActive(i)}
                 className="sticky cursor-pointer"
                 style={{
-                  top: `calc(6.25rem + ${i * 14}px)`,
+                  top: `calc(12.5rem + ${i * 14}px)`,
                   zIndex: i + 1,
                 }}
               >
@@ -285,7 +287,7 @@ export function HowItWorks() {
         </ol>
 
         {/* Premium sticky right-hand animation stage */}
-        <div className="hidden lg:block lg:sticky lg:top-28">
+        <div className="hidden lg:block lg:sticky lg:top-[12.5rem]">
           <div
             className="glass relative flex min-h-[380px] flex-col items-center justify-between overflow-hidden rounded-[2rem] p-8"
             style={{
