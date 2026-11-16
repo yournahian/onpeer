@@ -166,7 +166,7 @@ export function PlanetHero() {
         >
           <span
             className="bg-clip-text text-transparent"
-            style={{ backgroundImage: 'linear-gradient(95deg, #c084fc 0%, #9312ff 50%, #e879f9 100%)' }}
+            style={{ backgroundImage: 'linear-gradient(95deg, #ff8c42 0%, #FF5A00 55%, #ffb380 100%)' }}
           >
             OnPeer
           </span>{' '}
@@ -194,15 +194,15 @@ export function PlanetHero() {
         >
           <AppLink
             to="/p2p"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full px-7 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_28px_rgba(147,18,255,0.65)] active:scale-[0.98]"
-            style={{ background: 'linear-gradient(95deg, #a020ff 0%, #7a1cf8 100%)' }}
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full px-7 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_28px_rgba(255,90,0,0.65)] active:scale-[0.98]"
+            style={{ background: 'linear-gradient(95deg, #e04e00 0%, #FF5A00 100%)' }}
           >
             Get Started
           </AppLink>
 
           <a
             href="#products-title"
-            className="inline-flex min-h-[48px] items-center justify-center rounded-full px-7 text-sm font-semibold text-[#f7f7f8] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#9312ff]/60 hover:bg-white/[0.12] active:scale-[0.98]"
+            className="inline-flex min-h-[48px] items-center justify-center rounded-full px-7 text-sm font-semibold text-[#f7f7f8] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#FF5A00]/60 hover:bg-white/[0.12] active:scale-[0.98]"
             style={{
               background: 'rgba(255, 255, 255, 0.08)',
               border: '1px solid rgba(255, 255, 255, 0.14)',

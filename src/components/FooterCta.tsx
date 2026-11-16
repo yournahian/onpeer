@@ -70,7 +70,7 @@ export function FooterCta() {
             <AppLink
               to="/p2p"
               className="btn-shine inline-flex min-h-[52px] items-center justify-center gap-2 rounded-full px-8 text-sm font-bold text-white transition-transform hover:-translate-y-0.5 active:scale-[0.98]"
-              style={{ background: '#ff2e93', boxShadow: '0 10px 34px -8px rgba(255,46,147,0.7)' }}
+              style={{ background: '#FF5A00', boxShadow: '0 10px 34px -8px rgba(255,90,0,0.7)' }}
             >
               Open the market <ArrowRight className="size-4" />
             </AppLink>

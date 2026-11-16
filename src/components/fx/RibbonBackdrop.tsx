@@ -8,13 +8,13 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 
 type Theme = 'dark' | 'light'
 
-/** The site's primary gradient (`--accent-bg` in index.css), left to right. */
+/** The site's primary OnPeer Brandkit gradient, left to right. */
 const PRIMARY: Record<Theme, [string, string, string]> = {
-  dark: ['#9333ea', '#d946ef', '#ec4899'],
-  light: ['#7c3aed', '#c026d3', '#db2777'],
+  dark: ['#c94100', '#FF5A00', '#ff8c42'],
+  light: ['#b83a00', '#e04e00', '#FF5A00'],
 }
 /** Matches `--bg` in index.css so the canvas blends into the page. */
-const PAGE_BG: Record<Theme, number> = { dark: 0x06030d, light: 0xf8f4ff }
+const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xfaf9f7 }
 
 const currentTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
 
@@ -71,13 +71,13 @@ export function RibbonBackdrop() {
     key.shadow.normalBias = 0.02
     scene.add(key)
 
-    const rimL = new THREE.PointLight(0xc084fc, 45, 25, 1.7)
+    const rimL = new THREE.PointLight(0xff5a00, 45, 25, 1.7)
     rimL.position.set(-6, 3, 2)
     scene.add(rimL)
-    const rimR = new THREE.PointLight(0xf0abfc, 45, 25, 1.7)
+    const rimR = new THREE.PointLight(0xff8c42, 45, 25, 1.7)
     rimR.position.set(6, 3, 2)
     scene.add(rimR)
-    const under = new THREE.PointLight(0xa855f7, 20, 18, 1.8)
+    const under = new THREE.PointLight(0xe04e00, 20, 18, 1.8)
     under.position.set(0, -4, 3)
     scene.add(under)
 
@@ -94,7 +94,7 @@ export function RibbonBackdrop() {
       color: 0xffffff,
       roughness: 0.5,
       metalness: 0.05,
-      emissive: 0x14061f,
+      emissive: 0x1a0800,
       emissiveIntensity: 0.5,
     })
     const blocks = new THREE.InstancedMesh(geometry, material, COUNT)
@@ -144,14 +144,14 @@ export function RibbonBackdrop() {
         renderer.setClearColor(PAGE_BG.dark, 1)
         ambient.intensity = 0.12
         hemi.intensity = 0.4
-        dustMat.color.set(0xf0abfc)
+        dustMat.color.set(0xffb380)
         dustMat.opacity = 0.55
       } else {
         // Transparent: the page's own light background shows through.
         renderer.setClearColor(PAGE_BG.light, 0)
         ambient.intensity = 0.35
         hemi.intensity = 0.7
-        dustMat.color.set(0x9333ea)
+        dustMat.color.set(0xff5a00)
         dustMat.opacity = 0.35
       }
     }
