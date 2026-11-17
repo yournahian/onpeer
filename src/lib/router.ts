@@ -2,6 +2,19 @@ import { useSyncExternalStore } from 'react'
 
 export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant' | 'brand-kit'
 
+export const LANDING_URL = 'https://onpeer.xyz'
+export const APP_URL = 'https://app.onpeer.xyz'
+
+export function isAppSubdomain(): boolean {
+  return typeof window !== 'undefined' && window.location.hostname.startsWith('app.')
+}
+
+export function isLandingDomain(): boolean {
+  if (typeof window === 'undefined') return false
+  const h = window.location.hostname
+  return h === 'onpeer.xyz' || h === 'www.onpeer.xyz'
+}
+
 const NAV_EVENT = 'app:navigate'
 
 function currentRoute(): Route {
@@ -14,6 +27,7 @@ function currentRoute(): Route {
   if (pathname.startsWith('/brand-kit')) return 'brand-kit'
   // Older order links were shared as /?order=ID
   if (new URLSearchParams(search).has('order')) return 'p2p'
+  if (isAppSubdomain()) return 'p2p'
   return 'home'
 }
 

@@ -197,7 +197,7 @@ export function PlanetHero() {
             className="inline-flex min-h-[48px] items-center justify-center rounded-full px-7 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_0_28px_rgba(255,90,0,0.65)] active:scale-[0.98]"
             style={{ background: 'linear-gradient(95deg, #e04e00 0%, #FF5A00 100%)' }}
           >
-            Get Started
+            Open App
           </AppLink>
 
           <a

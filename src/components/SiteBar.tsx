@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { motion, useMotionValueEvent, useScroll } from 'framer-motion'
-import { ArrowLeftRight, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
 import { ConnectKitButton } from 'connectkit'
-import { useRoute, type Route } from '@/lib/router'
+import { isLandingDomain, useRoute, type Route } from '@/lib/router'
 import { shortAddr } from '@/lib/p2p'
 import { AppLink } from '@/components/AppLink'
 import { Button } from '@/components/ui'
@@ -62,13 +62,23 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
         <div className="flex items-center gap-2">
           <ThemeToggle className="hidden sm:inline-flex" />
           <ThemeToggle compact className="sm:hidden" />
-          <ConnectKitButton.Custom>
-            {({ show, isConnected, address }) => (
-              <Button variant={isConnected ? 'ghost' : 'primary'} className="mono min-h-10" onClick={show}>
-                {isConnected && address ? shortAddr(address) : 'Connect'}
-              </Button>
-            )}
-          </ConnectKitButton.Custom>
+          {isLandingDomain() ? (
+            <AppLink
+              to="/p2p"
+              className="btn-shine inline-flex min-h-10 items-center gap-1.5 rounded-xl px-4 text-sm font-semibold transition-transform hover:-translate-y-0.5 active:scale-[0.98]"
+              style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
+            >
+              Open App <ArrowRight className="size-4" />
+            </AppLink>
+          ) : (
+            <ConnectKitButton.Custom>
+              {({ show, isConnected, address }) => (
+                <Button variant={isConnected ? 'ghost' : 'primary'} className="mono min-h-10" onClick={show}>
+                  {isConnected && address ? shortAddr(address) : 'Connect'}
+                </Button>
+              )}
+            </ConnectKitButton.Custom>
+          )}
         </div>
       </div>
       <div className="h-px transition-opacity duration-300" style={{ background: 'var(--border)', opacity: floating ? 0 : 1 }} />
