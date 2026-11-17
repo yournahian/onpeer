@@ -111,6 +111,7 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
@@ -122,7 +123,13 @@ body {
   background-attachment: fixed;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+@media (max-width: 768px), (hover: none) {
+  body {
+    background-attachment: scroll;
+  }
 }
 
 ::selection {
@@ -168,13 +175,15 @@ body {
     border-color 0.35s var(--ease-out),
     box-shadow 0.35s var(--ease-out);
 }
-.lift:hover {
-  transform: translateY(-3px);
-  border-color: var(--border-strong);
-  box-shadow:
-    var(--lift-shadow),
-    0 0 0 1px var(--accent-glow),
-    inset 0 1px 0 var(--glass-hl);
+@media (hover: hover) {
+  .lift:hover {
+    transform: translateY(-3px);
+    border-color: var(--border-strong);
+    box-shadow:
+      var(--lift-shadow),
+      0 0 0 1px var(--accent-glow),
+      inset 0 1px 0 var(--glass-hl);
+  }
 }
 
 /* cursor spotlight (set --mx / --my from JS) */

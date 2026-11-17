@@ -1,4 +1,4 @@
-import { ExternalLink, ShieldAlert } from 'lucide-react'
+import { ExternalLink, Mail, ShieldAlert } from 'lucide-react'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import { CHAIN_ID, COUNTRIES, ESCROW_ADDRESS } from '@/lib/p2p'
 import { useAdminRoles } from '@/hooks/useAdmin'
@@ -109,6 +109,16 @@ export function Footer() {
             <li>
               <a className={linkClass} href="https://developers.circle.com" target="_blank" rel="noopener noreferrer">
                 Circle developers <ExternalLink className="size-3" />
+              </a>
+            </li>
+            <li>
+              <a className={linkClass} href="mailto:support@onpeer.xyz">
+                <Mail className="size-3.5" /> support@onpeer.xyz
+              </a>
+            </li>
+            <li>
+              <a className={linkClass} href="mailto:hello@onpeer.xyz">
+                <Mail className="size-3.5" /> hello@onpeer.xyz
               </a>
             </li>
           </Col>

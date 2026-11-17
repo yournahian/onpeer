@@ -44,10 +44,14 @@ export function PlanetHero() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const drawStars = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const prev = { w: 0, h: 0 }
+    const drawStars = (force = false) => {
       const w = canvas.clientWidth || 1
       const h = canvas.clientHeight || 1
+      if (!force && w === prev.w && Math.abs(h - prev.h) < 120) return
+      prev.w = w
+      prev.h = h
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       canvas.width = Math.floor(w * dpr)
       canvas.height = Math.floor(h * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -71,9 +75,10 @@ export function PlanetHero() {
       }
     }
 
-    drawStars()
-    window.addEventListener('resize', drawStars)
-    return () => window.removeEventListener('resize', drawStars)
+    drawStars(true)
+    const onResize = () => drawStars(false)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   // Fallback violet planet-rim arc on canvas (visible until video loads, and on phones / reduced motion)
@@ -83,10 +88,14 @@ export function PlanetHero() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    const drawRim = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const prev = { w: 0, h: 0 }
+    const drawRim = (force = false) => {
       const w = canvas.clientWidth || 1
       const h = canvas.clientHeight || 1
+      if (!force && w === prev.w && Math.abs(h - prev.h) < 120) return
+      prev.w = w
+      prev.h = h
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
       canvas.width = Math.floor(w * dpr)
       canvas.height = Math.floor(h * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -119,13 +128,14 @@ export function PlanetHero() {
       ctx.shadowBlur = 0
     }
 
-    drawRim()
-    window.addEventListener('resize', drawRim)
-    return () => window.removeEventListener('resize', drawRim)
+    drawRim(true)
+    const onResize = () => drawRim(false)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
   }, [])
 
   return (
-    <section className="stage planet-hero-blend relative isolate flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-black px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-24">
+    <section className="stage planet-hero-blend relative isolate flex min-h-svh w-full flex-col items-center justify-center overflow-hidden bg-black px-4 pb-12 pt-28 sm:px-6 sm:pb-16 sm:pt-24">
       {/* Procedural white starfield */}
       <canvas ref={starCanvasRef} aria-hidden className="pointer-events-none absolute inset-0 z-0 size-full" />
 

@@ -9,6 +9,7 @@ export function TiltCard({ children, className = '' }: { children: ReactNode; cl
   const ry = useSpring(useMotionValue(0), { stiffness: 220, damping: 22 })
 
   const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') return
     const el = ref.current
     if (!el) return
     const r = el.getBoundingClientRect()

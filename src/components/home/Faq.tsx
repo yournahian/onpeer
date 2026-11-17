@@ -42,7 +42,11 @@ export function Faq() {
         <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>FAQ</p>
         <h2 id="faq-title" className="display text-gradient mt-2 text-balance text-4xl font-bold sm:text-5xl">Good questions</h2>
         <p className="mt-3 text-pretty text-sm" style={{ color: 'var(--muted)' }}>
-          Not covered here? Ask the assistant at the bottom right of any page.
+          Not covered here? Ask the assistant at the bottom right of any page, or email{' '}
+          <a href="mailto:support@onpeer.xyz" className="font-semibold underline-offset-4 hover:underline" style={{ color: 'var(--ink)' }}>
+            support@onpeer.xyz
+          </a>
+          .
         </p>
       </Reveal>
       <ul className="space-y-3">
