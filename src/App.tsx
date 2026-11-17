@@ -54,7 +54,7 @@ export default function App() {
         <ErrorBoundary key={route} label={route}>
           {page}
         </ErrorBoundary>
-        <Footer />
+        {route === 'home' && <Footer />}
       </div>
       <ErrorBoundary label="assistant" fallback={null}>
         <AgentChat route={route} />
