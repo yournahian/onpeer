@@ -2,6 +2,12 @@
   "name": "onpeer",
   "main": "worker/index.ts",
   "compatibility_date": "2025-11-01",
+  "kv_namespaces": [
+    {
+      "binding": "AI_SETTINGS_KV",
+      "id": "87e9c110ebe247f784a9db6e83858216"
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
