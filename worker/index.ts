@@ -2,7 +2,9 @@ import { createPublicClient, http, isAddress, verifyMessage, type Address } from
 import { p2pEscrowAbi } from '../src/abi/p2pEscrow'
 import { requireChain } from '../src/onchain-facts'
 import { SYSTEM_PROMPT, TOOLS } from '../server/agent'
-import { PROVIDER_IDS, type ProviderId, type SavedSettings } from '../server/settings'
+import type { ProviderId, SavedSettings } from '../server/settings'
+
+const PROVIDER_IDS: ProviderId[] = ['openrouter', 'groq', 'gemini', 'custom']
 
 interface KVStore {
   get(key: string, type: 'json'): Promise<unknown>
