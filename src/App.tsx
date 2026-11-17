@@ -1,5 +1,6 @@
+import { useEffect } from 'react'
 import { MotionConfig } from 'framer-motion'
-import { useRoute, useSearch } from '@/lib/router'
+import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
 import { AgentChat } from '@/components/AgentChat'
 import { AgentProvider } from '@/agent/AgentContext'
 import { Backdrop } from '@/components/fx/Backdrop'
@@ -17,6 +18,15 @@ import BrandKitPage from '@/pages/BrandKit'
 export default function App() {
   const route = useRoute()
   const search = useSearch()
+  const redirectToApp = isLandingDomain() && route !== 'home' && route !== 'brand-kit'
+
+  useEffect(() => {
+    if (redirectToApp) {
+      window.location.replace(`${APP_URL}${window.location.pathname}${window.location.search}`)
+    }
+  }, [redirectToApp])
+
+  if (redirectToApp) return null
   // Swap and Bridge read their prefill from the URL on mount, so a new link remounts them.
   const page =
     route === 'p2p' ? (

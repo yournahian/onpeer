@@ -3,6 +3,7 @@ import { useAccount } from 'wagmi'
 import { ESCROW_ADDRESS, sameAddr } from '@/lib/p2p'
 import { useAds, useArbiter, type AdWithId } from '@/hooks/useEscrow'
 import { replaceQuery, useSearch } from '@/lib/router'
+import { SiteBar } from '@/components/SiteBar'
 import { Header, type TabId } from '@/components/Header'
 import { Market } from '@/components/Market'
 import { MyOrders, MyAds, ArbiterPanel } from '@/components/Lists'
@@ -49,6 +50,7 @@ export default function P2PPage() {
 
   return (
     <div className="min-h-dvh pb-24">
+      <SiteBar />
       <Header tab={tab} onTab={setTab} showArbiter={isArbiter} />
 
       <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-8 lg:px-12">

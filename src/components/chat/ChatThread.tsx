@@ -29,11 +29,13 @@ export function ChatThread({
 }) {
   const [draft, setDraft] = useState('')
   const { items, busy, health, send, refreshHealth, report } = useAgentContext()
-  const endRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const page = variant === 'page'
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const el = listRef.current
+    if (!el || !active || items.length === 0) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }, [items, busy, active])
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export function ChatThread({
 
   return (
     <>
-      <div className={`flex-1 space-y-3 overflow-y-auto ${page ? 'px-4 py-5 sm:px-6' : 'px-4 py-4'}`} aria-live="polite">
+      <div ref={listRef} className={`flex-1 space-y-3 overflow-y-auto ${page ? 'px-4 py-5 sm:px-6' : 'px-4 py-4'}`} aria-live="polite">
         {health.state === 'offline' && (
           <Notice>
             The assistant backend is not running. Start it with <code className="mono">bun run server</code>.
@@ -129,7 +131,6 @@ export function ChatThread({
             Thinking
           </p>
         )}
-        <div ref={endRef} />
       </div>
 
       <form

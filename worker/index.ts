@@ -430,11 +430,20 @@ async function handleApi(req: Request, env: Env, path: string): Promise<Response
   return json(404, { error: 'not_found' })
 }
 
+const APP_PATHS = ['/p2p', '/swap', '/bridge', '/admin', '/assistant']
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
     if (url.pathname.startsWith('/api/')) {
       return handleApi(request, env, url.pathname.slice(4))
+    }
+    if (
+      (url.hostname === 'onpeer.xyz' || url.hostname === 'www.onpeer.xyz') &&
+      (APP_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`)) ||
+        url.searchParams.has('order'))
+    ) {
+      return Response.redirect(`https://app.onpeer.xyz${url.pathname}${url.search}`, 302)
     }
     return env.ASSETS.fetch(request)
   },

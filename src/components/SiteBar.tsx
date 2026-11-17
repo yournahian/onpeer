@@ -35,29 +35,31 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
       <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
         <Brand tagline="USDC for South Asia" />
 
-        <nav className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Products">
-          {links.map((l) => (
-            <AppLink
-              key={l.to}
-              to={l.to}
-              aria-current={route === l.route ? 'page' : undefined}
-              className="relative flex min-h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none sm:px-4 sm:text-sm"
-              style={{ color: route === l.route ? 'var(--ink)' : 'var(--subtle)' }}
-            >
-              {route === l.route && (
-                <motion.span
-                  layoutId="site-pill"
-                  className="absolute inset-0 rounded-lg"
-                  style={{ background: 'var(--surface-strong)', border: '1px solid var(--border)' }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                />
-              )}
-              <span className="relative flex items-center gap-1.5">
-                <l.icon className="size-4" /> {l.label}
-              </span>
-            </AppLink>
-          ))}
-        </nav>
+        {!isLandingDomain() && (
+          <nav className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Products">
+            {links.map((l) => (
+              <AppLink
+                key={l.to}
+                to={l.to}
+                aria-current={route === l.route ? 'page' : undefined}
+                className="relative flex min-h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none sm:px-4 sm:text-sm"
+                style={{ color: route === l.route ? 'var(--ink)' : 'var(--subtle)' }}
+              >
+                {route === l.route && (
+                  <motion.span
+                    layoutId="site-pill"
+                    className="absolute inset-0 rounded-lg"
+                    style={{ background: 'var(--surface-strong)', border: '1px solid var(--border)' }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  />
+                )}
+                <span className="relative flex items-center gap-1.5">
+                  <l.icon className="size-4" /> {l.label}
+                </span>
+              </AppLink>
+            ))}
+          </nav>
+        )}
 
         <div className="flex items-center gap-2">
           <ThemeToggle className="hidden sm:inline-flex" />
