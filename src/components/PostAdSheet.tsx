@@ -1,28 +1,40 @@
-import { useMemo, useState } from 'react'
-import { useAccount } from 'wagmi'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useAccount, usePublicClient } from 'wagmi'
+import { keccak256, toBytes } from 'viem'
 import { ConnectKitButton } from 'connectkit'
-import { AlertTriangle } from 'lucide-react'
+import { toast } from 'sonner'
+import { AlertTriangle, Loader2, Lock, ShieldCheck, X } from 'lucide-react'
+import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
+  BUY_AD_MIN_COMPLETED,
   CHAIN_ID,
   COUNTRIES,
+  DEFAULT_TTL_HOURS,
   DETAILS_MAX_BYTES,
+  DETAILS_MODE,
+  ESCROW_ADDRESS,
   MERCHANT_MARGIN,
   MIN_TAKER_OPTIONS,
-  ESCROW_ADDRESS,
   SIDE_BUY,
   SIDE_SELL,
+  TTL_OPTIONS,
+  ZERO_BYTES32,
   bitsToMask,
   currencyToHex,
   formatUsdcAmount,
   methodsForCountry,
 } from '@/lib/p2p'
 import { parseUnitsExact } from '@/onchain-money'
-import { useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
+import { useListingFee, usePrivacySwitches, useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
-import { MethodLabel } from '@/components/logos'
+import { AppLink } from '@/components/AppLink'
+import { CountryFlag } from '@/components/logos'
 import { useEligibility } from '@/hooks/useEligibility'
-import { Button, Chip, Field, Sheet, inputClass } from '@/components/ui'
+import { BackendApiError } from '@/lib/api'
+import { useVaultActions } from '@/hooks/useVault'
 
 const safe = (v: string): bigint => {
   try {
@@ -37,31 +49,94 @@ const decimalInput = (setter: (v: string) => void, places: number) => (e: React.
   if (new RegExp(`^\\d*\\.?\\d{0,${places}}$`).test(v)) setter(v)
 }
 
+const ttlLabel = (h: number) => (h >= 24 && h % 24 === 0 ? `${h / 24}d (${h}h)` : `${h}h`)
+
 export function PostAdSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <Sheet open={open} onClose={onClose} title="Post an ad">
-      {open && <PostAdForm onDone={onClose} />}
-    </Sheet>
+  useEffect(() => {
+    if (!open) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open, onClose])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="p2p-terminal fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm sm:p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={onClose}
+        >
+          <motion.section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Create Buy / Sell Ad"
+            className="p2p-glass-popover relative flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-2xl text-[var(--p2p-ink)]"
+            initial={{ y: 20, opacity: 0, scale: 0.98 }}
+            animate={{ y: 0, opacity: 1, scale: 1 }}
+            exit={{ y: 20, opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.2 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <header className="flex items-center justify-between border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-4">
+              <div>
+                <h2 className="text-base font-bold text-[var(--p2p-ink)]">Create Buy / Sell Ad</h2>
+                <p className="text-xs text-[var(--p2p-muted)]">Non-custodial smart contract escrow on Arc</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="flex size-8 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
+              >
+                <X className="size-4" />
+              </button>
+            </header>
+            <div className="overflow-y-auto px-5 py-5">
+              <PostAdForm onDone={onClose} />
+            </div>
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
   )
 }
 
 function PostAdForm({ onDone }: { onDone: () => void }) {
-  const { isConnected } = useAccount()
+  const { address, isConnected } = useAccount()
+  const publicClient = usePublicClient({ chainId: CHAIN_ID })
   const balance = useUsdcBalance()
   const allowance = useUsdcAllowance()
+  const listingFee = useListingFee()
+  const { sealedEnabled } = usePrivacySwitches()
+  const { sealDetails, bindAdDetails } = useVaultActions()
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
   const { blocked, account } = useEligibility()
 
   const [side, setSide] = useState<number>(SIDE_SELL)
-  const [countryCode, setCountryCode] = useState('IN')
+  const [countryCode, setCountryCode] = useState('BD')
   const [price, setPrice] = useState('')
   const [total, setTotal] = useState('')
   const [min, setMin] = useState('')
   const [max, setMax] = useState('')
   const [bits, setBits] = useState<number[]>([])
-  const [windowMin, setWindowMin] = useState(30)
+  const [windowMin, setWindowMin] = useState(15)
+  const [ttlHours, setTtlHours] = useState<number>(DEFAULT_TTL_HOURS)
+  const [holderName, setHolderName] = useState('')
   const [details, setDetails] = useState('')
+  const [publicTerms, setPublicTerms] = useState('')
   const [minTaker, setMinTaker] = useState(0)
+  const [sealing, setSealing] = useState(false)
 
   const country = COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0]
   const methods = methodsForCountry(country.code)
@@ -69,17 +144,40 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
   const totalRaw = safe(total)
   const minRaw = safe(min)
   const maxRaw = safe(max)
-  const detailBytes = useMemo(() => new TextEncoder().encode(details).length, [details])
   const isSell = side === SIDE_SELL
+  const useSealedVault = sealedEnabled && isSell
+  const onchainText = useSealedVault ? publicTerms : details
+  const detailBytes = useMemo(() => new TextEncoder().encode(onchainText).length, [onchainText])
+  const requiredUsdc = (isSell ? totalRaw : 0n) + listingFee
+
+  const buyAdBlocked =
+    !isSell &&
+    isConnected &&
+    !!account &&
+    !account.merchant &&
+    account.ordersCompleted < BUY_AD_MIN_COMPLETED
 
   let problem: string | null = null
-  if (totalRaw > 0n && minRaw > 0n && maxRaw > 0n) {
-    if (minRaw > maxRaw) problem = 'Minimum cannot be above the maximum.'
-    else if (maxRaw > totalRaw) problem = 'Maximum cannot be above the total amount.'
-    else if (isSell && balance !== undefined && totalRaw > balance)
-      problem = `You only have ${formatUsdcAmount(balance)} USDC.`
+  if (buyAdBlocked) {
+    problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(MERCHANT_MARGIN, 0)} USDC or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
+  } else if (!isSell && isConnected && balance !== undefined && listingFee > balance) {
+    problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee)} USDC listing fee (${formatUsdcAmount(balance)} USDC available).`
+  } else if (totalRaw > 0n && minRaw > 0n && maxRaw > 0n) {
+    if (minRaw > maxRaw) problem = 'Minimum order cannot exceed maximum order.'
+    else if (maxRaw > totalRaw) problem = 'Maximum order cannot exceed total amount.'
+    else if (balance !== undefined && requiredUsdc > balance)
+      problem = `Insufficient wallet balance (${formatUsdcAmount(balance)} USDC available; ${formatUsdcAmount(requiredUsdc)} USDC needed with listing fee).`
   }
-  if (!problem && detailBytes > DETAILS_MAX_BYTES) problem = 'Payment details are too long.'
+  if (!problem && detailBytes > DETAILS_MAX_BYTES) {
+    problem = useSealedVault ? 'Public maker terms exceed 200 bytes.' : 'Payment details exceed 200 bytes.'
+  }
+  if (!problem && useSealedVault && details.trim().length > 400) {
+    problem = 'Encrypted receiving details exceed 400 characters.'
+  }
+
+  const sellDetailsReady = useSealedVault
+    ? holderName.trim().length >= 2 && details.trim().length >= 2
+    : details.trim().length > 0
 
   const ready =
     priceE6 > 0n &&
@@ -87,20 +185,54 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
     minRaw > 0n &&
     maxRaw > 0n &&
     bits.length > 0 &&
+    ttlHours >= 1 &&
+    ttlHours <= 168 &&
     !problem &&
     !blocked &&
-    (!isSell || details.trim().length > 0)
+    (!isSell || sellDetailsReady)
 
   const toggle = (bit: number) =>
     setBits((b) => (b.includes(bit) ? b.filter((x) => x !== bit) : [...b, bit]))
 
   const submit = async () => {
     const escrow = ESCROW_ADDRESS
-    if (!ready || !escrow) return
-    if (isSell && (allowance ?? 0n) < totalRaw) {
-      const ok = await approveUsdc(totalRaw)
+    if (!ready || !escrow || !address) return
+    if (requiredUsdc > 0n && (allowance ?? 0n) < requiredUsdc) {
+      const ok = await approveUsdc(requiredUsdc)
       if (!ok) return
     }
+
+    let modeArg: number = DETAILS_MODE.PLAIN
+    let hashArg: `0x${string}` = ZERO_BYTES32
+    let detailsArg = details.trim()
+    let sealedBlobId: string | null = null
+
+    if (sealedEnabled) {
+      modeArg = DETAILS_MODE.AUTO
+      if (isSell) {
+        setSealing(true)
+        try {
+          const res = await sealDetails({
+            kind: 'ad_details',
+            holderName: holderName.trim(),
+            accountDetails: details.trim(),
+            notes: publicTerms.trim(),
+          })
+          sealedBlobId = res.id
+          hashArg = res.contentHash
+          detailsArg = publicTerms.trim()
+        } catch (err) {
+          toast.error(err instanceof BackendApiError ? err.message : 'Wallet sign-in or vault encryption was cancelled.')
+          setSealing(false)
+          return
+        }
+        setSealing(false)
+      } else {
+        hashArg = keccak256(toBytes(`buy-ad-mode2:${address.toLowerCase()}:${details.trim()}`))
+        detailsArg = details.trim()
+      }
+    }
+
     const ok = await run('createAd', 'Post ad', () =>
       writeContractAsync({
         address: escrow,
@@ -116,165 +248,381 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
           bitsToMask(bits),
           windowMin,
           minTaker,
-          details.trim(),
+          ttlHours,
+          modeArg,
+          hashArg,
+          detailsArg,
         ],
         chainId: CHAIN_ID,
       }),
     )
-    if (ok) onDone()
+    if (ok) {
+      if (sealedBlobId && publicClient) {
+        void publicClient
+          .readContract({
+            address: escrow,
+            abi: p2pEscrowAbi,
+            functionName: 'getUserAdIds',
+            args: [address],
+          })
+          .then((adIds) => {
+            const latest = adIds[adIds.length - 1]
+            if (latest !== undefined) return bindAdDetails(sealedBlobId!, latest)
+          })
+          .catch(() => undefined)
+      }
+      onDone()
+    }
   }
 
   return (
     <div className="space-y-4">
-      <div role="tablist" className="grid grid-cols-2 rounded-xl p-1" style={{ background: 'var(--fill-2)' }}>
+      <div role="tablist" className="grid grid-cols-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-1">
         {[
-          { v: SIDE_SELL, label: 'I want to sell USDC' },
-          { v: SIDE_BUY, label: 'I want to buy USDC' },
-        ].map((o) => (
-          <button
-            key={o.v}
-            role="tab"
-            aria-selected={side === o.v}
-            onClick={() => setSide(o.v)}
-            className="min-h-10 rounded-lg text-sm font-bold transition-colors"
-            style={{
-              background: side === o.v ? 'var(--accent-bg)' : 'transparent',
-              color: side === o.v ? 'var(--on-accent)' : 'var(--muted)',
-            }}
-          >
-            {o.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Country">
-        {COUNTRIES.map((c) => (
-          <Chip
-            key={c.code}
-            active={c.code === countryCode}
-            onClick={() => {
-              setCountryCode(c.code)
-              setBits([])
-            }}
-          >
-            {c.currency}
-          </Chip>
-        ))}
-      </div>
-
-      <Field label={`Price per 1 USDC (${country.currency})`}>
-        <input
-          inputMode="decimal"
-          value={price}
-          onChange={decimalInput(setPrice, 4)}
-          placeholder="0.00"
-          className={`${inputClass} display text-2xl font-bold`}
-        />
-      </Field>
-
-      <Field
-        label={isSell ? 'USDC to lock in escrow' : 'Maximum USDC you want to buy'}
-        hint={isSell && balance !== undefined ? `Balance ${formatUsdcAmount(balance)} USDC` : undefined}
-      >
-        <input
-          inputMode="decimal"
-          value={total}
-          onChange={decimalInput(setTotal, 6)}
-          placeholder="0.00"
-          className={inputClass}
-        />
-      </Field>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Min order (USDC)">
-          <input inputMode="decimal" value={min} onChange={decimalInput(setMin, 6)} placeholder="10" className={inputClass} />
-        </Field>
-        <Field label="Max order (USDC)">
-          <input inputMode="decimal" value={max} onChange={decimalInput(setMax, 6)} placeholder="500" className={inputClass} />
-        </Field>
+          { v: SIDE_SELL, label: 'Sell USDC (Lock Escrow)' },
+          { v: SIDE_BUY, label: 'Buy USDC' },
+        ].map((o) => {
+          const active = side === o.v
+          return (
+            <button
+              key={o.v}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSide(o.v)}
+              className={`min-h-10 rounded-md text-xs font-bold transition-colors sm:text-sm ${
+                active ? 'bg-[#FF5A00] text-[#FFFFFF]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+              }`}
+            >
+              {o.label}
+            </button>
+          )
+        })}
       </div>
 
       <div>
-        <p className="mb-1.5 text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
-          Payment methods
-        </p>
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+          Fiat Market
+        </span>
+        <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Currency">
+          {COUNTRIES.map((c) => {
+            const active = c.code === countryCode
+            return (
+              <button
+                key={c.code}
+                type="button"
+                onClick={() => {
+                  setCountryCode(c.code)
+                  setBits([])
+                }}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                }`}
+              >
+                <CountryFlag code={c.code} size={14} />
+                {c.currency}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            Price per 1 USDC ({country.currency})
+          </span>
+          <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+            <input
+              inputMode="decimal"
+              value={price}
+              onChange={decimalInput(setPrice, 4)}
+              placeholder="0.00"
+              className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
+            />
+            <span className="text-xs font-bold text-[var(--p2p-muted)]">{country.currency}</span>
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            <span>{isSell ? 'USDC to Lock' : 'Total Buy Target'}</span>
+            {balance !== undefined && (
+              <span className="p2p-mono normal-case text-[#FF5A00]">Bal: {formatUsdcAmount(balance)}</span>
+            )}
+          </span>
+          <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+            <input
+              inputMode="decimal"
+              value={total}
+              onChange={decimalInput(setTotal, 6)}
+              placeholder="100.00"
+              className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
+            />
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
+              <TokenUSDC variant="branded" size={14} /> USDC
+            </span>
+          </div>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            Min Order (USDC)
+          </span>
+          <input
+            inputMode="decimal"
+            value={min}
+            onChange={decimalInput(setMin, 6)}
+            placeholder="10"
+            className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            Max Order (USDC)
+          </span>
+          <input
+            inputMode="decimal"
+            value={max}
+            onChange={decimalInput(setMax, 6)}
+            placeholder="500"
+            className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
+          />
+        </label>
+      </div>
+
+      <div>
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+          Accepted Payment Methods
+        </span>
         <div className="flex flex-wrap gap-2">
-          {methods.map((m) => (
-            <Chip key={m.bit} active={bits.includes(m.bit)} onClick={() => toggle(m.bit)}>
-              <MethodLabel method={m} />
-            </Chip>
+          {methods.map((m) => {
+            const active = bits.includes(m.bit)
+            return (
+              <button
+                key={m.bit}
+                type="button"
+                aria-pressed={active}
+                onClick={() => toggle(m.bit)}
+                className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  active
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                }`}
+                style={{ borderLeft: '3px solid #FF5A00' }}
+              >
+                {m.name}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            Payment Window
+          </span>
+          <div className="grid grid-cols-4 gap-1.5">
+            {[15, 30, 45, 60].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setWindowMin(m)}
+                className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                  windowMin === m
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            Ad Expiry (TTL)
+          </span>
+          <div className="grid grid-cols-4 gap-1.5">
+            {TTL_OPTIONS.map((h) => (
+              <button
+                key={h}
+                type="button"
+                onClick={() => setTtlHours(h)}
+                className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                  ttlHours === h
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                }`}
+              >
+                {ttlLabel(h).split(' ')[0]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+          Counterparty Requirement
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {MIN_TAKER_OPTIONS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              onClick={() => setMinTaker(n)}
+              className={`p2p-mono rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                minTaker === n
+                  ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+              }`}
+            >
+              {n === 0 ? 'Anyone' : `${n}+ trades`}
+            </button>
           ))}
         </div>
       </div>
 
-      <Field label="Payment window">
-        <div className="flex gap-2">
-          {[15, 30, 45, 60].map((m) => (
-            <Chip key={m} active={windowMin === m} onClick={() => setWindowMin(m)}>
-              {m} min
-            </Chip>
-          ))}
+      {useSealedVault ? (
+        <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A00]">
+              <Lock className="size-3.5" /> Encrypted Vault Details (Mode 2 Auto-Reveal)
+            </span>
+            <AppLink to="/privacy" className="text-[11px] font-semibold text-[#FF5A00] underline">
+              Operator encryption notice
+            </AppLink>
+          </div>
+          <p className="text-[11px] text-[var(--p2p-muted)]">
+            Your account number is encrypted offchain (AES-256-GCM) and revealed only to an active order&apos;s buyer
+            and arbiter. Only the ciphertext hash goes onchain.
+          </p>
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              Account Holder Full Name (Matched Against KYC)
+            </span>
+            <input
+              value={holderName}
+              onChange={(e) => setHolderName(e.target.value.slice(0, 80))}
+              placeholder="Full name on your bank / mobile wallet"
+              className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              <span>Receiving Account / UPI / Wallet Number</span>
+              <span className="p2p-mono normal-case">{details.length}/400</span>
+            </span>
+            <textarea
+              value={details}
+              onChange={(e) => setDetails(e.target.value.slice(0, 400))}
+              rows={2}
+              placeholder="e.g. bKash Personal 01XXXXXXXXX or name@okaxis"
+              className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              <span>Public Maker Terms (Optional — Never Put Account Numbers Here)</span>
+              <span className="p2p-mono normal-case">
+                {detailBytes}/{DETAILS_MAX_BYTES}B
+              </span>
+            </span>
+            <input
+              value={publicTerms}
+              onChange={(e) => setPublicTerms(e.target.value)}
+              placeholder="e.g. Send from verified personal account only; no remarks"
+              className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
+            />
+          </label>
         </div>
-      </Field>
-
-      <Field
-        label="Who can trade with you"
-        hint="Require a minimum number of completed trades with different counterparties. Protects you from brand-new accounts."
-      >
-        <div className="flex flex-wrap gap-2">
-          {MIN_TAKER_OPTIONS.map((n) => (
-            <Chip key={n} active={minTaker === n} onClick={() => setMinTaker(n)}>
-              {n === 0 ? 'Anyone' : `${n}+ trades`}
-            </Chip>
-          ))}
-        </div>
-      </Field>
-
-      <Field
-        label={isSell ? 'Where buyers should send fiat' : 'Note for sellers (optional)'}
-        hint={
-          isSell
-            ? `Shown to buyers and stored onchain, so everyone can read it (${detailBytes}/${DETAILS_MAX_BYTES} bytes). Use a receive-only ID in your own name.`
-            : 'Sellers will add their own receiving details when they open an order.'
-        }
-      >
-        <textarea
-          value={details}
-          onChange={(e) => setDetails(e.target.value)}
-          rows={2}
-          placeholder={isSell ? 'e.g. name@upi' : 'e.g. I pay within 5 minutes'}
-          className={`${inputClass} resize-none text-sm`}
-        />
-      </Field>
-
-      {(problem || blocked) && (
-        <p className="flex items-start gap-2 text-sm" style={{ color: 'var(--danger)' }}>
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {blocked ?? problem}
-        </p>
+      ) : (
+        <label className="block">
+          <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+            <span>{isSell ? 'Receiving Account Details' : 'Terms / Note for Sellers (Optional)'}</span>
+            <span className="p2p-mono normal-case">
+              {detailBytes}/{DETAILS_MAX_BYTES}B
+            </span>
+          </span>
+          <textarea
+            value={details}
+            onChange={(e) => setDetails(e.target.value)}
+            rows={2}
+            placeholder={
+              isSell
+                ? 'e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi'
+                : 'e.g. Instant payment from verified account'
+            }
+            className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
+          />
+        </label>
       )}
 
-      <p className="text-xs" style={{ color: 'var(--subtle)' }}>
-        {account?.merchant
-          ? 'Your ad will carry the Merchant badge. It stays fillable only while your security margin stays above 100 USDC.'
-          : `Want a Merchant badge? Deposit ${formatUsdcAmount(MERCHANT_MARGIN, 0)} USDC security margin on the Merchant tab before posting.`}
-      </p>
+      <div className="space-y-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
+        <div className="flex items-center justify-between">
+          <span className="text-[var(--p2p-muted)]">Listing fee (per ad, non-refundable)</span>
+          <span className="p2p-mono font-bold text-[#FF5A00]">
+            Listing fee {formatUsdcAmount(listingFee)} USDC
+          </span>
+        </div>
+        <div className="flex items-start gap-2.5 border-t border-[var(--p2p-border)] pt-2 text-[var(--p2p-muted)]">
+          {account?.merchant ? (
+            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+          ) : (
+            <Lock className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+          )}
+          <span>
+            {isSell
+              ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc)} USDC (${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC escrow + ${formatUsdcAmount(listingFee)} USDC listing fee). Refreshing ads & trading are free.`
+              : account?.merchant
+                ? `Verified Merchant active — ${formatUsdcAmount(listingFee)} USDC listing fee pulled on creation; refreshing & trades are free.`
+                : `Buy Ads require Merchant Margin >= 100 USDC or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee)} USDC listing fee.`}
+          </span>
+        </div>
+      </div>
+
+      {(problem || blocked) && (
+        <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <span>{blocked ?? problem}</span>
+        </div>
+      )}
 
       {isConnected ? (
-        <Button className="w-full" disabled={!ready} loading={busy} onClick={() => void submit()}>
-          {pendingKey === 'approve'
-            ? 'Approve USDC in wallet...'
-            : busy
-              ? 'Confirm in wallet...'
-              : isSell
-                ? 'Lock USDC and post ad'
-                : 'Post ad'}
-        </Button>
+        <button
+          type="button"
+          disabled={!ready || busy || sealing}
+          onClick={() => void submit()}
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {(busy || sealing) && <Loader2 className="size-4 animate-spin" />}
+          {sealing
+            ? 'Encrypting Details in Vault...'
+            : pendingKey === 'approve'
+              ? 'Approve USDC in Wallet...'
+              : busy
+                ? 'Confirming in Wallet...'
+                : isSell
+                  ? `Lock ${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC (+${formatUsdcAmount(listingFee)} Fee) & Post`
+                  : `Post Buy Ad (${formatUsdcAmount(listingFee)} USDC Fee)`}
+        </button>
       ) : (
         <ConnectKitButton.Custom>
           {({ show }) => (
-            <Button className="w-full" onClick={show}>
-              Connect wallet
-            </Button>
+            <button
+              type="button"
+              onClick={show}
+              className="min-h-11 w-full rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] hover:opacity-90"
+            >
+              Connect Wallet
+            </button>
           )}
         </ConnectKitButton.Custom>
       )}

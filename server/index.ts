@@ -1,4 +1,9 @@
 /**
+ * @deprecated LEGACY — The assistant backend is now handled by the Cloudflare Worker
+ * (`worker/index.ts`) which also serves the AI chat endpoint at `POST /api/chat`.
+ * This Bun server (`bun run server`) is no longer wired to the Vite proxy and is kept
+ * only as a local fallback for standalone testing without wrangler dev.
+ *
  * Chat backend for the in-app assistant.
  * Holds the AI provider key (never sent to the browser), owns the system prompt and the tool list,
  * and forwards one completion at a time. Tools run in the browser, where the wallet and chain reads are.

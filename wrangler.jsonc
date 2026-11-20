@@ -2,12 +2,28 @@
   "name": "onpeer",
   "main": "worker/index.ts",
   "compatibility_date": "2025-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "VITE_P2P_ESCROW_ADDRESS": "0xf719ebbc5080aee09e38909764b897e0bf01a9b0",
+    "VITE_P2P_DEPLOY_BLOCK": "72902228",
+    "DIDIT_MODE": "sandbox",
+    "PUBLIC_APP_URL": "https://app.onpeer.xyz"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "29784572f5b142fbaec583da0f7d131f"
+    }
+  ],
   "kv_namespaces": [
     {
       "binding": "AI_SETTINGS_KV",
       "id": "87e9c110ebe247f784a9db6e83858216"
     }
   ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

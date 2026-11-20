@@ -40,12 +40,11 @@ export default defineConfig({
   server: {
     allowedHosts: true,
     cors: true,
-    // Assistant backend (bun run server). The browser only ever talks to /api.
+    // Cloudflare Worker backend (npx wrangler dev on :8787). Keep /api prefix intact.
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: 'http://127.0.0.1:8787',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ''),
       },
     },
   },

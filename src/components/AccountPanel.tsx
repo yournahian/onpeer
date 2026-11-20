@@ -1,20 +1,26 @@
 import { useState } from 'react'
 import { useAccount } from 'wagmi'
-import { BadgeCheck, ShieldCheck } from 'lucide-react'
+import { ConnectKitButton } from 'connectkit'
+import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react'
+import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
   ESCROW_ADDRESS,
   MARGIN_DELAY_DAYS,
   MERCHANT_MARGIN,
+  TIER_TABLE,
   formatDuration,
+  formatOrderCap,
   formatUsdcAmount,
+  shortAddr,
 } from '@/lib/p2p'
-import { parseUnitsExact } from '@/onchain-money'
-import { useNow, useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
+import { formatUnitsFixed, parseUnitsExact } from '@/onchain-money'
+import { useDebts, useNow, useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useTx } from '@/hooks/useTx'
-import { Button, Empty, Field, inputClass } from '@/components/ui'
+import { AccountSetup } from '@/components/AccountSetup'
+import { KycPanel } from '@/components/KycPanel'
 
 const parse = (v: string): bigint => {
   try {
@@ -25,25 +31,53 @@ const parse = (v: string): bigint => {
 }
 
 export function AccountPanel() {
-  const { isConnected } = useAccount()
-  const { account, blocked } = useEligibility()
+  const { address, isConnected } = useAccount()
+  const { account, blocked, kyc, kycRequired } = useEligibility()
+  const debts = useDebts(address)
   const balance = useUsdcBalance()
   const allowance = useUsdcAllowance()
   const now = useNow()
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
   const [deposit, setDeposit] = useState('')
   const [withdraw, setWithdraw] = useState('')
+  const [repay, setRepay] = useState('')
 
-  if (!isConnected) return <Empty title="Connect your wallet" body="Your trust profile and merchant margin live here." />
-  if (!account || !ESCROW_ADDRESS) return <div className="glass h-48 animate-pulse rounded-3xl" />
+  if (!isConnected) {
+    return (
+      <div className="p2p-card rounded-xl px-6 py-14 text-center">
+        <p className="text-base font-bold text-[var(--p2p-ink)]">Connect Your Wallet</p>
+        <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
+          Inspect your account tier, stake 100 USDC Merchant Margin, or repay unpaid dispute bonds.
+        </p>
+        <ConnectKitButton.Custom>
+          {({ show }) => (
+            <button
+              type="button"
+              onClick={show}
+              className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90"
+            >
+              Connect Wallet
+            </button>
+          )}
+        </ConnectKitButton.Custom>
+      </div>
+    )
+  }
+
+  if (!account || !ESCROW_ADDRESS) {
+    return <div className="p2p-card h-56 animate-pulse rounded-xl" />
+  }
 
   const escrow = ESCROW_ADDRESS
   const base = { address: escrow, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
   const depositRaw = parse(deposit)
   const withdrawRaw = parse(withdraw)
+  const repayRaw = repay ? parse(repay) : account.totalDebt
+  const effectiveRepay = repayRaw > account.totalDebt ? account.totalDebt : repayRaw
   const pending = account.pendingWithdrawal
   const unlockIn = Number(account.withdrawalUnlockAt) - now
-  const rate = account.ordersCreated > 0 ? Math.round((account.ordersCompleted / account.ordersCreated) * 100) : null
+  const rate = account.ordersCreated > 0 ? ((account.ordersCompleted / account.ordersCreated) * 100).toFixed(2) : null
+  const tierMeta = TIER_TABLE[account.tier] ?? TIER_TABLE[0]
 
   const doDeposit = async () => {
     if ((allowance ?? 0n) < depositRaw) {
@@ -55,6 +89,19 @@ export function AccountPanel() {
     )
     if (ok) setDeposit('')
   }
+
+  const doRepay = async () => {
+    if (effectiveRepay === 0n) return
+    if ((allowance ?? 0n) < effectiveRepay) {
+      const ok = await approveUsdc(effectiveRepay)
+      if (!ok) return
+    }
+    const ok = await run('repayDebt', 'Repay dispute bond debt', () =>
+      writeContractAsync({ ...base, functionName: 'repayDebt', args: [effectiveRepay] }),
+    )
+    if (ok) setRepay('')
+  }
+
   const doRequest = async () => {
     const ok = await run('request', 'Request withdrawal', () =>
       writeContractAsync({ ...base, functionName: 'requestMarginWithdrawal', args: [withdrawRaw] }),
@@ -62,144 +109,281 @@ export function AccountPanel() {
     if (ok) setWithdraw('')
   }
 
-  const stat = (label: string, value: string, tone?: string) => (
-    <div>
-      <p className="text-xs uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
-        {label}
-      </p>
-      <p className="display text-2xl font-bold tabular-nums" style={tone ? { color: tone } : undefined}>
-        {value}
-      </p>
-    </div>
-  )
-
   return (
     <div className="space-y-5">
-      <section className="glass rounded-3xl p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <ShieldCheck className="size-4" style={{ color: 'var(--accent)' }} />
-          <h2 className="display text-lg font-semibold">Trust profile</h2>
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {stat('Trades', String(account.ordersCompleted))}
-          {stat('Completion', rate === null ? 'None yet' : `${rate}%`)}
-          {stat('Volume', `${formatUsdcAmount(account.volume, 0)}`)}
-          {stat('Disputes lost', String(account.disputesLost), account.disputesLost > 0 ? 'var(--danger)' : undefined)}
-        </div>
-        <p className="mt-4 text-xs" style={{ color: blocked ? 'var(--danger)' : 'var(--subtle)' }}>
-          {blocked ?? 'Your account is in good standing. Trades count once per distinct counterparty, for orders of 10 USDC or more.'}
-        </p>
-        {account.strikes > 0 && (
-          <p className="mt-1 text-xs" style={{ color: 'var(--warn)' }}>
-            Cancellation strikes: {account.strikes} of 3 in the current 24-hour window.
+      <AccountSetup />
+      <KycPanel />
+      {account.totalDebt > 0n && (
+        <section className="p2p-card rounded-xl !border-[#FF5A00] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-base font-bold text-[#FF5A00]">
+              <AlertTriangle className="size-4" />
+              Unpaid Dispute Bond: <span className="p2p-mono">{formatUsdcAmount(account.totalDebt)} USDC</span>
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-[var(--p2p-muted)]">
+            New ads and new orders are locked until this dispute bond debt is repaid. Existing orders and withdrawals remain available.
           </p>
-        )}
-      </section>
 
-      <section className="glass rounded-3xl p-5">
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="display text-lg font-semibold">Merchant security margin</h2>
-          {account.merchant && (
-            <span
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold"
-              style={{ background: 'rgba(141,216,159,0.14)', color: 'var(--success)' }}
-            >
-              <BadgeCheck className="size-3.5" /> Merchant
-            </span>
+          {debts.length > 0 && (
+            <ul className="mt-3 space-y-1.5 text-xs">
+              {debts.map((d, idx) => (
+                <li
+                  key={`${d.creditor}-${idx}`}
+                  className="flex items-center justify-between rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2"
+                >
+                  <span className="text-[var(--p2p-muted)]">
+                    Creditor <span className="p2p-mono text-[var(--p2p-ink)]">{shortAddr(d.creditor)}</span>
+                  </span>
+                  <span className="p2p-mono font-bold text-[#FF5A00]">{formatUsdcAmount(d.amount)} USDC</span>
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
-        <p className="text-sm text-pretty" style={{ color: 'var(--muted)' }}>
-          Lock at least {formatUsdcAmount(MERCHANT_MARGIN, 0)} USDC to earn a Merchant badge on your ads. If the arbiter
-          rules against you, part of this margin can be paid to the other trader. Withdrawals take {MARGIN_DELAY_DAYS} days
-          and are blocked while you have open orders.
-        </p>
 
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          {stat('Margin', `${formatUsdcAmount(account.margin)} USDC`)}
-          {stat('Counts for badge', `${formatUsdcAmount(account.effectiveMargin)} USDC`)}
+          <div className="mt-4 flex flex-col gap-2.5 sm:flex-row sm:items-end">
+            <label className="flex-1">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Amount to Repay (USDC)
+              </span>
+              <input
+                inputMode="decimal"
+                value={repay}
+                onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setRepay(e.target.value)}
+                placeholder={formatUnitsFixed(account.totalDebt, 6, 2)}
+                className="p2p-input p2p-mono h-11 w-full rounded-lg px-3 text-sm font-bold"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={effectiveRepay === 0n || (balance !== undefined && effectiveRepay > balance) || busy}
+              onClick={() => void doRepay()}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
+            >
+              {(pendingKey === 'repayDebt' || pendingKey === 'approve') && (
+                <Loader2 className="size-4 animate-spin" />
+              )}
+              Repay {formatUsdcAmount(effectiveRepay)} USDC
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Merchant Security Margin Card */}
+      <section className="p2p-card rounded-xl p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--p2p-border)] pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-[var(--p2p-ink)]">Merchant Security Margin</h2>
+              {account.merchant && (
+                <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
+                  <ShieldCheck className="size-3.5" /> Verified Merchant
+                </span>
+              )}
+            </div>
+            <p className="mt-1 max-w-2xl text-xs text-[var(--p2p-muted)]">
+              Stake <strong className="text-[var(--p2p-ink)]">{formatUsdcAmount(MERCHANT_MARGIN, 0)} USDC</strong> or more to earn the Merchant Shield, unlock Buy Ads immediately, and receive at least the 500 USDC per-order tier. Withdrawals have a {MARGIN_DELAY_DAYS}-day timelock and require zero open orders.
+            </p>
+          </div>
+
+          <div className="flex gap-4 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 py-2.5">
+            <div>
+              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">
+                Total Margin
+              </span>
+              <span className="p2p-mono text-base font-bold text-[var(--p2p-ink)]">
+                {formatUsdcAmount(account.margin)} USDC
+              </span>
+            </div>
+            <div className="border-l border-[var(--p2p-border)] pl-4">
+              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">
+                Free Margin
+              </span>
+              <span className="p2p-mono text-base font-bold text-[#FF5A00]">
+                {formatUsdcAmount(account.effectiveMargin)} USDC
+              </span>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Field label="Deposit USDC" hint={balance !== undefined ? `Balance ${formatUsdcAmount(balance)} USDC` : undefined}>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 space-y-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[var(--p2p-ink)]">Stake USDC Margin</span>
+              {balance !== undefined && (
+                <span className="p2p-mono text-[var(--p2p-muted)]">
+                  Wallet: {formatUsdcAmount(balance)} USDC
+                </span>
+              )}
+            </div>
+            <div className="p2p-input flex items-center rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2.5">
               <input
                 inputMode="decimal"
                 value={deposit}
                 onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setDeposit(e.target.value)}
-                placeholder="100"
-                className={inputClass}
+                placeholder="100.00"
+                className="p2p-mono w-full bg-transparent text-sm font-bold text-[var(--p2p-ink)] outline-none"
               />
-            </Field>
-            <Button
-              className="w-full"
-              disabled={depositRaw === 0n || (balance !== undefined && depositRaw > balance)}
-              loading={pendingKey === 'deposit' || pendingKey === 'approve'}
+              <button
+                type="button"
+                onClick={() => setDeposit('100')}
+                className="mr-2 text-xs font-bold text-[#FF5A00]"
+              >
+                100
+              </button>
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
+                <TokenUSDC variant="branded" size={14} /> USDC
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={depositRaw === 0n || (balance !== undefined && depositRaw > balance) || busy}
               onClick={() => void doDeposit()}
+              className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
             >
-              Deposit margin
-            </Button>
+              {(pendingKey === 'deposit' || pendingKey === 'approve') && (
+                <Loader2 className="size-3.5 animate-spin" />
+              )}
+              Deposit Margin
+            </button>
           </div>
 
-          <div className="space-y-2">
+          <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 space-y-3">
             {pending === 0n ? (
               <>
-                <Field label="Withdraw USDC" hint={`Available after a ${MARGIN_DELAY_DAYS}-day wait`}>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-[var(--p2p-ink)]">Request Margin Withdrawal</span>
+                  <span className="text-[var(--p2p-muted)]">{MARGIN_DELAY_DAYS}-day cooldown</span>
+                </div>
+                <div className="p2p-input flex items-center rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2.5">
                   <input
                     inputMode="decimal"
                     value={withdraw}
                     onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setWithdraw(e.target.value)}
                     placeholder="0.00"
-                    className={inputClass}
+                    className="p2p-mono w-full bg-transparent text-sm font-bold text-[var(--p2p-ink)] outline-none"
                   />
-                </Field>
-                <Button
-                  variant="ghost"
-                  className="w-full"
-                  disabled={withdrawRaw === 0n || withdrawRaw > account.margin}
-                  loading={pendingKey === 'request'}
+                  <span className="text-xs font-bold text-[var(--p2p-ink)]">USDC</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={withdrawRaw === 0n || withdrawRaw > account.margin || busy}
                   onClick={() => void doRequest()}
+                  className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] px-4 text-xs font-bold text-[var(--p2p-ink)] hover:border-[#FF5A00] disabled:opacity-40"
                 >
-                  Request withdrawal
-                </Button>
+                  {pendingKey === 'request' && <Loader2 className="size-3.5 animate-spin" />}
+                  Request Withdrawal
+                </button>
               </>
             ) : (
-              <>
-                <p className="text-sm font-semibold tabular-nums">
-                  Pending withdrawal: {formatUsdcAmount(pending)} USDC
-                </p>
-                <p className="text-xs" style={{ color: 'var(--subtle)' }}>
-                  {unlockIn > 0 ? `Unlocks in ${formatDuration(unlockIn)}` : 'Ready to withdraw'}
-                  {account.partyOpen > 0n && ' · blocked while you have open orders'}
-                </p>
+              <div className="flex h-full flex-col justify-between space-y-3">
+                <div>
+                  <p className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
+                    Queued: {formatUsdcAmount(pending)} USDC
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--p2p-muted)]">
+                    {unlockIn > 0 ? `Unlocks in ${formatDuration(unlockIn)}` : 'Unlocked — ready to withdraw'}
+                    {account.partyOpen > 0n && ' • Finish open orders first'}
+                  </p>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <Button
+                  <button
+                    type="button"
                     disabled={unlockIn > 0 || account.partyOpen > 0n || busy}
-                    loading={pendingKey === 'complete'}
                     onClick={() =>
                       void run('complete', 'Withdraw margin', () =>
                         writeContractAsync({ ...base, functionName: 'completeMarginWithdrawal' }),
                       )
                     }
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#FF5A00] px-3 text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
                   >
                     Withdraw
-                  </Button>
-                  <Button
-                    variant="ghost"
+                  </button>
+                  <button
+                    type="button"
                     disabled={busy}
-                    loading={pendingKey === 'cancelReq'}
                     onClick={() =>
                       void run('cancelReq', 'Cancel request', () =>
                         writeContractAsync({ ...base, functionName: 'cancelMarginWithdrawal' }),
                       )
                     }
+                    className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] px-3 text-xs font-semibold text-[var(--p2p-ink)]"
                   >
                     Cancel
-                  </Button>
+                  </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>
+      </section>
+
+      {/* Trust Profile & Tier Caps */}
+      <section className="p2p-card rounded-xl p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-bold text-[var(--p2p-ink)]">Account Standing &amp; Order Tier</h2>
+          <span className="p2p-mono rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-1 text-xs font-bold text-[#FF5A00]">
+            Tier {account.tier}: {tierMeta.label} • Cap {formatOrderCap(account.orderCap)}
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-4">
+          {[
+            ['Completed', String(account.ordersCompleted)],
+            ['Completion Rate', rate === null ? '—' : `${rate}%`],
+            ['Volume', `${formatUsdcAmount(account.volume, 0)} USDC`],
+            ['Per-Order Cap', formatOrderCap(account.orderCap)],
+            [
+              'KYC Status',
+              kyc.verified
+                ? `Verified L${kyc.level}`
+                : kycRequired
+                  ? 'Required (Unverified)'
+                  : 'Off / Optional',
+            ],
+            ['Concessions', `${account.concessions} (2 = 1 loss)`],
+            ['Lost Disputes', String(account.disputesLost)],
+            ['Late Marks (30d)', `${account.lateMarks} / 2`],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
+              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">{k}</span>
+              <span className="p2p-mono mt-1 block text-base font-bold text-[var(--p2p-ink)]">{v}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 grid gap-2.5 sm:grid-cols-4">
+          {TIER_TABLE.map((t) => {
+            const current = account.tier === t.tier
+            return (
+              <div
+                key={t.tier}
+                className={`rounded-lg border p-3 text-xs ${
+                  current
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)]'
+                }`}
+              >
+                <p className={`font-bold ${current ? 'text-[#FF5A00]' : 'text-[var(--p2p-ink)]'}`}>
+                  Tier {t.tier} • {t.label}
+                </p>
+                <p className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
+                  {t.cap === null ? 'Uncapped' : `${formatUsdcAmount(t.cap, 0)} USDC`}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[var(--p2p-muted)]">{t.requirement}</p>
+              </div>
+            )
+          })}
+        </div>
+
+        <p className="mt-3 text-xs text-[var(--p2p-muted)]">
+          {blocked ? (
+            <span className="font-semibold text-[#FF5A00]">{blocked}</span>
+          ) : (
+            'Account in good standing. Completed trades count once per distinct counterparty for orders >= 10 USDC.'
+          )}
+          {account.strikes > 0 && ` • Cancellation strikes (24h): ${account.strikes}/3`}
+        </p>
       </section>
     </div>
   )

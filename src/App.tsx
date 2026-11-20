@@ -14,11 +14,12 @@ import BridgePage from '@/pages/Bridge'
 import AdminPage from '@/pages/Admin'
 import AssistantPage from '@/pages/Assistant'
 import BrandKitPage from '@/pages/BrandKit'
+import PrivacyPage from '@/pages/Privacy'
 
 export default function App() {
   const route = useRoute()
   const search = useSearch()
-  const redirectToApp = isLandingDomain() && route !== 'home' && route !== 'brand-kit'
+  const redirectToApp = isLandingDomain() && route !== 'home' && route !== 'brand-kit' && route !== 'privacy'
 
   useEffect(() => {
     if (redirectToApp) {
@@ -41,6 +42,8 @@ export default function App() {
       <AssistantPage />
     ) : route === 'brand-kit' ? (
       <BrandKitPage />
+    ) : route === 'privacy' ? (
+      <PrivacyPage />
     ) : (
       <Home />
     )

@@ -1,31 +1,46 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
+import { ConnectKitButton } from 'connectkit'
+import { AlertTriangle, ShieldCheck } from 'lucide-react'
+import { toast } from 'sonner'
 import { ESCROW_ADDRESS, sameAddr } from '@/lib/p2p'
-import { useAds, useArbiter, type AdWithId } from '@/hooks/useEscrow'
+import { useAds, useArbiter, useBackupArbiter } from '@/hooks/useEscrow'
 import { replaceQuery, useSearch } from '@/lib/router'
+import { unsubscribeEmailToken, useP2pAccount, verifyEmailToken } from '@/hooks/useAccount'
 import { SiteBar } from '@/components/SiteBar'
-import { Header, type TabId } from '@/components/Header'
+import { Header, MobileBottomNav, type TabId } from '@/components/Header'
 import { Market } from '@/components/Market'
 import { MyOrders, MyAds, ArbiterPanel } from '@/components/Lists'
-import { TradeSheet } from '@/components/TradeSheet'
 import { PostAdSheet } from '@/components/PostAdSheet'
 import { OrderRoom } from '@/components/OrderRoom'
 import { AccountPanel } from '@/components/AccountPanel'
-import { Empty } from '@/components/ui'
-import { P2PSidebar } from '@/components/P2PSidebar'
+import { AccountSetup } from '@/components/AccountSetup'
+import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 import { useEligibility } from '@/hooks/useEligibility'
 
 const parseId = (raw: string | null): bigint | null => (raw && /^\d+$/.test(raw) ? BigInt(raw) : null)
 
 export default function P2PPage() {
-  const { address } = useAccount()
+  const { address, isConnected } = useAccount()
+  const { isSignedIn, profile, isLoading: accountLoading } = useP2pAccount()
   const arbiter = useArbiter()
+  const backupArbiter = useBackupArbiter()
   const { blocked } = useEligibility()
-  const [selectedTab, setTab] = useState<TabId>('market')
-  const [tradeAd, setTradeAd] = useState<AdWithId | null>(null)
+  const [selectedTab, setTab] = useState<TabId>(() => {
+    if (typeof window !== 'undefined') {
+      const hp = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      const sp = new URLSearchParams(window.location.search)
+      if (hp.has('verify_email') || hp.has('unsubscribe') || hp.has('kyc_return') || sp.has('kyc_return')) {
+        return 'account'
+      }
+    }
+    return 'market'
+  })
   const [postOpen, setPostOpen] = useState(false)
-  const isArbiter = sameAddr(address, arbiter)
+
+  const isArbiter = sameAddr(address, arbiter) || sameAddr(address, backupArbiter)
   const tab: TabId = selectedTab === 'arbiter' && !isArbiter ? 'market' : selectedTab
+
   const search = useSearch()
   const params = new URLSearchParams(search)
   const orderId = parseId(params.get('order'))
@@ -33,85 +48,166 @@ export default function P2PPage() {
   const deepAmount = params.get('amount') ?? undefined
   const { ads } = useAds()
   const deepAd = deepTradeId !== null ? ads.find((a) => a.id === deepTradeId) : undefined
-  const activeAd = tradeAd ?? deepAd ?? null
 
   const openOrder = (id: bigint | null) =>
     replaceQuery((p) => {
       if (id === null) p.delete('order')
-      else p.set('order', id.toString())
+      else {
+        p.delete('trade')
+        p.delete('amount')
+        p.set('order', id.toString())
+      }
     })
-  const closeTrade = () => {
-    setTradeAd(null)
+
+  const clearDeepTrade = () =>
     replaceQuery((p) => {
       p.delete('trade')
       p.delete('amount')
     })
-  }
+
+  // Handle #verify_email=<token>, #unsubscribe=<token>, and ?kyc_return=1 without exposing bearer tokens in URL query
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '')
+    const sp = new URLSearchParams(window.location.search)
+    const hp = new URLSearchParams(hash)
+    const verifyTok = hp.get('verify_email')
+    const unsubTok = hp.get('unsubscribe')
+    const kycReturn = hp.get('kyc_return') ?? sp.get('kyc_return')
+    if (!verifyTok && !unsubTok && !kycReturn) return
+
+    // Strip bearer token from address bar immediately
+    if (sp.has('kyc_return')) {
+      sp.delete('kyc_return')
+      sp.delete('verificationSessionId')
+      sp.delete('status')
+    }
+    const nextSearch = sp.toString() ? `?${sp.toString()}` : ''
+    window.history.replaceState(null, '', `${window.location.pathname}${nextSearch}`)
+
+    if (verifyTok) {
+      verifyEmailToken(verifyTok)
+        .then(() => toast.success('Email verified — P2P notifications are now active.'))
+        .catch(() => toast.error('This email verification link is invalid or has expired.'))
+    } else if (unsubTok) {
+      unsubscribeEmailToken(unsubTok)
+        .then(() => toast.success('Unsubscribed from P2P email alerts.'))
+        .catch(() => toast.error('This unsubscribe link is invalid or has expired.'))
+    } else if (kycReturn) {
+      toast.info('Returned from Didit — syncing your verification status.')
+    }
+  }, [])
+
+  const accountReady = isConnected && isSignedIn && !!profile?.exists
+  const needsOnboarding = !accountReady && !(isArbiter && orderId !== null)
 
   return (
-    <div className="min-h-dvh pb-24">
+    <div className="relative min-h-dvh overflow-x-clip">
       <SiteBar />
-      <Header tab={tab} onTab={setTab} showArbiter={isArbiter} />
 
-      <main className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-8 lg:px-12">
-        {blocked && (
-          <div
-            role="status"
-            className="rounded-2xl px-4 py-3 text-sm"
-            style={{ background: 'rgba(232,109,122,0.12)', color: 'var(--danger)' }}
-          >
-            {blocked}
-          </div>
-        )}
-        {!ESCROW_ADDRESS ? (
-          <Empty
-            title="Marketplace contract not connected"
-            body="The escrow contract address is not configured yet, so there is nothing to trade against."
+      {/* Exact same box below SiteBar (calc(100dvh - 108px) / sm:calc(100dvh - 64px)) as Swap & Bridge */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 top-[108px] z-0 sm:top-[64px]">
+        <RibbonBackdrop />
+      </div>
+
+      <div className="p2p-terminal relative z-10 pb-24 md:pb-20">
+        {!needsOnboarding && (
+          <Header
+            tab={tab}
+            onTab={setTab}
+            showArbiter={isArbiter}
+            onSelectTab={() => {
+              if (orderId !== null) openOrder(null)
+            }}
           />
-        ) : (
-          <>
-            {tab === 'market' && (
-              <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-                <Market onTrade={setTradeAd} onPostAd={() => setPostOpen(true)} />
-                <div className="lg:sticky lg:top-28">
-                  <P2PSidebar onOpenOrder={openOrder} />
-                </div>
-              </div>
-            )}
-            {tab === 'orders' && <MyOrders onOpen={openOrder} />}
-            {tab === 'ads' && <MyAds onPostAd={() => setPostOpen(true)} />}
-            {tab === 'account' && <AccountPanel />}
-            {tab === 'arbiter' && <ArbiterPanel onOpen={openOrder} />}
-          </>
         )}
 
-        <p className="pt-4 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
-          Arc Testnet demo. Fiat payments happen outside this app, and payment details are public onchain. Check the
-          rules for crypto trading in your country before you trade.
-        </p>
-      </main>
+        <main className="mx-auto w-full max-w-7xl space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-12">
+          {!needsOnboarding && blocked && (
+            <div
+              role="status"
+              className="flex items-start gap-2.5 rounded-xl border border-[#FF5A00] bg-[var(--p2p-tint)] px-4 py-3 text-xs font-medium text-[#FF5A00] backdrop-blur-md"
+            >
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{blocked}</span>
+            </div>
+          )}
 
-      <TradeSheet
-        ad={activeAd}
-        initialUsdc={tradeAd ? undefined : deepAmount}
-        onClose={closeTrade}
-        onOpened={(id) => {
-          setTradeAd(null)
-          setTab('orders')
-          replaceQuery((p) => {
-            p.delete('trade')
-            p.delete('amount')
-            p.set('order', id.toString())
-          })
-        }}
-      />
-      <PostAdSheet
-        open={postOpen}
-        onClose={() => {
-          setPostOpen(false)
-        }}
-      />
-      <OrderRoom orderId={orderId} onClose={() => openOrder(null)} />
+          {!ESCROW_ADDRESS ? (
+            <div className="p2p-card rounded-xl px-6 py-14 text-center">
+              <p className="text-base font-bold text-[var(--p2p-ink)]">Marketplace Contract Not Connected</p>
+              <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
+                The escrow contract address is not configured yet.
+              </p>
+            </div>
+          ) : needsOnboarding ? (
+            <div className="mx-auto max-w-2xl space-y-4 py-6">
+              {!isConnected ? (
+                <section className="p2p-card rounded-xl px-6 py-12 text-center">
+                  <div className="mx-auto flex size-12 items-center justify-center rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-[#FF5A00]">
+                    <ShieldCheck className="size-6" />
+                  </div>
+                  <h1 className="mt-4 text-lg font-bold text-[var(--p2p-ink)]">Create Your P2P Account</h1>
+                  <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-[var(--p2p-muted)]">
+                    Connect your wallet and complete your P2P profile before accessing the marketplace, encrypted
+                    payment vault, or order chat. Swap and Bridge remain open without an account.
+                  </p>
+                  <ConnectKitButton.Custom>
+                    {({ show }) => (
+                      <button
+                        type="button"
+                        onClick={show}
+                        className="mt-5 inline-flex min-h-10 items-center rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90"
+                      >
+                        Connect Wallet
+                      </button>
+                    )}
+                  </ConnectKitButton.Custom>
+                </section>
+              ) : isSignedIn && accountLoading && !profile ? (
+                <div className="p2p-card h-52 animate-pulse rounded-xl" />
+              ) : (
+                <>
+                  <div className="p2p-card rounded-xl px-5 py-4">
+                    <h1 className="text-base font-bold text-[var(--p2p-ink)]">Complete P2P Account Setup to Continue</h1>
+                    <p className="mt-1 text-xs text-[var(--p2p-muted)]">
+                      Sign in with your wallet and save your P2P profile below to unlock the P2P Trade marketplace,
+                      My Ads, My Orders, and encrypted order chat.
+                    </p>
+                  </div>
+                  <AccountSetup />
+                </>
+              )}
+            </div>
+          ) : orderId !== null ? (
+            <OrderRoom orderId={orderId} onClose={() => openOrder(null)} />
+          ) : (
+            <>
+              {tab === 'market' && (
+                <Market
+                  deepAd={deepAd}
+                  deepAmount={deepAmount}
+                  onClearDeepTrade={clearDeepTrade}
+                  onOpenedOrder={(id) => openOrder(id)}
+                  onPostAd={() => setPostOpen(true)}
+                />
+              )}
+              {tab === 'orders' && <MyOrders onOpen={openOrder} />}
+              {tab === 'ads' && <MyAds onPostAd={() => setPostOpen(true)} />}
+              {tab === 'account' && <AccountPanel />}
+              {tab === 'arbiter' && <ArbiterPanel onOpen={openOrder} />}
+            </>
+          )}
+
+          <p className="pt-4 text-center text-[11px] text-[var(--p2p-muted)]">
+            Arc Testnet Non-Custodial Escrow • Fiat transfers settle off-chain between peers • Verify local crypto regulations before trading.
+          </p>
+        </main>
+
+        {/* Mobile 60px Fixed 4-Tab Bottom Navigation Bar (Marketplace / Tabs view) */}
+        {!needsOnboarding && orderId === null && <MobileBottomNav tab={tab} onTab={setTab} showArbiter={isArbiter} />}
+
+        <PostAdSheet open={postOpen} onClose={() => setPostOpen(false)} />
+      </div>
     </div>
   )
 }

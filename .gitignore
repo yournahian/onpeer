@@ -3,6 +3,9 @@ dist
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
 server/ai-settings.json
 server/ai-settings.json.tmp
 contracts/out
