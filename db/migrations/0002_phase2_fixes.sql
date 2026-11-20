@@ -60,6 +60,11 @@ DECLARE
     'cron_health'
   ];
 BEGIN
+  -- Ensure `postgres` can reclaim ownership from `onpeer_worker` on managed Supabase (Postgres 16+):
+  -- `postgres` has ADMIN OPTION on `onpeer_worker` (as its creator), so granting membership temporarily
+  -- lets `ALTER TABLE/SEQUENCE ... OWNER TO postgres` succeed without superuser privileges.
+  GRANT onpeer_worker TO postgres;
+
   -- Restore ownership of every table and sequence to `postgres`
   FOREACH tbl IN ARRAY all_tables LOOP
     EXECUTE format('ALTER TABLE public.%I OWNER TO postgres', tbl);
@@ -74,6 +79,8 @@ BEGIN
   LOOP
     EXECUTE format('ALTER SEQUENCE public.%I OWNER TO postgres', seq.seqname);
   END LOOP;
+
+  REVOKE onpeer_worker FROM postgres;
 
   -- Explicit RLS policies for `onpeer_worker` only
   FOREACH tbl IN ARRAY rw_tables LOOP

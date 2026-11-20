@@ -6,6 +6,7 @@ import {
   verifyHmacToken,
 } from './auth'
 import { openText, sealText } from './crypto'
+import type { ChainReader } from './chain'
 import { checkRateLimit, withTx, writeAudit, type Queryable } from './db'
 import {
   clientIp,
@@ -208,7 +209,7 @@ export async function handleAccountRoutes(
   env: Env,
   db: Queryable,
   subpath: string,
-  opts?: { sendVerifyEmail?: EmailVerifySender; nowMs?: number },
+  opts?: { sendVerifyEmail?: EmailVerifySender; nowMs?: number; chain?: ChainReader },
 ): Promise<Response | null> {
   const ip = clientIp(req)
   const nowMs = opts?.nowMs ?? Date.now()
@@ -456,6 +457,28 @@ export async function handleAccountRoutes(
     if (!(await checkRateLimit(db, `rl:acct:del:${wallet}`, 5, 300))) {
       return json(429, { error: 'rate_limited' })
     }
+    // Block account deletion while the wallet has any open orders or active ads onchain
+    if (opts?.chain) {
+      if (opts.chain.getOpenOrderCount) {
+        const openOrders = await opts.chain.getOpenOrderCount(wallet)
+        if (openOrders > 0n) {
+          return json(409, { error: 'open_orders_remain' })
+        }
+      }
+      const adBlobs = await db.query<{ ad_id: string | number }>(
+        `SELECT DISTINCT ad_id
+           FROM public.vault_blobs
+          WHERE author = $1 AND kind = 'ad_details' AND ad_id IS NOT NULL`,
+        [wallet],
+      )
+      const nowSec = Math.floor(nowMs / 1000)
+      for (const row of adBlobs.rows) {
+        const ad = await opts.chain.getAd(BigInt(row.ad_id))
+        if (ad && !ad.closed && Number(ad.expiresAt) > nowSec) {
+          return json(409, { error: 'active_ads_remain' })
+        }
+      }
+    }
     await withTx(db, async (tx) => {
       const existing = await loadAccountRow(tx, wallet)
       const shouldRevokeOnchain =
@@ -472,6 +495,7 @@ export async function handleAccountRoutes(
                 kyc_level = 0,
                 kyc_expires_at = NULL,
                 kyc_name_enc = NULL,
+                approved_session_id = NULL,
                 consent_at = NULL,
                 deleted_at = now()
           WHERE wallet = $1`,
@@ -483,6 +507,30 @@ export async function handleAccountRoutes(
       )
       await tx.query(
         `UPDATE public.notifications_outbox SET status = 'skipped' WHERE wallet = $1 AND status = 'pending'`,
+        [wallet],
+      )
+      // Immediately delete author's truly unbound draft blobs (never touch ad_details bound to an ad)
+      await tx.query(
+        `DELETE FROM public.vault_blobs WHERE author = $1 AND order_id IS NULL AND ad_id IS NULL`,
+        [wallet],
+      )
+      // Shorten retention to 7 days for remaining bound vault blobs, chat messages, and dispute filings
+      await tx.query(
+        `UPDATE public.vault_blobs
+            SET delete_after = LEAST(COALESCE(delete_after, now() + interval '7 days'), now() + interval '7 days')
+          WHERE author = $1 AND (order_id IS NOT NULL OR ad_id IS NOT NULL)`,
+        [wallet],
+      )
+      await tx.query(
+        `UPDATE public.chat_messages
+            SET delete_after = LEAST(COALESCE(delete_after, now() + interval '7 days'), now() + interval '7 days')
+          WHERE author = $1`,
+        [wallet],
+      )
+      await tx.query(
+        `UPDATE public.dispute_filings
+            SET delete_after = LEAST(COALESCE(delete_after, now() + interval '7 days'), now() + interval '7 days')
+          WHERE filed_by = $1`,
         [wallet],
       )
       if (shouldRevokeOnchain) {

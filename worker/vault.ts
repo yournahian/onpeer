@@ -17,6 +17,57 @@ const MAX_PAYER_BLOBS_PER_ORDER = 5
 const EVIDENCE_RETENTION_SECONDS = 90 * 24 * 3600 // 90 days
 const ALLOWED_EVIDENCE_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'application/pdf'])
 
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'application/pdf': 'pdf',
+}
+
+/** Verify actual file magic bytes match the claimed MIME type (prevents spoofed Content-Type). */
+export function matchesMagicBytes(bytes: Uint8Array, mime: string): boolean {
+  if (mime === 'image/png') {
+    return (
+      bytes.byteLength >= 8 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a
+    )
+  }
+  if (mime === 'image/jpeg') {
+    return bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  }
+  if (mime === 'image/webp') {
+    return (
+      bytes.byteLength >= 12 &&
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    )
+  }
+  if (mime === 'application/pdf') {
+    return (
+      bytes.byteLength >= 5 &&
+      bytes[0] === 0x25 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x44 &&
+      bytes[3] === 0x46 &&
+      bytes[4] === 0x2d
+    )
+  }
+  return false
+}
+
 export interface SellerDetailsPayload {
   holderName: string
   accountDetails: string
@@ -475,9 +526,13 @@ export async function handleVaultRoutes(
     if (buf.byteLength > MAX_EVIDENCE_BYTES) {
       return json(413, { error: 'evidence_too_large' })
     }
+    const rawBytes = new Uint8Array(buf)
+    if (!matchesMagicBytes(rawBytes, rawMime)) {
+      return json(400, { error: 'invalid_file_signature' })
+    }
 
     const orderIdStr = orderId.toString()
-    const sealed = await sealBlob(env, new Uint8Array(buf), vaultAad('evidence', wallet, orderIdStr))
+    const sealed = await sealBlob(env, rawBytes, vaultAad('evidence', wallet, orderIdStr))
 
     const ins = await db.query<{ id: string }>(
       `INSERT INTO public.vault_blobs (
@@ -549,10 +604,13 @@ export async function handleVaultRoutes(
 
     const outBuf = new Uint8Array(plainBytes.byteLength)
     outBuf.set(plainBytes)
+    const mime = blob.mime_type ?? 'application/octet-stream'
+    const ext = MIME_EXTENSIONS[mime] ?? 'bin'
     return new Response(outBuf, {
       status: 200,
       headers: {
-        'content-type': blob.mime_type ?? 'application/octet-stream',
+        'content-type': mime,
+        'content-disposition': `attachment; filename="evidence-${blobId}.${ext}"`,
         'cache-control': 'no-store',
         'x-content-type-options': 'nosniff',
       },

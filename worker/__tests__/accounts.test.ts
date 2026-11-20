@@ -136,6 +136,15 @@ class AccountMemoryDb implements Queryable {
       return { rows: [], rowCount: 1 }
     }
 
+    if (
+      n.startsWith('DELETE FROM public.vault_blobs') ||
+      n.startsWith('UPDATE public.vault_blobs') ||
+      n.startsWith('UPDATE public.chat_messages') ||
+      n.startsWith('UPDATE public.dispute_filings')
+    ) {
+      return { rows: [], rowCount: 1 }
+    }
+
     if (n.startsWith('INSERT INTO public.onchain_jobs')) {
       this.jobs.push({ kind: 'revoke_verification', payload: JSON.parse(String(values[0])) })
       return { rows: [], rowCount: 1 }

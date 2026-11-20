@@ -10,7 +10,8 @@
  *                            OrderDisputed and enqueue deduplicated notifications to the right party.
  *  5. recordCronHealth     — Record last run / error code (no PII) in `public.cron_health` for Admin panel.
  */
-import { parseAbiItem } from 'viem'
+import { type AbiEvent } from 'viem'
+import { p2pEscrowAbi } from '../src/abi/p2pEscrow'
 import { createArcPublicClient, requireEscrowAddress, type ChainReader } from './chain'
 import { writeAudit, type Queryable } from './db'
 import type { Env } from './env'
@@ -20,16 +21,21 @@ const SWEEP_BATCH = 500
 const SCAN_MAX_BLOCKS = 500n
 const CHAIN_CURSOR_NAME = 'escrow_events'
 
-const EVENT_ORDER_OPENED = parseAbiItem(
-  'event OrderOpened(uint256 indexed orderId, uint256 indexed adId, address indexed buyer, address seller, uint128 amount)',
-)
-const EVENT_ORDER_PAID = parseAbiItem('event OrderPaid(uint256 indexed orderId, uint64 paidAt)')
-const EVENT_ORDER_RELEASED = parseAbiItem(
-  'event OrderReleased(uint256 indexed orderId, address indexed buyer, uint128 amount)',
-)
-const EVENT_ORDER_DISPUTED = parseAbiItem(
-  'event OrderDisputed(uint256 indexed orderId, address indexed caller, uint64 disputedAt)',
-)
+function requireAbiEvent(name: string): AbiEvent {
+  const item = p2pEscrowAbi.find((e) => e.type === 'event' && e.name === name)
+  if (!item || item.type !== 'event') throw new Error(`missing_abi_event:${name}`)
+  return item as AbiEvent
+}
+
+export const SCANNED_EVENTS = {
+  OrderOpened: requireAbiEvent('OrderOpened'),
+  OrderPaid: requireAbiEvent('OrderPaid'),
+  OrderReleased: requireAbiEvent('OrderReleased'),
+  OrderCancelled: requireAbiEvent('OrderCancelled'),
+  OrderDisputed: requireAbiEvent('OrderDisputed'),
+  CaseTaken: requireAbiEvent('CaseTaken'),
+  DisputeResolved: requireAbiEvent('DisputeResolved'),
+} as const
 
 export type SweepResult = Partial<Record<string, number>> & { errors?: string[] }
 
@@ -253,18 +259,30 @@ export async function scanChainEvents(
   const endBlock =
     latestBlock - startBlock + 1n > SCAN_MAX_BLOCKS ? startBlock + SCAN_MAX_BLOCKS - 1n : latestBlock
 
-  const [openedLogs, paidLogs, releasedLogs, disputedLogs, roles] = await Promise.all([
-    client.getLogs({ address: escrow, event: EVENT_ORDER_OPENED, fromBlock: startBlock, toBlock: endBlock }),
-    client.getLogs({ address: escrow, event: EVENT_ORDER_PAID, fromBlock: startBlock, toBlock: endBlock }),
-    client.getLogs({ address: escrow, event: EVENT_ORDER_RELEASED, fromBlock: startBlock, toBlock: endBlock }),
-    client.getLogs({ address: escrow, event: EVENT_ORDER_DISPUTED, fromBlock: startBlock, toBlock: endBlock }),
+  const [
+    openedLogs,
+    paidLogs,
+    releasedLogs,
+    cancelledLogs,
+    disputedLogs,
+    caseTakenLogs,
+    resolvedLogs,
+    roles,
+  ] = await Promise.all([
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.OrderOpened, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.OrderPaid, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.OrderReleased, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.OrderCancelled, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.OrderDisputed, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.CaseTaken, fromBlock: startBlock, toBlock: endBlock }),
+    client.getLogs({ address: escrow, event: SCANNED_EVENTS.DisputeResolved, fromBlock: startBlock, toBlock: endBlock }),
     chain.getRoles(),
   ])
 
   let queued = 0
 
   for (const log of openedLogs) {
-    const orderId = log.args.orderId
+    const orderId = (log.args as { orderId?: bigint }).orderId
     if (!orderId) continue
     const order = await chain.getOrder(orderId)
     if (!order) continue
@@ -274,7 +292,7 @@ export async function scanChainEvents(
   }
 
   for (const log of paidLogs) {
-    const orderId = log.args.orderId
+    const orderId = (log.args as { orderId?: bigint }).orderId
     if (!orderId) continue
     const order = await chain.getOrder(orderId)
     if (!order) continue
@@ -283,7 +301,7 @@ export async function scanChainEvents(
   }
 
   for (const log of releasedLogs) {
-    const orderId = log.args.orderId
+    const orderId = (log.args as { orderId?: bigint }).orderId
     if (!orderId) continue
     const order = await chain.getOrder(orderId)
     if (!order) continue
@@ -292,8 +310,18 @@ export async function scanChainEvents(
     queued += 2
   }
 
+  for (const log of cancelledLogs) {
+    const orderId = (log.args as { orderId?: bigint }).orderId
+    if (!orderId) continue
+    const order = await chain.getOrder(orderId)
+    if (!order) continue
+    await queueNotification(db, order.buyer, 'order_cancelled', orderId)
+    await queueNotification(db, order.seller, 'order_cancelled', orderId)
+    queued += 2
+  }
+
   for (const log of disputedLogs) {
-    const orderId = log.args.orderId
+    const orderId = (log.args as { orderId?: bigint }).orderId
     if (!orderId) continue
     const order = await chain.getOrder(orderId)
     if (!order) continue
@@ -302,6 +330,26 @@ export async function scanChainEvents(
       await queueNotification(db, r, 'order_disputed', orderId)
       queued++
     }
+  }
+
+  for (const log of caseTakenLogs) {
+    const orderId = (log.args as { orderId?: bigint }).orderId
+    if (!orderId) continue
+    const order = await chain.getOrder(orderId)
+    if (!order) continue
+    await queueNotification(db, order.buyer, 'case_taken', orderId)
+    await queueNotification(db, order.seller, 'case_taken', orderId)
+    queued += 2
+  }
+
+  for (const log of resolvedLogs) {
+    const orderId = (log.args as { orderId?: bigint }).orderId
+    if (!orderId) continue
+    const order = await chain.getOrder(orderId)
+    if (!order) continue
+    await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
+    await queueNotification(db, order.seller, 'dispute_resolved', orderId)
+    queued += 2
   }
 
   await db.query(

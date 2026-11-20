@@ -58,6 +58,19 @@ export async function handleChatRoutes(
       return json(429, { error: 'rate_limited' })
     }
 
+    // Gate arbiter/backup_arbiter chat POST identically to GET (DISPUTED, filed, or PAID >= 15m) + audit
+    if (access.role === 'arbiter' || access.role === 'backup_arbiter') {
+      const filingRes = await db.query<{ exists: number }>(
+        `SELECT 1 AS exists FROM public.dispute_filings WHERE order_id = $1 LIMIT 1`,
+        [orderId.toString()],
+      )
+      const hasFiling = filingRes.rows.length > 0
+      if (!isArbiterOrderReadAllowed(access.order, access.role, hasFiling)) {
+        return json(403, { error: 'forbidden' })
+      }
+      await writeAudit(db, wallet, 'chat.arbiter_post', `order:${orderId.toString()}`)
+    }
+
     const body = await readJsonBody(req, MAX_MSG_BYTES * 2)
     if (!body) return json(400, { error: 'bad_request' })
 

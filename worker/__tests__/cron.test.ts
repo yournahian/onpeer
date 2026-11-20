@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
+import { decodeEventLog, encodeAbiParameters, encodeEventTopics, toEventSelector, type AbiEvent } from 'viem'
 import type { QueryResultRow } from 'pg'
+import { p2pEscrowAbi } from '../../src/abi/p2pEscrow'
 import type { Queryable } from '../db'
-import { sweepExpiredRows, sweepExpiredSessions, checkKycExpiry } from '../cron'
+import { SCANNED_EVENTS, sweepExpiredRows, sweepExpiredSessions, checkKycExpiry } from '../cron'
 
 class CronMemoryDb implements Queryable {
   vaultBlobs: Array<{ id: string; delete_after: string | null }> = []
@@ -210,5 +212,124 @@ describe('cron — checkKycExpiry', () => {
     expect(count).toBe(0)
     expect(db.onchainJobs).toHaveLength(0)
     expect(db.outboxRows).toHaveLength(0)
+  })
+})
+
+// =========================================================================
+describe('cron — SCANNED_EVENTS match deployed P2PEscrow ABI & decode real logs', () => {
+  it('matches all 7 event selectors in p2pEscrowAbi and decodes encoded OrderOpened, OrderPaid, OrderReleased, OrderCancelled, OrderDisputed, CaseTaken, and DisputeResolved logs', () => {
+    const names = [
+      'OrderOpened',
+      'OrderPaid',
+      'OrderReleased',
+      'OrderCancelled',
+      'OrderDisputed',
+      'CaseTaken',
+      'DisputeResolved',
+    ] as const
+
+    for (const name of names) {
+      const abiEvent = p2pEscrowAbi.find((e) => e.type === 'event' && e.name === name) as AbiEvent
+      expect(abiEvent).toBeDefined()
+      expect(toEventSelector(SCANNED_EVENTS[name])).toBe(toEventSelector(abiEvent))
+    }
+
+    const buyer = '0x1111111111111111111111111111111111111111' as const
+    const seller = '0x2222222222222222222222222222222222222222' as const
+    const arbiter = '0x3333333333333333333333333333333333333333' as const
+
+    // 1. OrderOpened(uint256 indexed orderId, uint256 indexed adId, address indexed buyer, address seller, uint128 amount)
+    const openedTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.OrderOpened],
+      eventName: 'OrderOpened',
+      args: { orderId: 42n, adId: 7n, buyer },
+    })
+    const openedData = encodeAbiParameters(
+      [{ type: 'address' }, { type: 'uint128' }],
+      [seller, 50_000000n],
+    )
+    const opened = decodeEventLog({
+      abi: [SCANNED_EVENTS.OrderOpened],
+      topics: openedTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: openedData,
+    })
+    expect(opened.eventName).toBe('OrderOpened')
+    expect((opened.args as { orderId: bigint; seller: string; amount: bigint }).orderId).toBe(42n)
+    expect((opened.args as { seller: string }).seller.toLowerCase()).toBe(seller)
+
+    // 2. OrderPaid(uint256 indexed orderId, uint64 paidAt)
+    const paidTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.OrderPaid],
+      eventName: 'OrderPaid',
+      args: { orderId: 42n },
+    })
+    const paidData = encodeAbiParameters([{ type: 'uint64' }], [1_795_001_000n])
+    const paid = decodeEventLog({
+      abi: [SCANNED_EVENTS.OrderPaid],
+      topics: paidTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: paidData,
+    })
+    expect(paid.eventName).toBe('OrderPaid')
+    expect((paid.args as { orderId: bigint }).orderId).toBe(42n)
+
+    // 3. OrderReleased(uint256 indexed orderId, address indexed buyer, uint128 amount)
+    const relTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.OrderReleased],
+      eventName: 'OrderReleased',
+      args: { orderId: 42n, buyer },
+    })
+    const relData = encodeAbiParameters([{ type: 'uint128' }], [50_000000n])
+    const rel = decodeEventLog({
+      abi: [SCANNED_EVENTS.OrderReleased],
+      topics: relTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: relData,
+    })
+    expect(rel.eventName).toBe('OrderReleased')
+    expect((rel.args as { orderId: bigint }).orderId).toBe(42n)
+
+    // 4. OrderDisputed(uint256 indexed orderId, address indexed caller, uint64 disputedAt)
+    const dispTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.OrderDisputed],
+      eventName: 'OrderDisputed',
+      args: { orderId: 42n, caller: buyer },
+    })
+    const dispData = encodeAbiParameters([{ type: 'uint64' }], [1_795_002_000n])
+    const disp = decodeEventLog({
+      abi: [SCANNED_EVENTS.OrderDisputed],
+      topics: dispTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: dispData,
+    })
+    expect(disp.eventName).toBe('OrderDisputed')
+    expect((disp.args as { orderId: bigint }).orderId).toBe(42n)
+
+    // 5. CaseTaken(uint256 indexed orderId, address indexed arbiter, uint64 reviewStartedAt)
+    const takenTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.CaseTaken],
+      eventName: 'CaseTaken',
+      args: { orderId: 42n, arbiter },
+    })
+    const takenData = encodeAbiParameters([{ type: 'uint64' }], [1_795_003_000n])
+    const taken = decodeEventLog({
+      abi: [SCANNED_EVENTS.CaseTaken],
+      topics: takenTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: takenData,
+    })
+    expect(taken.eventName).toBe('CaseTaken')
+    expect((taken.args as { orderId: bigint }).orderId).toBe(42n)
+
+    // 6. DisputeResolved(uint256 indexed orderId, bool toBuyer, address indexed recipient, uint128 amount)
+    const resTopics = encodeEventTopics({
+      abi: [SCANNED_EVENTS.DisputeResolved],
+      eventName: 'DisputeResolved',
+      args: { orderId: 42n, recipient: buyer },
+    })
+    const resData = encodeAbiParameters([{ type: 'bool' }, { type: 'uint128' }], [true, 50_000000n])
+    const resolved = decodeEventLog({
+      abi: [SCANNED_EVENTS.DisputeResolved],
+      topics: resTopics as [`0x${string}`, ...`0x${string}`[]],
+      data: resData,
+    })
+    expect(resolved.eventName).toBe('DisputeResolved')
+    expect((resolved.args as { orderId: bigint; toBuyer: boolean }).toBuyer).toBe(true)
   })
 })

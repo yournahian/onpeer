@@ -119,9 +119,12 @@ export default function PrivacyPage() {
 
         <Section icon={Lock} title="4. Data Access & Least-Privilege Storage">
           <p>
-            Offchain records are stored in PostgreSQL behind Row Level Security with public API access disabled. Every
-            request to view order details, chat, or dispute filings verifies your wallet session and reads the live
-            order roles (<code className="mono">buyer</code>, <code className="mono">seller</code>,{' '}
+            Offchain records are stored in PostgreSQL behind Row Level Security with all privileges revoked from the{' '}
+            <code className="mono">anon</code> and <code className="mono">authenticated</code> roles and explicit RLS
+            policies granted only to the least-privilege Worker role (with the Supabase Data API disabled for the{' '}
+            <code className="mono">public</code> schema in project settings). Every request to view order details,
+            chat, evidence, or dispute filings verifies your wallet session and reads the live order roles (
+            <code className="mono">buyer</code>, <code className="mono">seller</code>,{' '}
             <code className="mono">arbiter</code>, or 7-day <code className="mono">backupArbiter</code>) directly from
             the Arc Testnet escrow contract.
           </p>
@@ -129,19 +132,27 @@ export default function PrivacyPage() {
 
         <Section icon={Trash2} title="5. Retention Schedule & Account Deletion">
           <p>
-            Unbound draft blobs expire automatically after <strong>24 hours</strong>. Order payment details, encrypted
-            chat messages, evidence attachments, and offchain dispute filings are retained while an order is active and
-            automatically purged <strong>90 days</strong> after the order reaches a terminal state.
+            Retention timers are enforced automatically by our scheduled cleanup job:
           </p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Unbound <code className="mono">order_details</code> drafts: <strong>24 hours</strong> from creation.</li>
+            <li>Unbound <code className="mono">ad_details</code> blobs: <strong>8 days</strong> from creation; once bound to an ad, <strong>95 days</strong> (or ad expiry + 95 days).</li>
+            <li>Bound <code className="mono">order_details</code> and buyer <code className="mono">payer</code> proofs: <strong>95 days</strong> from creation/binding (extended to at least <strong>90 days</strong> from the last order vault read).</li>
+            <li>Encrypted chat messages and evidence attachments (&le; 1 MB): <strong>90 days</strong> from creation.</li>
+            <li>Offchain dispute filings: <strong>365 days (1 year)</strong> from filing.</li>
+            <li>Webhook deduplication records: <strong>90 days</strong>; sent/failed email outbox records: <strong>30 days</strong>; expired rate-limit buckets: <strong>7 days</strong>; expired/revoked sessions: <strong>1 day</strong>.</li>
+          </ul>
           <p>
-            You can delete your P2P account at any time from the <strong>Account</strong> tab in{' '}
+            You can delete your P2P account from the <strong>Account &amp; Margin</strong> tab in{' '}
             <AppLink to="/p2p" className="underline">
               /p2p
-            </AppLink>
-            . Deleting your account immediately scrubs your display name, country, encrypted email, and encrypted KYC
-            name, revokes active sessions, cancels queued alerts, and queues an onchain verification revocation if your
-            wallet was marked verified. Public blockchain transactions and events on Arc Testnet are immutable and
-            cannot be erased.
+            </AppLink>{' '}
+            whenever you have <strong>zero open orders</strong> onchain (deletion is blocked while any order is open).
+            Deleting your account immediately scrubs your display name, country, encrypted email, and encrypted KYC
+            name, revokes active sessions, cancels queued alerts, queues an onchain verification revocation if your
+            wallet was verified, <strong>immediately deletes your unbound vault blobs</strong>, and shortens retention
+            on your remaining order-bound vault blobs, chat messages, and dispute filings to <strong>7 days</strong>.
+            Public blockchain transactions and events on Arc Testnet are immutable and cannot be erased.
           </p>
         </Section>
       </main>

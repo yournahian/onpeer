@@ -73,6 +73,7 @@ export interface ChainReader {
   getOrder(orderId: bigint): Promise<ChainOrder | null>
   getAd(adId: bigint): Promise<ChainAd | null>
   isVerified(wallet: `0x${string}`): Promise<boolean>
+  getOpenOrderCount?(wallet: `0x${string}`): Promise<bigint>
 }
 
 export type OrderPartyRole = 'buyer' | 'seller' | 'arbiter' | 'backup_arbiter'
@@ -217,6 +218,15 @@ export function createChainReader(env: Env): ChainReader {
         address: escrow,
         abi: p2pEscrowAbi,
         functionName: 'isVerified',
+        args: [wallet],
+      })
+    },
+
+    async getOpenOrderCount(wallet: `0x${string}`): Promise<bigint> {
+      return client.readContract({
+        address: escrow,
+        abi: p2pEscrowAbi,
+        functionName: 'partyOpenOrders',
         args: [wallet],
       })
     },

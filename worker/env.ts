@@ -37,6 +37,7 @@ export interface Env {
   VERIFIER_PRIVATE_KEY?: string
   RESEND_API_KEY?: string
   EMAIL_FROM?: string
+  ADMIN_ALERT_EMAIL?: string
 
   // Legacy / AI assistant secrets
   ADMIN_SESSION_SECRET?: string

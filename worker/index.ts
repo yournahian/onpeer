@@ -261,7 +261,8 @@ async function handleApi(
 
     // ---- Phase 2 P2P accounts & email double-opt-in (/api/account*, /api/email/*) ----
     if (path === '/account' || path.startsWith('/account/') || path.startsWith('/email/')) {
-      const res = await runDb(env, (db) => handleAccountRoutes(req, env, db, path))
+      const chain = req.method === 'DELETE' && path === '/account' ? makeChain(env) : undefined
+      const res = await runDb(env, (db) => handleAccountRoutes(req, env, db, path, chain ? { chain } : undefined))
       return res ?? json(404, { error: 'not_found' })
     }
 
@@ -556,6 +557,23 @@ async function handleApi(
 
 const APP_PATHS = ['/p2p', '/swap', '/bridge', '/admin', '/assistant']
 
+const API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+const APP_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+
+function withSecurityHeaders(res: Response, isApi: boolean): Response {
+  const headers = new Headers(res.headers)
+  headers.set('Content-Security-Policy', isApi ? API_CSP : APP_CSP)
+  headers.set('X-Content-Type-Options', 'nosniff')
+  headers.set('X-Frame-Options', 'DENY')
+  headers.set('Referrer-Policy', 'no-referrer')
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  })
+}
+
 export function createWorkerApp(deps?: WorkerDependencies) {
   return {
     async fetch(
@@ -567,7 +585,8 @@ export function createWorkerApp(deps?: WorkerDependencies) {
 
       // Never redirect /api on app.onpeer.xyz, onpeer.xyz, or any host
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
-        return handleApi(request, env, ctx, url.pathname.slice(4) || '/', deps)
+        const res = await handleApi(request, env, ctx, url.pathname.slice(4) || '/', deps)
+        return withSecurityHeaders(res, true)
       }
 
       // Redirect app routes from landing domain to app.onpeer.xyz (keep /privacy public on both)
@@ -576,10 +595,14 @@ export function createWorkerApp(deps?: WorkerDependencies) {
         (APP_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`)) ||
           url.searchParams.has('order'))
       ) {
-        return Response.redirect(`https://app.onpeer.xyz${url.pathname}${url.search}`, 302)
+        return withSecurityHeaders(
+          Response.redirect(`https://app.onpeer.xyz${url.pathname}${url.search}`, 302),
+          false,
+        )
       }
 
-      return env.ASSETS.fetch(request)
+      const assetRes = await env.ASSETS.fetch(request)
+      return withSecurityHeaders(assetRes, false)
     },
 
     async scheduled(
@@ -605,7 +628,7 @@ export function createWorkerApp(deps?: WorkerDependencies) {
             await recordCronHealth(db, 'chain_scanner', 'chain_scanner_err')
           }
           try {
-            await processNotificationsOutbox(env, db)
+            await processNotificationsOutbox(env, db, chain)
             await recordCronHealth(db, 'notifications_outbox', null)
           } catch {
             await recordCronHealth(db, 'notifications_outbox', 'outbox_err')

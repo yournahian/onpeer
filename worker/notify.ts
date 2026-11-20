@@ -9,6 +9,7 @@
  *  - Signed unsubscribe link (180-day HMAC token) appended to every notification email.
  */
 import { mintUnsubscribeUrl } from './accounts'
+import type { ChainReader } from './chain'
 import { openText } from './crypto'
 import { type Queryable } from './db'
 import { publicAppOrigin, type Env } from './env'
@@ -26,8 +27,11 @@ type NotifyEvent =
   | 'order_opened'
   | 'order_paid'
   | 'order_completed'
+  | 'order_cancelled'
   | 'order_disputed'
   | 'dispute_filed'
+  | 'case_taken'
+  | 'dispute_resolved'
 
 function eventSubject(event: string): string {
   switch (event as NotifyEvent) {
@@ -37,8 +41,11 @@ function eventSubject(event: string): string {
     case 'order_opened':     return 'New trade order opened on OnPeer'
     case 'order_paid':       return 'Your OnPeer trade order has been marked paid'
     case 'order_completed':  return 'Your OnPeer trade order is complete'
+    case 'order_cancelled':  return 'Your OnPeer trade order was cancelled'
     case 'order_disputed':   return 'A dispute has been opened on your OnPeer order'
     case 'dispute_filed':    return 'A dispute statement was filed on your OnPeer order'
+    case 'case_taken':       return 'An arbiter has taken your OnPeer dispute case'
+    case 'dispute_resolved': return 'A ruling has been issued on your OnPeer dispute'
     default:                 return 'OnPeer notification'
   }
 }
@@ -94,6 +101,13 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
         `View order: ${link}`,
       ].join('\n')
 
+    case 'order_cancelled':
+      return [
+        orderId ? `Order #${orderId.toString()} has been cancelled.` : 'Your order has been cancelled.',
+        '',
+        `View order: ${link}`,
+      ].join('\n')
+
     case 'order_disputed':
       return [
         orderId ? `A dispute has been opened on order #${orderId.toString()}.` : 'A dispute has been opened on your order.',
@@ -106,6 +120,20 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
       return [
         orderId ? `A dispute statement has been filed on order #${orderId.toString()}.` : 'A dispute statement has been filed on your order.',
         'The arbiter will review the submitted evidence.',
+        '',
+        `View order: ${link}`,
+      ].join('\n')
+
+    case 'case_taken':
+      return [
+        orderId ? `An arbiter has started reviewing order #${orderId.toString()}.` : 'An arbiter has started reviewing your dispute.',
+        '',
+        `View order: ${link}`,
+      ].join('\n')
+
+    case 'dispute_resolved':
+      return [
+        orderId ? `A ruling has been issued on order #${orderId.toString()}.` : 'A ruling has been issued on your dispute.',
         '',
         `View order: ${link}`,
       ].join('\n')
@@ -185,7 +213,11 @@ async function sendEmail(
  * Called from the cron scheduled handler every minute.
  * Skips rows where the wallet has no verified opted-in email.
  */
-export async function processNotificationsOutbox(env: Env, db: Queryable): Promise<void> {
+export async function processNotificationsOutbox(
+  env: Env,
+  db: Queryable,
+  chain?: ChainReader,
+): Promise<void> {
   // Claim a batch atomically: bump attempts, mark 'processing', stamp claimed_at (L3)
   // Only re-claim stale 'processing' rows older than 5 minutes so overlapping cron runs never double-send.
   const claimed = await db.query<OutboxRow>(
@@ -212,9 +244,11 @@ export async function processNotificationsOutbox(env: Env, db: Queryable): Promi
   if (claimed.rows.length === 0) return
 
   const appOrigin = publicAppOrigin(env)
+  const adminFallbackEmail = env.ADMIN_ALERT_EMAIL?.trim() || null
+  const roles = adminFallbackEmail && chain ? await chain.getRoles().catch(() => null) : null
 
   for (const row of claimed.rows) {
-    const wallet = row.wallet as `0x${string}`
+    const wallet = row.wallet.toLowerCase() as `0x${string}`
     const orderId = row.order_id ? BigInt(row.order_id) : null
     let success = false
     let skipReason: string | null = null
@@ -229,28 +263,36 @@ export async function processNotificationsOutbox(env: Env, db: Queryable): Promi
       )
       const acc = accRes.rows[0]
 
-      if (!acc?.email_enc || !acc.email_verified_at || !acc.email_opt_in) {
-        skipReason = 'no_verified_opt_in_email'
-      } else {
-        // Decrypt email (AES-GCM — no PII logged)
-        let plainEmail: string
+      let plainEmail: string | null = null
+      let includeUnsub = true
+
+      if (acc?.email_enc && acc.email_verified_at && acc.email_opt_in) {
         try {
           plainEmail = await openText(env, acc.email_enc, EMAIL_AAD(wallet))
         } catch {
           skipReason = 'email_decrypt_failed'
           continue
         }
+      } else if (
+        adminFallbackEmail &&
+        roles &&
+        (wallet === roles.arbiter || wallet === roles.backupArbiter)
+      ) {
+        // Fallback for arbiter alerts when arbiter wallet has no verified P2P account email
+        plainEmail = adminFallbackEmail
+        includeUnsub = false
+      }
 
-        const unsubUrl = await mintUnsubscribeUrl(env, appOrigin, wallet)
+      if (!plainEmail) {
+        skipReason = 'no_verified_opt_in_email'
+      } else {
         const subject = eventSubject(row.event)
-        const bodyText = [
-          eventBody(row.event, orderId, appOrigin),
-          '',
-          '---',
-          `Unsubscribe: ${unsubUrl}`,
-        ].join('\n')
-
-        success = await sendEmail(env, plainEmail, subject, bodyText)
+        const parts = [eventBody(row.event, orderId, appOrigin)]
+        if (includeUnsub) {
+          const unsubUrl = await mintUnsubscribeUrl(env, appOrigin, wallet)
+          parts.push('', '---', `Unsubscribe: ${unsubUrl}`)
+        }
+        success = await sendEmail(env, plainEmail, subject, parts.join('\n'))
         if (!success) skipReason = 'send_failed'
       }
     } catch {
