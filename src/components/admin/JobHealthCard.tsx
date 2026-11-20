@@ -14,7 +14,8 @@ interface AdminHealthPayload {
   jobs: CronJobStatus[]
   outbox: Record<string, number>
   onchainJobs: Record<string, number>
-  cursors: Array<{ name: string; last_block: string; updated_at: string }>
+  headBlock: string | null
+  cursors: Array<{ name: string; last_block: string; updated_at: string; lagBlocks: number | null }>
 }
 
 export function JobHealthCard() {
@@ -112,8 +113,18 @@ export function JobHealthCard() {
               <strong>{data.onchainJobs.failed ?? 0}</strong> failed
             </span>
             {data.cursors.map((c) => (
-              <span key={c.name} className="mono">
+              <span
+                key={c.name}
+                className="mono"
+                style={
+                  c.lagBlocks !== null && c.lagBlocks > 500
+                    ? { color: 'var(--danger)' }
+                    : undefined
+                }
+              >
                 Cursor ({c.name}): #{c.last_block}
+                {data.headBlock ? ` / head #${data.headBlock}` : ''}
+                {c.lagBlocks !== null ? ` (lag ${c.lagBlocks} blocks)` : ''}
               </span>
             ))}
           </div>

@@ -9,7 +9,7 @@ import {
   verifyHmacToken,
 } from './auth'
 import { handleAccountRoutes } from './accounts'
-import { checkAdminAccess, createChainReader, type ChainReader } from './chain'
+import { checkAdminAccess, createArcPublicClient, createChainReader, type ChainReader } from './chain'
 import { CryptoTamperError, VaultConfigError } from './crypto'
 import { DbUnavailableError, withDb, type Queryable } from './db'
 import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
@@ -415,41 +415,56 @@ async function handleApi(
       const adminWallet = await resolveAdminWallet(req, env, chain, runDb)
       if (!adminWallet) return json(401, { error: 'unauthorized' })
 
-      // M8: Scheduled job health & queue counters for Admin panel
+      // M8: Scheduled job health & queue counters for Admin panel (with head - cursor lag)
       if (req.method === 'GET' && path === '/admin/health') {
-        const health = await runDb(env, async (db) => {
-          const [cronRows, outboxRows, jobRows, cursorRows] = await Promise.all([
-            db.query<{
-              job_name: string
-              last_run_at: string
-              last_ok_at: string | null
-              last_error: string | null
-              last_error_at: string | null
-            }>(`SELECT job_name, last_run_at, last_ok_at, last_error, last_error_at FROM public.cron_health ORDER BY job_name`),
-            db.query<{ status: string; cnt: string | number }>(
-              `SELECT status, count(*)::int AS cnt FROM public.notifications_outbox GROUP BY status`,
-            ),
-            db.query<{ status: string; cnt: string | number }>(
-              `SELECT status, count(*)::int AS cnt FROM public.onchain_jobs GROUP BY status`,
-            ),
-            db.query<{ name: string; last_block: string; updated_at: string }>(
-              `SELECT name, last_block::text AS last_block, updated_at FROM public.chain_cursor ORDER BY name`,
-            ),
-          ])
-          return {
-            jobs: cronRows.rows.map((r) => ({
-              jobName: r.job_name,
-              lastRunAt: r.last_run_at,
-              lastOkAt: r.last_ok_at,
-              lastError: r.last_error,
-              lastErrorAt: r.last_error_at,
-            })),
-            outbox: Object.fromEntries(outboxRows.rows.map((r) => [r.status, Number(r.cnt)])),
-            onchainJobs: Object.fromEntries(jobRows.rows.map((r) => [r.status, Number(r.cnt)])),
-            cursors: cursorRows.rows,
-          }
+        const [health, headBlock] = await Promise.all([
+          runDb(env, async (db) => {
+            const [cronRows, outboxRows, jobRows, cursorRows] = await Promise.all([
+              db.query<{
+                job_name: string
+                last_run_at: string
+                last_ok_at: string | null
+                last_error: string | null
+                last_error_at: string | null
+              }>(`SELECT job_name, last_run_at, last_ok_at, last_error, last_error_at FROM public.cron_health ORDER BY job_name`),
+              db.query<{ status: string; cnt: string | number }>(
+                `SELECT status, count(*)::int AS cnt FROM public.notifications_outbox GROUP BY status`,
+              ),
+              db.query<{ status: string; cnt: string | number }>(
+                `SELECT status, count(*)::int AS cnt FROM public.onchain_jobs GROUP BY status`,
+              ),
+              db.query<{ name: string; last_block: string; updated_at: string }>(
+                `SELECT name, last_block::text AS last_block, updated_at FROM public.chain_cursor ORDER BY name`,
+              ),
+            ])
+            return {
+              jobs: cronRows.rows.map((r) => ({
+                jobName: r.job_name,
+                lastRunAt: r.last_run_at,
+                lastOkAt: r.last_ok_at,
+                lastError: r.last_error,
+                lastErrorAt: r.last_error_at,
+              })),
+              outbox: Object.fromEntries(outboxRows.rows.map((r) => [r.status, Number(r.cnt)])),
+              onchainJobs: Object.fromEntries(jobRows.rows.map((r) => [r.status, Number(r.cnt)])),
+              cursors: cursorRows.rows,
+            }
+          }),
+          createArcPublicClient()
+            .getBlockNumber()
+            .catch(() => null),
+        ])
+        return json(200, {
+          ...health,
+          headBlock: headBlock !== null ? headBlock.toString() : null,
+          cursors: health.cursors.map((c) => {
+            const lag = headBlock !== null ? headBlock - BigInt(c.last_block) : null
+            return {
+              ...c,
+              lagBlocks: lag !== null ? Number(lag > 0n ? lag : 0n) : null,
+            }
+          }),
         })
-        return json(200, health)
       }
 
       if (req.method === 'GET' && path === '/admin/ai') return json(200, await statusPayload(env))
@@ -559,7 +574,7 @@ const APP_PATHS = ['/p2p', '/swap', '/bridge', '/admin', '/assistant']
 
 const API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 const APP_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
+  "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
 
 function withSecurityHeaders(res: Response, isApi: boolean): Response {
   const headers = new Headers(res.headers)

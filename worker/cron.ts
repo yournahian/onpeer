@@ -18,7 +18,9 @@ import type { Env } from './env'
 import { queueNotification } from './notify'
 
 const SWEEP_BATCH = 500
-const SCAN_MAX_BLOCKS = 100n
+const SCAN_WINDOW_BLOCKS = 2_000n
+const SCAN_MAX_WINDOWS_PER_TICK = 10
+const SCAN_TIME_BUDGET_MS = 12_000
 const CHAIN_CURSOR_NAME = 'escrow_events'
 
 function requireAbiEvent(name: string): AbiEvent {
@@ -233,7 +235,14 @@ export async function scanChainEvents(
   env: Env,
   db: Queryable,
   chain: ChainReader,
-): Promise<{ fromBlock: bigint; toBlock: bigint; queued: number }> {
+): Promise<{
+  fromBlock: bigint
+  toBlock: bigint
+  latestBlock: bigint
+  lag: bigint
+  windows: number
+  queued: number
+}> {
   const escrow = requireEscrowAddress(env)
   const client = createArcPublicClient()
   const latestBlock = await client.getBlockNumber()
@@ -253,87 +262,117 @@ export async function scanChainEvents(
   }
 
   if (startBlock > latestBlock) {
-    return { fromBlock: startBlock, toBlock: latestBlock, queued: 0 }
-  }
-
-  const endBlock =
-    latestBlock - startBlock + 1n > SCAN_MAX_BLOCKS ? startBlock + SCAN_MAX_BLOCKS - 1n : latestBlock
-
-  // Single eth_getLogs call for all 7 events (avoids parallel RPC burst limits)
-  const logs = await client.getLogs({
-    address: escrow,
-    events: Object.values(SCANNED_EVENTS),
-    fromBlock: startBlock,
-    toBlock: endBlock,
-  })
-
-  let queued = 0
-  let rolesCache: Awaited<ReturnType<ChainReader['getRoles']>> | null = null
-
-  for (const log of logs) {
-    const orderId = (log.args as { orderId?: bigint } | undefined)?.orderId
-    if (!orderId) continue
-    const order = await chain.getOrder(orderId)
-    if (!order) continue
-
-    switch (log.eventName) {
-      case 'OrderOpened': {
-        const maker = order.taker === order.buyer ? order.seller : order.buyer
-        await queueNotification(db, maker, 'order_opened', orderId)
-        queued++
-        break
-      }
-      case 'OrderPaid': {
-        await queueNotification(db, order.seller, 'order_paid', orderId)
-        queued++
-        break
-      }
-      case 'OrderReleased': {
-        await queueNotification(db, order.buyer, 'order_completed', orderId)
-        await queueNotification(db, order.seller, 'order_completed', orderId)
-        queued += 2
-        break
-      }
-      case 'OrderCancelled': {
-        await queueNotification(db, order.buyer, 'order_cancelled', orderId)
-        await queueNotification(db, order.seller, 'order_cancelled', orderId)
-        queued += 2
-        break
-      }
-      case 'OrderDisputed': {
-        if (!rolesCache) rolesCache = await chain.getRoles()
-        const recipients = Array.from(new Set([order.buyer, order.seller, rolesCache.arbiter]))
-        for (const r of recipients) {
-          await queueNotification(db, r, 'order_disputed', orderId)
-          queued++
-        }
-        break
-      }
-      case 'CaseTaken': {
-        await queueNotification(db, order.buyer, 'case_taken', orderId)
-        await queueNotification(db, order.seller, 'case_taken', orderId)
-        queued += 2
-        break
-      }
-      case 'DisputeResolved': {
-        await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
-        await queueNotification(db, order.seller, 'dispute_resolved', orderId)
-        queued += 2
-        break
-      }
+    return {
+      fromBlock: startBlock,
+      toBlock: latestBlock,
+      latestBlock,
+      lag: 0n,
+      windows: 0,
+      queued: 0,
     }
   }
 
-  await db.query(
-    `INSERT INTO public.chain_cursor (name, last_block, updated_at)
-     VALUES ($1, $2, now())
-     ON CONFLICT (name) DO UPDATE
-       SET last_block = EXCLUDED.last_block,
-           updated_at = now()`,
-    [CHAIN_CURSOR_NAME, endBlock.toString()],
-  )
+  const startedAt = Date.now()
+  let windowStart = startBlock
+  let lastScanned = startBlock - 1n
+  let windows = 0
+  let queued = 0
+  let rolesCache: Awaited<ReturnType<ChainReader['getRoles']>> | null = null
 
-  return { fromBlock: startBlock, toBlock: endBlock, queued }
+  while (
+    windowStart <= latestBlock &&
+    windows < SCAN_MAX_WINDOWS_PER_TICK &&
+    Date.now() - startedAt < SCAN_TIME_BUDGET_MS
+  ) {
+    const windowEnd =
+      latestBlock - windowStart + 1n > SCAN_WINDOW_BLOCKS
+        ? windowStart + SCAN_WINDOW_BLOCKS - 1n
+        : latestBlock
+
+    // Single eth_getLogs call per window (Arc Testnet RPC accepts up to 5,000 blocks)
+    const logs = await client.getLogs({
+      address: escrow,
+      events: Object.values(SCANNED_EVENTS),
+      fromBlock: windowStart,
+      toBlock: windowEnd,
+    })
+
+    for (const log of logs) {
+      const orderId = (log.args as { orderId?: bigint } | undefined)?.orderId
+      if (!orderId) continue
+      const order = await chain.getOrder(orderId)
+      if (!order) continue
+
+      switch (log.eventName) {
+        case 'OrderOpened': {
+          const maker = order.taker === order.buyer ? order.seller : order.buyer
+          await queueNotification(db, maker, 'order_opened', orderId)
+          queued++
+          break
+        }
+        case 'OrderPaid': {
+          await queueNotification(db, order.seller, 'order_paid', orderId)
+          queued++
+          break
+        }
+        case 'OrderReleased': {
+          await queueNotification(db, order.buyer, 'order_completed', orderId)
+          await queueNotification(db, order.seller, 'order_completed', orderId)
+          queued += 2
+          break
+        }
+        case 'OrderCancelled': {
+          await queueNotification(db, order.buyer, 'order_cancelled', orderId)
+          await queueNotification(db, order.seller, 'order_cancelled', orderId)
+          queued += 2
+          break
+        }
+        case 'OrderDisputed': {
+          if (!rolesCache) rolesCache = await chain.getRoles()
+          const recipients = Array.from(new Set([order.buyer, order.seller, rolesCache.arbiter]))
+          for (const r of recipients) {
+            await queueNotification(db, r, 'order_disputed', orderId)
+            queued++
+          }
+          break
+        }
+        case 'CaseTaken': {
+          await queueNotification(db, order.buyer, 'case_taken', orderId)
+          await queueNotification(db, order.seller, 'case_taken', orderId)
+          queued += 2
+          break
+        }
+        case 'DisputeResolved': {
+          await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
+          await queueNotification(db, order.seller, 'dispute_resolved', orderId)
+          queued += 2
+          break
+        }
+      }
+    }
+
+    await db.query(
+      `INSERT INTO public.chain_cursor (name, last_block, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (name) DO UPDATE
+         SET last_block = EXCLUDED.last_block,
+             updated_at = now()`,
+      [CHAIN_CURSOR_NAME, windowEnd.toString()],
+    )
+
+    lastScanned = windowEnd
+    windowStart = windowEnd + 1n
+    windows++
+  }
+
+  return {
+    fromBlock: startBlock,
+    toBlock: lastScanned,
+    latestBlock,
+    lag: latestBlock > lastScanned ? latestBlock - lastScanned : 0n,
+    windows,
+    queued,
+  }
 }
 
 /** Run all maintenance jobs in one cron tick. Errors are isolated and logged as short codes. */
