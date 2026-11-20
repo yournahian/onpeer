@@ -15,8 +15,11 @@ import {
   countryByCurrency,
   fiatFor,
   formatFiat,
+  formatOrderCap,
   formatPrice,
   hexToCurrency,
+  isAdExpired,
+  isUncapped,
   maskToMethods,
   sameAddr,
   shortAddr,
@@ -98,10 +101,11 @@ async function searchAds(args: Record<string, unknown>, ctx: ToolContext): Promi
     args: [offset, page],
   })
 
+  const nowSec = Math.floor(Date.now() / 1000)
   const wantedSide = action === 'buy' ? SIDE_SELL : SIDE_BUY
   const matches = list
     .map((ad, i) => ({ ad, id: offset + BigInt(i) + 1n }))
-    .filter(({ ad }) => !ad.paused && !ad.closed && ad.available > 0n)
+    .filter(({ ad }) => !ad.paused && !ad.closed && ad.available > 0n && !isAdExpired(ad.expiresAt, nowSec))
     .filter(({ ad }) => ad.side === wantedSide && hexToCurrency(ad.currency) === currency)
     .filter(({ ad }) => !method || maskToMethods(ad.paymentMask).some((m) => m.name.toLowerCase().includes(method)))
     .filter(({ ad }) => {
@@ -131,6 +135,7 @@ async function searchAds(args: Record<string, unknown>, ctx: ToolContext): Promi
         max_usdc: usdcText(ad.maxAmount > ad.available ? ad.available : ad.maxAmount),
         payment_methods: maskToMethods(ad.paymentMask).map((m) => m.name),
         pay_within_minutes: ad.windowMinutes,
+        expires_at: new Date(Number(ad.expiresAt) * 1000).toISOString(),
         advertiser: shortAddr(ad.maker),
         merchant: ad.merchantAd,
         advertiser_completed_trades: makers[i]?.ordersCompleted ?? null,
@@ -153,12 +158,38 @@ async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
     })
     return formatUnitsFixed(raw, 6, 2)
   }
-  const [u, e] = await Promise.all([
+  const [u, e, account, kycOk] = await Promise.all([
     read(usdc),
     read(eurc && /^0x[0-9a-fA-F]{40}$/.test(eurc) ? (eurc as Address) : undefined),
+    ESCROW_ADDRESS
+      ? ctx.client
+          .readContract({ address: ESCROW_ADDRESS, abi: p2pEscrowAbi, functionName: 'getAccount', args: [ctx.address] })
+          .catch(() => null)
+      : Promise.resolve(null),
+    ESCROW_ADDRESS
+      ? ctx.client
+          .readContract({ address: ESCROW_ADDRESS, abi: p2pEscrowAbi, functionName: 'isVerified', args: [ctx.address] })
+          .catch(() => false)
+      : Promise.resolve(false),
   ])
   return {
-    result: { connected: true, address: ctx.address, network: arcTestnet.name, usdc_balance: u, eurc_balance: e },
+    result: {
+      connected: true,
+      address: ctx.address,
+      network: arcTestnet.name,
+      usdc_balance: u,
+      eurc_balance: e,
+      ...(account
+        ? {
+            p2p_tier: account.tier,
+            p2p_order_cap: formatOrderCap(account.orderCap),
+            p2p_completed_trades: account.ordersCompleted,
+            p2p_concessions: account.concessions,
+            p2p_unpaid_debt_usdc: usdcText(account.totalDebt),
+            p2p_kyc_verified: kycOk,
+          }
+        : {}),
+    },
   }
 }
 
@@ -246,6 +277,7 @@ async function proposeTrade(args: Record<string, unknown>, ctx: ToolContext): Pr
     .catch(() => null)
   if (!ad || ad.maker === '0x0000000000000000000000000000000000000000') return { result: { error: 'ad not found' } }
   if (ad.paused || ad.closed || ad.available === 0n) return { result: { error: 'ad is not available' } }
+  if (isAdExpired(ad.expiresAt, Math.floor(Date.now() / 1000))) return { result: { error: 'ad has expired' } }
   if (sameAddr(ad.maker, ctx.address)) return { result: { error: 'cannot trade against your own ad' } }
   if (amount > ad.available || amount > ad.maxAmount || (amount < ad.minAmount && amount !== ad.available))
     return {
@@ -255,6 +287,50 @@ async function proposeTrade(args: Record<string, unknown>, ctx: ToolContext): Pr
         max_usdc: usdcText(ad.maxAmount > ad.available ? ad.available : ad.maxAmount),
       },
     }
+  if (ctx.address) {
+    const [acc, kycReq, callerOk, makerOk] = await Promise.all([
+      ctx.client
+        .readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'getAccount', args: [ctx.address] })
+        .catch(() => null),
+      ctx.client
+        .readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'kycRequired' })
+        .catch(() => false),
+      ctx.client
+        .readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'isVerified', args: [ctx.address] })
+        .catch(() => false),
+      ctx.client
+        .readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'isVerified', args: [ad.maker] })
+        .catch(() => false),
+    ])
+    if (kycReq && (!callerOk || !makerOk)) {
+      return {
+        result: {
+          error: !callerOk
+            ? 'active KYC verification is required on your account before opening P2P orders'
+            : 'this advertiser no longer holds active KYC verification',
+        },
+      }
+    }
+    if (acc) {
+      if (acc.restricted) return { result: { error: 'your account is restricted from opening new trades' } }
+      if (acc.disputeLimitReached) return { result: { error: 'your account reached the lost-dispute limit' } }
+      if (acc.totalDebt > 0n)
+        return {
+          result: {
+            error: 'repay your unpaid dispute bond debt on the Trust & margin tab before opening new orders',
+            unpaid_debt_usdc: usdcText(acc.totalDebt),
+          },
+        }
+      if (!isUncapped(acc.orderCap) && amount > acc.orderCap)
+        return {
+          result: {
+            error: 'amount exceeds your per-order account tier limit',
+            tier: acc.tier,
+            order_cap_usdc: usdcText(acc.orderCap),
+          },
+        }
+    }
+  }
   const currency = hexToCurrency(ad.currency)
   const country = COUNTRIES.find((c) => c.currency === currency)
   const buying = ad.side === SIDE_SELL

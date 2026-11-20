@@ -4,11 +4,12 @@ import { useAccount, usePublicClient, useReadContract, useReadContracts } from '
 import { erc20Abi, parseAbiItem, type Address, type ContractFunctionReturnType } from 'viem'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { getUsdc } from '@/onchain-facts'
-import { CHAIN_ID, DEPLOY_BLOCK, ESCROW_ADDRESS } from '@/lib/p2p'
+import { CHAIN_ID, DEFAULT_LISTING_FEE, DEPLOY_BLOCK, ESCROW_ADDRESS } from '@/lib/p2p'
 
 export type Ad = ContractFunctionReturnType<typeof p2pEscrowAbi, 'view', 'getAd'>
 export type Order = ContractFunctionReturnType<typeof p2pEscrowAbi, 'view', 'getOrder'>
 export type Account = ContractFunctionReturnType<typeof p2pEscrowAbi, 'view', 'getAccount'>
+export type DebtItem = ContractFunctionReturnType<typeof p2pEscrowAbi, 'view', 'getDebts'>[number]
 export type AdWithId = Ad & { id: bigint }
 export type OrderWithId = Order & { id: bigint }
 
@@ -36,7 +37,7 @@ export function useAds() {
     functionName: 'adCount',
     query: { enabled, refetchInterval: POLL },
   })
-  const total = (count.data) ?? 0n
+  const total = count.data ?? 0n
   const offset = total > PAGE ? total - PAGE : 0n
   const list = useReadContract({
     ...base,
@@ -58,7 +59,7 @@ export function useOrders() {
     functionName: 'orderCount',
     query: { enabled, refetchInterval: POLL },
   })
-  const total = (count.data) ?? 0n
+  const total = count.data ?? 0n
   const offset = total > PAGE ? total - PAGE : 0n
   const list = useReadContract({
     ...base,
@@ -118,9 +119,106 @@ export function useMyAccount() {
   return res.data
 }
 
+export function useDebts(address: Address | undefined) {
+  const res = useReadContract({
+    ...base,
+    functionName: 'getDebts',
+    args: [address as Address],
+    query: { enabled: enabled && !!address, refetchInterval: POLL },
+  })
+  return res.data ?? []
+}
+
+export function useDisputeWaived(address: Address | undefined) {
+  const res = useReadContract({
+    ...base,
+    functionName: 'disputeLimitWaived',
+    args: [address as Address],
+    query: { enabled: enabled && !!address, refetchInterval: POLL },
+  })
+  return res.data === true
+}
+
 export function usePaused() {
   const res = useReadContract({ ...base, functionName: 'paused', query: { enabled, refetchInterval: 15_000 } })
   return res.data === true
+}
+
+export function usePrivacySwitches() {
+  const sealed = useReadContract({ ...base, functionName: 'sealedEnabled', query: { enabled, refetchInterval: 15_000 } })
+  const payerProof = useReadContract({ ...base, functionName: 'payerProofRequired', query: { enabled, refetchInterval: 15_000 } })
+  const kyc = useReadContract({ ...base, functionName: 'kycRequired', query: { enabled, refetchInterval: 15_000 } })
+  return {
+    sealedEnabled: sealed.data === true,
+    payerProofRequired: payerProof.data === true,
+    kycRequired: kyc.data === true,
+    isLoading: sealed.isLoading || payerProof.isLoading || kyc.isLoading,
+  }
+}
+
+export function useListingFee() {
+  const res = useReadContract({ ...base, functionName: 'listingFee', query: { enabled, refetchInterval: 20_000 } })
+  return res.data ?? DEFAULT_LISTING_FEE
+}
+
+export function useFeeConfig() {
+  const fee = useReadContract({ ...base, functionName: 'listingFee', query: { enabled, refetchInterval: 15_000 } })
+  const recipient = useReadContract({ ...base, functionName: 'feeRecipient', query: { enabled, refetchInterval: 15_000 } })
+  const accrued = useReadContract({ ...base, functionName: 'feesAccrued', query: { enabled, refetchInterval: POLL } })
+  return {
+    listingFee: fee.data ?? DEFAULT_LISTING_FEE,
+    feeRecipient: recipient.data,
+    feesAccrued: accrued.data ?? 0n,
+    isLoading: fee.isLoading || recipient.isLoading || accrued.isLoading,
+  }
+}
+
+export function useVerifier() {
+  const res = useReadContract({ ...base, functionName: 'verifier', query: { enabled, refetchInterval: 20_000 } })
+  return res.data
+}
+
+export type KycInfo = { verified: boolean; level: number; expiry: bigint }
+
+export function useVerification(address: Address | undefined): KycInfo {
+  const ver = useReadContract({
+    ...base,
+    functionName: 'verification',
+    args: [address as Address],
+    query: { enabled: enabled && !!address, refetchInterval: 15_000 },
+  })
+  const ok = useReadContract({
+    ...base,
+    functionName: 'isVerified',
+    args: [address as Address],
+    query: { enabled: enabled && !!address, refetchInterval: 15_000 },
+  })
+  const level = ver.data ? Number(ver.data[0]) : 0
+  const expiry = ver.data ? ver.data[1] : 0n
+  return { verified: ok.data === true, level, expiry }
+}
+
+export function useVerifications(addresses: Address[]) {
+  const unique = useMemo(
+    () => Array.from(new Set(addresses.map((m) => m.toLowerCase()))) as Address[],
+    [addresses],
+  )
+  const now = useNow()
+  const res = useReadContracts({
+    contracts: unique.map((m) => ({ ...base, functionName: 'verification' as const, args: [m] as const })),
+    query: { enabled: enabled && unique.length > 0, refetchInterval: 20_000 },
+  })
+  return useMemo(() => {
+    const map = new Map<string, KycInfo>()
+    unique.forEach((m, i) => {
+      const r = res.data?.[i]
+      if (r?.status === 'success') {
+        const [lvl, exp] = r.result as readonly [number, bigint]
+        map.set(m, { verified: lvl > 0 && BigInt(now) <= exp, level: Number(lvl), expiry: exp })
+      }
+    })
+    return map
+  }, [res.data, unique, now])
 }
 
 export type ChatMessage = { sender: Address; text: string; block: bigint; index: number }
@@ -183,7 +281,12 @@ export function useUsdcAllowance() {
 }
 
 export function useArbiter() {
-  const res = useReadContract({ ...base, functionName: 'arbiter', query: { enabled } })
+  const res = useReadContract({ ...base, functionName: 'arbiter', query: { enabled, refetchInterval: 30_000 } })
+  return res.data
+}
+
+export function useBackupArbiter() {
+  const res = useReadContract({ ...base, functionName: 'backupArbiter', query: { enabled, refetchInterval: 30_000 } })
   return res.data
 }
 
@@ -195,7 +298,7 @@ export function useClaimable() {
     args: [address as Address],
     query: { enabled: enabled && !!address, refetchInterval: POLL },
   })
-  return (res.data) ?? 0n
+  return res.data ?? 0n
 }
 
 export function useOpenOrderCount() {
@@ -206,5 +309,5 @@ export function useOpenOrderCount() {
     args: [address as Address],
     query: { enabled: enabled && !!address, refetchInterval: POLL },
   })
-  return Number((res.data) ?? 0n)
+  return Number(res.data ?? 0n)
 }

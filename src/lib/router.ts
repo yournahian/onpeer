@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant' | 'brand-kit'
+export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant' | 'brand-kit' | 'privacy'
 
 export const LANDING_URL = 'https://onpeer.xyz'
 export const APP_URL = 'https://app.onpeer.xyz'
@@ -25,6 +25,7 @@ function currentRoute(): Route {
   if (pathname.startsWith('/admin')) return 'admin'
   if (pathname.startsWith('/assistant')) return 'assistant'
   if (pathname.startsWith('/brand-kit')) return 'brand-kit'
+  if (pathname.startsWith('/privacy')) return 'privacy'
   // Older order links were shared as /?order=ID
   if (new URLSearchParams(search).has('order')) return 'p2p'
   if (isAppSubdomain()) return 'p2p'

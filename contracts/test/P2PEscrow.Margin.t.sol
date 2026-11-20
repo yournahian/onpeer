@@ -6,14 +6,14 @@ import {P2PEscrow} from "../P2PEscrow.sol";
 import {P2PEscrowTestBase} from "./P2PEscrow.Base.t.sol";
 
 contract P2PEscrowMarginTest is P2PEscrowTestBase {
-    // ---------------------------------------------------------------- taker requirements
+    // ---------------------------------------------------------------- taker requirements & tier caps
     function test_MinTakerCompleted_Enforced() public {
         vm.prank(alice);
-        uint256 id = esc.createAd(SELL, INR, PRICE, 100e6, 1e6, 100e6, 1, 60, 1, "d");
+        uint256 id = esc.createAd(SELL, INR, PRICE, 100e6, 1e6, 100e6, 1, 60, 1, DEFAULT_TTL, 0, bytes32(0), "d");
         assertEq(esc.getAd(id).minTakerCompleted, 1);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.RequirementNotMet.selector);
-        esc.openOrder(id, 1e6, PRICE, "x");
+        esc.openOrder(id, 1e6, PRICE, bytes32(0), "x");
         _qualify(bob);
         assertEq(esc.getStats(bob).ordersCompleted, 1);
         _open(bob, id, 1e6);
@@ -21,33 +21,86 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
 
     function test_MinTakerCompleted_SmallTradesDoNotQualify() public {
         vm.prank(alice);
-        uint256 id = esc.createAd(SELL, INR, PRICE, 100e6, 1e6, 100e6, 1, 60, 1, "d");
+        uint256 id = esc.createAd(SELL, INR, PRICE, 100e6, 1e6, 100e6, 1, 60, 1, DEFAULT_TTL, 0, bytes32(0), "d");
         uint256 other = _sell(carol, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, other, 10e6 - 1);
         _paid(oid);
         _release(oid);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.RequirementNotMet.selector);
-        esc.openOrder(id, 1e6, PRICE, "x");
+        esc.openOrder(id, 1e6, PRICE, bytes32(0), "x");
     }
 
-    function test_NewTakerMax_200Usdc_SellAd() public {
-        uint256 id = _sell(alice, 1000e6, 1e6, 1000e6);
-        assertEq(esc.NEW_TAKER_MAX(), 200e6);
+    function test_TierCaps_And_AgeBoundaries() public {
+        usdc.mint(alice, 10_000e6);
+        uint256 id = _sell(alice, 10_000e6, 1e6, 10_000e6);
+
+        // Tier 0: 0 completed -> 200 USDC
+        assertEq(esc.orderCap(bob), 200e6);
+        assertEq(esc.getAccount(bob).tier, 0);
         vm.prank(bob);
-        vm.expectRevert(P2PEscrow.NewUserLimit.selector);
-        esc.openOrder(id, 200e6 + 1, PRICE, "x");
-        uint256 oid = _open(bob, id, 200e6); // exactly the cap is fine
-        _cancel(bob, oid);
-        _qualify(bob);
-        _open(bob, id, 300e6); // experienced taker is uncapped
+        vm.expectRevert(P2PEscrow.AboveCap.selector);
+        esc.openOrder(id, 200e6 + 1, PRICE, bytes32(0), "x");
+        uint256 oid0 = _open(bob, id, 200e6);
+        _cancel(bob, oid0);
+
+        // Merchant with 0 completed gets Tier 1 (500 USDC)
+        _makeMerchant(carol);
+        assertEq(esc.orderCap(carol), 500e6);
+        assertEq(esc.getAccount(carol).tier, 1);
+        vm.prank(carol);
+        vm.expectRevert(P2PEscrow.AboveCap.selector);
+        esc.openOrder(id, 500e6 + 1, PRICE, bytes32(0), "x");
+        _cancel(carol, _open(carol, id, 500e6));
+
+        // Tier 1: 1..4 completed -> 500 USDC
+        _qualifyN(bob, 4);
+        assertEq(esc.orderCap(bob), 500e6);
+        assertEq(esc.getAccount(bob).tier, 1);
+        vm.prank(bob);
+        vm.expectRevert(P2PEscrow.AboveCap.selector);
+        esc.openOrder(id, 500e6 + 1, PRICE, bytes32(0), "x");
+
+        // 5 completed, but age < 7 days -> stays Tier 1 (500 USDC)
+        _qualifyN(bob, 1);
+        assertEq(esc.getStats(bob).ordersCompleted, 5);
+        uint64 seen = esc.getStats(bob).firstSeen;
+        vm.warp(uint256(seen) + 7 days - 1);
+        assertEq(esc.orderCap(bob), 500e6);
+        assertEq(esc.getAccount(bob).tier, 1);
+
+        // Exactly at age == 7 days -> Tier 2 (2,000 USDC)
+        vm.warp(uint256(seen) + 7 days);
+        vm.prank(alice);
+        esc.refreshAd(id, 168);
+        assertEq(esc.orderCap(bob), 2_000e6);
+        assertEq(esc.getAccount(bob).tier, 2);
+        vm.prank(bob);
+        vm.expectRevert(P2PEscrow.AboveCap.selector);
+        esc.openOrder(id, 2_000e6 + 1, PRICE, bytes32(0), "x");
+        _release(_open(bob, id, 2_000e6));
+
+        // 20 completed, age < 14 days -> still Tier 2 (2,000 USDC)
+        _qualifyN(bob, 14); // bob already had 6 completed -> now 20
+        assertGe(esc.getStats(bob).ordersCompleted, 20);
+        vm.warp(uint256(seen) + 14 days - 1);
+        assertEq(esc.orderCap(bob), 2_000e6);
+        assertEq(esc.getAccount(bob).tier, 2);
+
+        // Exactly at age == 14 days -> Tier 3 (uncapped)
+        vm.warp(uint256(seen) + 14 days);
+        vm.prank(alice);
+        esc.refreshAd(id, 168);
+        assertEq(esc.orderCap(bob), type(uint256).max);
+        assertEq(esc.getAccount(bob).tier, 3);
+        _release(_open(bob, id, 5_000e6));
     }
 
-    function test_NewTakerMax_200Usdc_BuyAd() public {
+    function test_Tier0Cap_BuyAd() public {
         uint256 id = _buy(alice, 1000e6, 1e6, 1000e6);
         vm.prank(bob);
-        vm.expectRevert(P2PEscrow.NewUserLimit.selector);
-        esc.openOrder(id, 200e6 + 1, PRICE, "x");
+        vm.expectRevert(P2PEscrow.AboveCap.selector);
+        esc.openOrder(id, 200e6 + 1, PRICE, bytes32(0), "x");
         _open(bob, id, 200e6);
     }
 
@@ -74,7 +127,7 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertEq(esc.getStats(bob).ordersCompleted, 1);
         assertEq(esc.getStats(bob).volume, 10e6);
 
-        uint256 o2 = _open(bob, id, 25e6); // same pair again
+        uint256 o2 = _open(bob, id, 25e6);
         _paid(o2);
         _release(o2);
         assertEq(esc.getStats(alice).ordersCompleted, 1);
@@ -84,10 +137,11 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
     }
 
     function test_Stats_PairIsUnordered_ReverseRolesDoNotRecount() public {
+        _makeMerchant(alice);
         uint256 id = _sell(alice, 100e6, 1e6, 100e6);
-        _release(_open(bob, id, 10e6)); // alice sells to bob
+        _release(_open(bob, id, 10e6));
         uint256 buyAd = _buy(alice, 100e6, 1e6, 100e6);
-        uint256 oid = _open(bob, buyAd, 10e6); // bob sells to alice
+        uint256 oid = _open(bob, buyAd, 10e6);
         _paid(oid);
         _release(oid);
         assertEq(esc.getStats(alice).ordersCompleted, 1);
@@ -113,6 +167,69 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
 
     function _hi(address a, address b) internal pure returns (address) {
         return a < b ? b : a;
+    }
+
+    // ---------------------------------------------------------------- debt auto-offsets & exits
+    function test_Debt_OffsetByDepositMargin_And_WithdrawClaimable_And_ExitsNeverBlocked() public {
+        // Alice posts 2 sell ads & queues a margin withdrawal before losing a dispute
+        vm.startPrank(alice);
+        esc.depositMargin(50e6);
+        esc.requestMarginWithdrawal(50e6); // free margin = 0
+        vm.stopPrank();
+
+        uint256 ad1 = _sell(alice, 200e6, 1e6, 200e6);
+        uint256 oidDisputed = _open(bob, ad1, 100e6); // bond = 5e6
+        uint256 oidLive = _open(carol, ad1, 20e6);
+        _paid(oidDisputed);
+        _disputeBySeller(oidDisputed);
+        _resolve(oidDisputed, true, false); // alice owes bob 5e6
+        assertEq(esc.totalDebt(alice), 5e6);
+
+        // Exits still work while in debt: release existing order, closeAd, completeMarginWithdrawal
+        _release(oidLive);
+        vm.prank(alice);
+        esc.closeAd(ad1);
+        vm.warp(block.timestamp + 7 days);
+        vm.prank(alice);
+        esc.completeMarginWithdrawal();
+        assertEq(esc.margin(alice), 0);
+
+        // 1) depositMargin offsets debt first: deposit 3e6 -> 3e6 to bob, 0 to margin; then 10e6 -> 2e6 to bob, 8e6 to margin
+        uint256 b0 = _bal(bob);
+        vm.prank(alice);
+        esc.depositMargin(3e6);
+        assertEq(esc.totalDebt(alice), 2e6);
+        assertEq(esc.margin(alice), 0);
+        assertEq(_bal(bob), b0 + 3e6);
+
+        vm.prank(alice);
+        esc.depositMargin(10e6);
+        assertEq(esc.totalDebt(alice), 0);
+        assertEq(esc.margin(alice), 8e6);
+        assertEq(_bal(bob), b0 + 5e6);
+
+        // 2) withdrawClaimable offsets debt first: give dave claimable 15e6 while blocked, then dave incurs 3e6 debt to alice
+        uint256 ad2 = _sell(carol, 200e6, 1e6, 200e6);
+        uint256 oidClaim = _open(dave, ad2, 15e6);
+        uint256 oidLose = _open(dave, ad2, 60e6); // bond = 3e6
+        usdc.setBlocked(dave, true);
+        _release(oidClaim);
+        assertEq(esc.claimable(dave), 15e6);
+
+        _paid(oidLose);
+        _disputeBySeller(oidLose);
+        _resolve(oidLose, false, false); // dave owes carol 3e6
+        assertEq(esc.totalDebt(dave), 3e6);
+
+        usdc.setBlocked(dave, false);
+        uint256 c0 = _bal(carol);
+        uint256 d0 = _bal(dave);
+        vm.prank(dave);
+        esc.withdrawClaimable();
+        assertEq(esc.totalDebt(dave), 0);
+        assertEq(esc.claimable(dave), 0);
+        assertEq(_bal(carol), c0 + 3e6);
+        assertEq(_bal(dave), d0 + 12e6);
     }
 
     // ---------------------------------------------------------------- margin deposit / withdrawal
@@ -148,7 +265,7 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         (uint128 amt, uint64 unlockAt) = esc.marginWithdrawal(alice);
         assertEq(amt, 40e6);
         assertEq(unlockAt, uint64(block.timestamp + 7 days));
-        assertEq(esc.margin(alice), 100e6); // still held (and slashable) until completed
+        assertEq(esc.margin(alice), 100e6);
         assertEq(esc.effectiveMargin(alice), 60e6);
     }
 
@@ -175,7 +292,6 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         vm.prank(alice);
         vm.expectRevert(P2PEscrow.NothingToWithdraw.selector);
         esc.completeMarginWithdrawal();
-        // a new request can be made after completion
         vm.prank(alice);
         esc.requestMarginWithdrawal(60e6);
     }
@@ -221,9 +337,8 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         esc.depositMargin(50e6);
         esc.requestMarginWithdrawal(50e6);
         vm.stopPrank();
-        uint256 oid = _open(bob, id, 10e6); // bob is the buyer party
-        vm.warp(block.timestamp + 7 days - 1 hours); // order still pending, deadline not passed? 60min window
-        vm.warp(block.timestamp + 1 hours);
+        uint256 oid = _open(bob, id, 10e6);
+        vm.warp(block.timestamp + 7 days);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.OpenOrdersRemain.selector);
         esc.completeMarginWithdrawal();
@@ -239,14 +354,14 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         uint256 id = _buy(alice, 100e6, 1e6, 100e6);
         vm.prank(bob);
         esc.depositMargin(50e6);
-        uint256 oid = _open(bob, id, 10e6); // bob is seller party
+        uint256 oid = _open(bob, id, 10e6);
         vm.prank(bob);
         esc.requestMarginWithdrawal(50e6);
         vm.warp(block.timestamp + 7 days);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.OpenOrdersRemain.selector);
         esc.completeMarginWithdrawal();
-        _cancel(bob, oid); // after deadline anyone can cancel
+        _cancel(bob, oid);
         vm.prank(bob);
         esc.completeMarginWithdrawal();
         assertEq(esc.margin(bob), 0);
@@ -259,7 +374,7 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertFalse(esc.isMerchant(alice));
         esc.depositMargin(1);
         assertTrue(esc.isMerchant(alice));
-        esc.requestMarginWithdrawal(1); // queued margin no longer counts
+        esc.requestMarginWithdrawal(1);
         assertFalse(esc.isMerchant(alice));
         esc.cancelMarginWithdrawal();
         assertTrue(esc.isMerchant(alice));
@@ -286,29 +401,26 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         esc.requestMarginWithdrawal(1e6);
         vm.prank(carol);
         vm.expectRevert(P2PEscrow.MerchantMarginTooLow.selector);
-        esc.openOrder(merch, 1e6, PRICE, "x");
+        esc.openOrder(merch, 1e6, PRICE, bytes32(0), "x");
         vm.prank(alice);
         esc.cancelMarginWithdrawal();
-        _open(carol, merch, 1e6); // re-funded
+        _open(carol, merch, 1e6);
     }
 
-    function test_Merchant_MarginTooLow_AfterSlash_BuyAd() public {
+    function test_Merchant_MarginTooLow_AfterBondAndSlash_BuyAd() public {
         vm.prank(alice);
         esc.depositMargin(100e6);
         uint256 merch = _buy(alice, 50e6, 1e6, 50e6);
-        uint256 oid = _open(bob, merch, 5e6);
+        uint256 oid = _open(bob, merch, 5e6); // bond = 2e6
         _paid(oid);
-        _disputeBySeller(oid); // seller bob disputes
-        _resolve(oid, false, false);
-        // arbiter ruled for seller: alice (buyer) lost; with slash she'd drop below threshold
-        uint256 oid2 = _open(bob, merch, 5e6);
-        _paid(oid2);
-        _disputeBySeller(oid2);
-        _resolve(oid2, false, true);
-        assertEq(esc.margin(alice), 95e6);
+        _disputeBySeller(oid);
+        _resolve(oid, false, true); // bond 2e6 + slash 5e6 -> margin 93e6 < 100e6
+        assertEq(esc.margin(alice), 93e6);
+        vm.prank(arbiter);
+        esc.setDisputeWaiver(alice, true);
         vm.prank(carol);
         vm.expectRevert(P2PEscrow.MerchantMarginTooLow.selector);
-        esc.openOrder(merch, 1e6, PRICE, "x");
+        esc.openOrder(merch, 1e6, PRICE, bytes32(0), "x");
     }
 
     function test_NonMerchantAd_UnaffectedByLaterMargin() public {
@@ -346,14 +458,20 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertEq(v.strikes, 0);
         assertEq(v.partyOpen, 1);
         assertEq(v.claimable, 0);
+        assertEq(v.firstSeen, uint64(T0));
+        assertEq(v.totalDebt, 0);
+        assertEq(v.orderCap, 500e6);
+        assertEq(v.tier, 1);
+        assertEq(v.disputesSettled, 0);
+        assertFalse(v.disputeLimitReached);
 
         _cancel(bob, oid);
         P2PEscrow.AccountView memory vb = esc.getAccount(bob);
         assertEq(vb.strikes, 1);
         assertEq(vb.partyOpen, 0);
         assertEq(vb.ordersCreated, 1);
-        assertFalse(vb.merchant);
-        assertFalse(vb.restricted);
+        assertEq(vb.tier, 0);
+        assertEq(vb.orderCap, 200e6);
     }
 
     function test_GetAccount_ClaimableAndBan() public {
@@ -383,10 +501,10 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertEq(uint8(_status(oid)), uint8(P2PEscrow.OrderStatus.Completed));
         assertEq(esc.claimable(bob), 40e6);
         assertEq(_bal(bob), b0);
-        assertEq(_bal(address(esc)), 100e6); // 60 inventory + 40 claimable
+        assertEq(_bal(address(esc)), 100e6 + FEE);
 
         vm.prank(bob);
-        vm.expectRevert(); // token still refuses; claim stays intact
+        vm.expectRevert();
         esc.withdrawClaimable();
         assertEq(esc.claimable(bob), 40e6);
 
@@ -397,7 +515,7 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         esc.withdrawClaimable();
         assertEq(_bal(bob), b0 + 40e6);
         assertEq(esc.claimable(bob), 0);
-        assertEq(_bal(address(esc)), 60e6);
+        assertEq(_bal(address(esc)), 60e6 + FEE);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.NothingToWithdraw.selector);
         esc.withdrawClaimable();
@@ -429,12 +547,13 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
     }
 
     function test_Payout_CancelBuyAd_BlockedSeller() public {
+        _qualifyN(alice, 3);
         uint256 id = _buy(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, id, 40e6);
         usdc.setBlocked(bob, true);
         _cancel(alice, oid);
         assertEq(esc.claimable(bob), 40e6);
-        assertEq(_bal(address(esc)), 40e6);
+        assertEq(_bal(address(esc)), 40e6 + FEE);
     }
 
     function test_Payout_CancelClosedSellAd_BlockedMaker() public {
@@ -460,18 +579,18 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertEq(esc.claimable(alice), 100e6);
     }
 
-    function test_Payout_Resolve_BlockedWinnerGetsAmountAndSlashDeferred() public {
+    function test_Payout_Resolve_BlockedWinnerGetsAmountBondAndSlashDeferred() public {
         uint256 id = _sell(alice, 100e6, 1e6, 100e6);
         vm.prank(alice);
         esc.depositMargin(30e6);
-        uint256 oid = _open(bob, id, 50e6);
+        uint256 oid = _open(bob, id, 50e6); // bond = 2.5e6, remaining margin 27.5e6 < 50e6 -> total 30e6
         _paid(oid);
         _disputeBySeller(oid);
         usdc.setBlocked(bob, true);
         _resolve(oid, true, true);
-        assertEq(esc.claimable(bob), 80e6); // 50 escrow + 30 slashed margin
+        assertEq(esc.claimable(bob), 80e6);
         assertEq(esc.margin(alice), 0);
-        assertEq(_bal(address(esc)), 50e6 + 80e6); // remaining inventory + claimable
+        assertEq(_bal(address(esc)), 50e6 + 80e6 + FEE);
     }
 
     function test_WithdrawClaimable_WorksWhilePausedAndRestricted() public {
@@ -498,6 +617,6 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         assertEq(esc.margin(alice), 5e6);
         vm.prank(alice);
         vm.expectRevert(Pausable.EnforcedPause.selector);
-        esc.createAd(SELL, INR, PRICE, 10e6, 1e6, 10e6, 1, 60, 0, "d");
+        esc.createAd(SELL, INR, PRICE, 10e6, 1e6, 10e6, 1, 60, 0, DEFAULT_TTL, 0, bytes32(0), "d");
     }
 }

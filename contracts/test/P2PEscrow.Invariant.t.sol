@@ -5,19 +5,27 @@ import {Test} from "forge-std/Test.sol";
 import {P2PEscrow} from "../P2PEscrow.sol";
 import {P2PEscrowTestBase, MockUSDC} from "./P2PEscrow.Base.t.sol";
 
-/// @dev Drives bounded random actions through the escrow as a fixed set of users.
+/// @dev Drives bounded random v2 actions through the escrow as a fixed set of users.
 contract P2PEscrowHandler is Test {
     P2PEscrow public esc;
     MockUSDC public usdc;
     address public arbiter;
+    address public backupArbiter;
     address[] public users;
 
     uint256 public okCalls;
 
-    constructor(P2PEscrow esc_, MockUSDC usdc_, address arbiter_, address[] memory users_) {
+    constructor(
+        P2PEscrow esc_,
+        MockUSDC usdc_,
+        address arbiter_,
+        address backupArbiter_,
+        address[] memory users_
+    ) {
         esc = esc_;
         usdc = usdc_;
         arbiter = arbiter_;
+        backupArbiter = backupArbiter_;
         users = users_;
     }
 
@@ -39,20 +47,28 @@ contract P2PEscrowHandler is Test {
         return n == 0 ? 0 : bound(seed, 1, n);
     }
 
-    function _create(address u, uint8 side, uint128 price, uint128 total, uint128 mn, uint128 mx) private {
-        bytes memory data = abi.encodeWithSelector(
-            P2PEscrow.createAd.selector, side, bytes3("INR"), price, total, mn, mx, uint32(1), uint16(60), uint32(0), "d"
-        );
-        vm.prank(u);
-        (bool ok,) = address(esc).call(data);
-        if (ok) ++okCalls;
-    }
-
-    function createAd(uint256 seed, uint256 side, uint256 price, uint256 total, uint256 mn, uint256 mx) external {
+    function createAd(uint256 seed, uint256 side, uint256 price, uint256 total, uint256 mn, uint256 mx, uint256 ttl)
+        external
+    {
         uint128 t = uint128(bound(total, 1e6, 600e6));
         uint128 lo = uint128(bound(mn, 1, t));
         uint128 hi = uint128(bound(mx, lo, t));
-        _create(_u(seed), uint8(side % 2), uint128(bound(price, 1, 1e9)), t, lo, hi);
+        uint8 s = uint8(side % 2);
+        uint16 ttlHours = uint16(bound(ttl, 1, 168));
+        string memory d = s == 0 ? "d" : "";
+        vm.prank(_u(seed));
+        try esc.createAd(s, bytes3("INR"), uint128(bound(price, 1, 1e9)), t, lo, hi, 1, 60, 0, ttlHours, 0, bytes32(0), d) {
+            ++okCalls;
+        } catch {}
+    }
+
+    function refreshAd(uint256 adSeed, uint256 ttl) external {
+        uint256 id = _aid(adSeed);
+        if (id == 0) return;
+        vm.prank(esc.getAd(id).maker);
+        try esc.refreshAd(id, uint16(bound(ttl, 1, 168))) {
+            ++okCalls;
+        } catch {}
     }
 
     function openOrder(uint256 seed, uint256 adSeed, uint256 amount) external {
@@ -60,16 +76,16 @@ contract P2PEscrowHandler is Test {
         if (id == 0) return;
         uint128 price = esc.getAd(id).priceE6;
         vm.prank(_u(seed));
-        try esc.openOrder(id, uint128(bound(amount, 1, 250e6)), price, "pay") {
+        try esc.openOrder(id, uint128(bound(amount, 1, 250e6)), price, bytes32(0), "pay") {
             ++okCalls;
         } catch {}
     }
 
-    function markPaid(uint256 oSeed) external {
+    function markPaid(uint256 oSeed, bool withProof) external {
         uint256 id = _oid(oSeed);
         if (id == 0) return;
         vm.prank(esc.getOrder(id).buyer);
-        try esc.markPaid(id) {
+        try esc.markPaid(id, withProof ? keccak256("inv-tx") : bytes32(0)) {
             ++okCalls;
         } catch {}
     }
@@ -83,10 +99,11 @@ contract P2PEscrowHandler is Test {
         } catch {}
     }
 
-    function cancelOrder(uint256 seed, uint256 oSeed) external {
+    function cancelOrder(uint256 seed, uint256 oSeed, bool asBuyer) external {
         uint256 id = _oid(oSeed);
         if (id == 0) return;
-        vm.prank(_u(seed));
+        address caller = asBuyer ? esc.getOrder(id).buyer : _u(seed);
+        vm.prank(caller);
         try esc.cancelOrder(id) {
             ++okCalls;
         } catch {}
@@ -102,11 +119,40 @@ contract P2PEscrowHandler is Test {
         } catch {}
     }
 
-    function resolveDispute(uint256 oSeed, bool toBuyer, bool slash) external {
+    function takeCase(uint256 oSeed, bool useBackup) external {
         uint256 id = _oid(oSeed);
         if (id == 0) return;
+        vm.prank(useBackup ? backupArbiter : arbiter);
+        try esc.takeCase(id) {
+            ++okCalls;
+        } catch {}
+    }
+
+    function resolveDispute(uint256 oSeed, bool toBuyer, bool slash, bool applyBond, bool useBackup) external {
+        uint256 id = _oid(oSeed);
+        if (id == 0) return;
+        vm.prank(useBackup ? backupArbiter : arbiter);
+        try esc.resolveDispute(id, toBuyer, slash, applyBond) {
+            ++okCalls;
+        } catch {}
+    }
+
+    function collectFees() external {
+        try esc.collectFees() {
+            ++okCalls;
+        } catch {}
+    }
+
+    function repayDebt(uint256 seed, uint256 amount) external {
+        vm.prank(_u(seed));
+        try esc.repayDebt(bound(amount, 1, 20e6)) {
+            ++okCalls;
+        } catch {}
+    }
+
+    function waiveDisputeLimit(uint256 seed, bool v) external {
         vm.prank(arbiter);
-        try esc.resolveDispute(id, toBuyer, slash) {
+        try esc.setDisputeWaiver(_u(seed), v) {
             ++okCalls;
         } catch {}
     }
@@ -163,7 +209,7 @@ contract P2PEscrowHandler is Test {
     }
 
     function warp(uint256 dt) external {
-        vm.warp(block.timestamp + bound(dt, 0, 3 days));
+        vm.warp(block.timestamp + bound(dt, 0, 8 days));
     }
 }
 
@@ -180,7 +226,7 @@ contract P2PEscrowInvariantTest is P2PEscrowTestBase {
         actors.push(carol);
         actors.push(dave);
         actors.push(stranger);
-        handler = new P2PEscrowHandler(esc, usdc, arbiter, actors);
+        handler = new P2PEscrowHandler(esc, usdc, arbiter, backupArbiter, actors);
         targetContract(address(handler));
     }
 
@@ -198,9 +244,9 @@ contract P2PEscrowInvariantTest is P2PEscrowTestBase {
         }
     }
 
-    /// @dev Escrow USDC == Sell inventory + live order amounts + margin + claimable.
+    /// @dev Escrow USDC == Sell inventory + live order amounts + margin + claimable + feesAccrued.
     function invariant_EscrowBalanceConserved() public view {
-        uint256 expected;
+        uint256 expected = esc.feesAccrued() + esc.claimable(owner);
         P2PEscrow.Ad[] memory ads = esc.getAds(0, esc.adCount());
         for (uint256 i; i < ads.length; ++i) {
             if (ads[i].side == P2PEscrow.Side.Sell) expected += ads[i].available;
@@ -244,6 +290,18 @@ contract P2PEscrowInvariantTest is P2PEscrowTestBase {
     function invariant_StrikesBelowLimit() public view {
         for (uint256 i; i < actors.length; ++i) {
             assertLt(_strikes(actors[i]), esc.MAX_CANCEL_STRIKES());
+        }
+    }
+
+    function invariant_DebtsConsistentAndBounded() public view {
+        for (uint256 i; i < actors.length; ++i) {
+            P2PEscrow.Debt[] memory ds = esc.getDebts(actors[i]);
+            assertLe(ds.length, esc.MAX_DEBTS_PER_ACCOUNT());
+            uint256 sum;
+            for (uint256 j; j < ds.length; ++j) {
+                sum += ds[j].amount;
+            }
+            assertEq(sum, esc.totalDebt(actors[i]));
         }
     }
 }

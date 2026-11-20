@@ -2,34 +2,58 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title P2PEscrow
-/// @notice Fee-free USDC escrow for off-chain fiat trades; governance cannot withdraw escrow.
+/// @notice Non-custodial USDC escrow v2.1 with a flat per-ad listing fee (0% trade fee); governance cannot withdraw escrow.
 /// @dev Pass Arc's six-decimal ERC-20 USDC view, 0x3600000000000000000000000000000000000000.
 ///      No native currency is accepted. Fiat payment is attested by users, not verified on-chain.
-///      Payment details are public on-chain: never include secrets or sensitive personal data.
-contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
-    using SafeERC20 for IERC20;
+///      Includes Phase 2 KYC and privacy hooks (verifier, encryption-key registry, sealed details, hashes), disabled until switched on.
+contract P2PEscrow is Ownable2Step {
 
     uint8 public constant MAX_CANCEL_STRIKES = 3;
-    uint256 public constant STRIKE_WINDOW = 24 hours;
-    uint256 public constant COOLDOWN = 24 hours;
-    uint32 public constant MAX_DISPUTES_LOST = 3;
-    uint256 public constant NEW_TAKER_MAX = 200e6;
-    uint256 public constant QUALIFY_MIN = 10e6;
-    uint256 public constant MERCHANT_MARGIN = 100e6;
-    uint256 public constant MARGIN_WITHDRAW_DELAY = 7 days;
-    uint256 public constant MESSAGE_MAX = 280;
+    uint256 internal constant STRIKE_WINDOW = 24 hours;
+    uint256 internal constant COOLDOWN = 24 hours;
+    uint256 public constant GRACE = 5 minutes;
+    uint256 internal constant COOLING_OFF = 30 minutes;
+    uint256 internal constant LATE_MARK_WINDOW = 30 days;
+    uint8 internal constant MAX_LATE_MARKS = 2;
+    uint256 internal constant DEFAULT_LISTING_FEE = 50_000;
+    uint256 internal constant MAX_LISTING_FEE = 500_000;
+    uint8 internal constant DETAILS_PLAIN = 0;
+    uint8 internal constant DETAILS_HANDSHAKE = 1;
+    uint8 internal constant DETAILS_AUTO = 2;
+    uint256 internal constant BOND_MIN = 2e6;
+    uint256 internal constant BOND_MAX = 5e6;
+    uint256 internal constant BOND_BPS = 500;
+    uint256 internal constant BACKUP_ARBITER_DELAY = 7 days;
+    uint16 internal constant MIN_AD_TTL_HOURS = 1;
+    uint16 internal constant MAX_AD_TTL_HOURS = 168;
+    uint256 internal constant REVEAL_WINDOW = 10 minutes;
+    uint32 internal constant BUY_AD_MIN_COMPLETED = 3;
+    uint256 public constant MAX_DEBTS_PER_ACCOUNT = 8;
+    uint256 internal constant TIER0_CAP = 200e6;
+    uint256 internal constant TIER1_CAP = 500e6;
+    uint256 internal constant TIER2_CAP = 2_000e6;
+    uint256 internal constant TIER2_MIN_AGE = 7 days;
+    uint256 internal constant TIER3_MIN_AGE = 14 days;
+    uint256 internal constant QUALIFY_MIN = 10e6;
+    uint256 internal constant MERCHANT_MARGIN = 100e6;
+    uint256 internal constant MARGIN_WITHDRAW_DELAY = 7 days;
+    uint256 internal constant MESSAGE_MAX = 280;
 
     enum Side { Sell, Buy }
     enum OrderStatus {
-        None, Pending, Paid, Completed, Cancelled, Disputed,
-        ResolvedToBuyer, ResolvedToSeller
+        None,
+        Pending,
+        Paid,
+        Completed,
+        Cancelled,
+        Disputed,
+        ResolvedToBuyer,
+        ResolvedToSeller,
+        Settled
     }
 
     struct Ad {
@@ -49,6 +73,9 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         string details;
         uint32 minTakerCompleted;
         bool merchantAd;
+        uint64 expiresAt;
+        uint8 detailsMode;
+        bytes32 detailsHash;
     }
 
     struct Order {
@@ -67,16 +94,39 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         uint256 fiatAmountE6;
         string paymentDetails;
         address taker;
+        uint128 bond;
+        bool paidLate;
+        bool detailsReady;
+        bytes32 detailsHash;
+        bytes32 payerProof;
+        uint64 revealDeadline;
+        uint64 reviewStartedAt;
     }
 
     /// @notice ordersCompleted counts releases of at least QUALIFY_MIN with distinct counterparties.
-    /// @dev Each unordered pair counts once for both parties. Further Sybil resistance cannot be
-    ///      achieved onchain; the arbiter or owner can restrict addresses.
+    /// @dev Each unordered pair counts once for both parties. Every 2 concessions count as 1 lost dispute.
     struct Stats {
         uint32 ordersCreated;
         uint32 ordersCompleted;
         uint32 disputesLost;
         uint128 volume;
+        uint32 disputesSettled;
+        uint64 firstSeen;
+        uint32 concessions;
+        uint8 lateMarks;
+        uint64 lateMarkWindowStart;
+    }
+
+    /// @notice Onchain KYC status attested by the verifier role (no personal data stored).
+    struct Verification {
+        uint8 level;
+        uint64 expiry;
+    }
+
+    /// @notice Unpaid dispute-bond obligation owed to a dispute winner.
+    struct Debt {
+        address creditor;
+        uint128 amount;
     }
 
     /// @notice Rolling buyer cancellation strikes and temporary entry ban.
@@ -92,7 +142,7 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         uint64 unlockAt;
     }
 
-    /// @notice Combined trading, safety, margin and deferred-payout information.
+    /// @notice Combined trading, safety, margin, tier, debt, KYC and deferred-payout information.
     struct AccountView {
         uint32 ordersCreated;
         uint32 ordersCompleted;
@@ -108,27 +158,51 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         uint8 strikes;
         uint256 partyOpen;
         uint256 claimable;
+        uint64 firstSeen;
+        uint256 totalDebt;
+        uint256 orderCap;
+        uint8 tier;
+        uint32 disputesSettled;
+        bool disputeLimitReached;
+        uint32 concessions;
+        uint8 lateMarks;
     }
 
     mapping(address => bool) public restricted;
+    mapping(address => bool) public disputeLimitWaived;
     mapping(address => Penalty) public penalties;
     mapping(address => uint256) public margin;
     mapping(address => MarginWithdrawal) public marginWithdrawal;
     mapping(address => uint256) public partyOpenOrders;
 
     IERC20 public immutable usdc;
+    uint256 private _reentrancyStatus = 1;
     address public arbiter;
+    address public backupArbiter;
+    address public feeRecipient;
+    address public verifier;
+    uint256 public listingFee;
+    uint256 public feesAccrued;
+    bool public paused;
+    bool public sealedEnabled;
+    bool public payerProofRequired;
+    bool public kycRequired;
+
     uint256 public adCount;
     uint256 public orderCount;
     mapping(bytes3 => bool) public supportedCurrency;
     mapping(address => uint256) public openOrderCount;
-    mapping(address => Stats) public stats;
+    mapping(address => Stats) private stats;
+    mapping(address => Verification) public verification;
     mapping(uint256 => Ad) private _ads;
     mapping(uint256 => Order) private _orders;
     mapping(address => uint256[]) private _userOrderIds;
     mapping(address => uint256[]) private _userAdIds;
     mapping(address => uint256) public claimable;
     mapping(bytes32 => bool) public pairCounted;
+    mapping(address => Debt[]) private _debts;
+    mapping(address => uint256) public totalDebt;
+    mapping(address => bytes) public encryptionKey;
 
     error InvalidAddress();
     error UnsupportedCurrency(bytes3 currency);
@@ -136,11 +210,15 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     error InvalidAmount();
     error InvalidPaymentMask();
     error InvalidWindow();
+    error InvalidTtl();
     error InvalidDetails();
+    error InvalidDetailsMode();
+    error InvalidFee();
     error AdNotFound(uint256 adId);
     error OrderNotFound(uint256 orderId);
     error Unauthorized();
     error AdUnavailable();
+    error AdExpired();
     error SelfTrade();
     error OpenOrderLimit(address account);
     error InvalidStatus(OrderStatus status);
@@ -151,17 +229,41 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     error NothingToWithdraw();
     error NotAdmin();
     error Restricted();
+    error DebtOutstanding();
     error CooldownActive();
     error RequirementNotMet();
-    error NewUserLimit();
+    error AboveCap();
+    error BuyAdNotAllowed();
+    error SealedDisabled();
+    error PayerProofRequired();
+    error LateMarkLimit();
+    error NotVerified();
+    error InvalidVerification();
+    error DetailsAlreadyReady();
+    error DetailsNotReady();
+    error InvalidEncryptionKey();
     error WithdrawalPending();
     error OpenOrdersRemain();
     error InvalidMessage();
     error InvalidSide();
     error MerchantMarginTooLow();
     error RenounceDisabled();
+    error EnforcedPause();
+    error ReentrancyGuardReentrantCall();
+    error SafeERC20FailedOperation(address token);
+
+    event Paused(address account);
+    event Unpaused(address account);
+
+    modifier nonReentrant() {
+        if (_reentrancyStatus == 2) revert ReentrancyGuardReentrantCall();
+        _reentrancyStatus = 2;
+        _;
+        _reentrancyStatus = 1;
+    }
 
     event RestrictionUpdated(address indexed account, bool restricted);
+    event DisputeWaiverUpdated(address indexed account, bool waived);
     event StrikeAdded(address indexed buyer, uint8 strikes);
     event CooldownStarted(address indexed buyer, uint64 bannedUntil);
     event MarginDeposited(address indexed account, uint256 amount);
@@ -169,33 +271,62 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     event MarginWithdrawalCancelled(address indexed account, uint128 amount);
     event MarginWithdrawn(address indexed account, uint256 amount);
     event MarginSlashed(uint256 indexed orderId, address indexed loser, address indexed winner, uint256 amount);
+    event DebtCreated(uint256 indexed orderId, address indexed debtor, address indexed creditor, uint128 amount);
+    event DebtRepaid(address indexed debtor, address indexed creditor, uint256 amount);
     event OrderMessage(uint256 indexed orderId, address indexed sender, string text);
+    event EncryptionKeyRegistered(address indexed account, bytes key);
 
     event AdCreated(uint256 indexed adId, address indexed maker, Side side, bytes3 currency, uint128 totalAmount);
+    event AdRefreshed(uint256 indexed adId, uint64 expiresAt);
     event AdPriceUpdated(uint256 indexed adId, uint128 oldPriceE6, uint128 newPriceE6);
     event AdPaused(uint256 indexed adId, bool paused);
     event AdClosed(uint256 indexed adId, uint128 remaining, uint128 refunded);
     event OrderOpened(uint256 indexed orderId, uint256 indexed adId, address indexed buyer, address seller, uint128 amount);
+    event DetailsShared(uint256 indexed orderId, bytes32 detailsHash, uint64 deadline);
     event OrderPaid(uint256 indexed orderId, uint64 paidAt);
     event OrderReleased(uint256 indexed orderId, address indexed buyer, uint128 amount);
     event OrderCancelled(uint256 indexed orderId, address indexed caller);
     event OrderDisputed(uint256 indexed orderId, address indexed caller, uint64 disputedAt);
+    event CaseTaken(uint256 indexed orderId, address indexed arbiter, uint64 reviewStartedAt);
+    event DisputeSettled(uint256 indexed orderId, address indexed caller, address indexed recipient, uint128 amount);
     event DisputeResolved(uint256 indexed orderId, bool toBuyer, address indexed recipient, uint128 amount);
     event Withdrawn(address indexed account, uint256 amount);
     event PayoutDeferred(address indexed to, uint256 amount);
     event ArbiterUpdated(address indexed oldArbiter, address indexed newArbiter);
+    event BackupArbiterUpdated(address indexed oldBackupArbiter, address indexed newBackupArbiter);
+    event ListingFeeUpdated(uint256 oldFee, uint256 newFee);
+    event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
+    event FeesCollected(address indexed recipient, uint256 amount);
+    event VerifierUpdated(address indexed oldVerifier, address indexed newVerifier);
+    event VerificationUpdated(address indexed account, uint8 level, uint64 expiry);
+    event VerificationRevoked(address indexed account, address indexed caller);
+    event KycRequiredUpdated(bool required);
+    event SealedEnabledUpdated(bool enabled);
+    event PayerProofRequiredUpdated(bool required);
     event CurrencyUpdated(bytes3 indexed currency, bool supported);
 
     /// @param usdc_ Six-decimal Arc USDC ERC-20 address (not the native-currency interface).
-    /// @param initialOwner Governance address, with two-step ownership transfers.
-    /// @param initialArbiter Initial dispute resolver; cannot resolve its own trades.
-    constructor(address usdc_, address initialOwner, address initialArbiter) Ownable(initialOwner) {
-        if (usdc_ == address(0) || usdc_.code.length == 0 || initialArbiter == address(0)) {
+    /// @param initialOwner Governance address (and default feeRecipient), with two-step ownership transfers.
+    /// @param initialArbiter Initial primary dispute resolver; cannot resolve its own trades.
+    /// @param initialBackupArbiter Initial backup resolver, able to rule once a dispute is 7 days old.
+    constructor(address usdc_, address initialOwner, address initialArbiter, address initialBackupArbiter)
+        Ownable(initialOwner)
+    {
+        if (
+            usdc_ == address(0) || usdc_.code.length == 0 || initialArbiter == address(0)
+                || initialBackupArbiter == address(0)
+        ) {
             revert InvalidAddress();
         }
         usdc = IERC20(usdc_);
         arbiter = initialArbiter;
+        backupArbiter = initialBackupArbiter;
+        listingFee = DEFAULT_LISTING_FEE;
+        feeRecipient = initialOwner;
         emit ArbiterUpdated(address(0), initialArbiter);
+        emit BackupArbiterUpdated(address(0), initialBackupArbiter);
+        emit ListingFeeUpdated(0, DEFAULT_LISTING_FEE);
+        emit FeeRecipientUpdated(address(0), initialOwner);
         _setCurrency("INR", true);
         _setCurrency("PKR", true);
         _setCurrency("BDT", true);
@@ -206,10 +337,8 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         _setCurrency("AFN", true);
     }
 
-    /// @notice Create an ad. Sell ads deposit USDC; Buy ads reserve buying capacity only.
-    /// @dev Amounts use six USDC decimals; priceE6 is fiat per USDC scaled by 1e6.
-    ///      Merchant status is fixed on the ad at creation. Margin withdrawal that drops effective
-    ///      margin below MERCHANT_MARGIN makes merchant-flagged ads unfillable until re-funded.
+    /// @notice Create an ad. Charges flat listingFee; Sell ads also deposit totalAmount USDC; Buy ads require Merchant or >= 3 completed trades.
+    /// @dev Amounts use six USDC decimals; priceE6 is fiat per USDC scaled by 1e6; detailsMode: 0 plain, 1 handshake, 2 autoReveal.
     function createAd(
         uint8 side,
         bytes3 currency,
@@ -220,20 +349,45 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         uint32 paymentMask,
         uint16 windowMinutes,
         uint32 minTakerCompleted,
+        uint16 ttlHours,
+        uint8 detailsMode,
+        bytes32 detailsHash,
         string calldata details
-    ) external nonReentrant whenNotPaused returns (uint256 adId) {
+    ) external nonReentrant returns (uint256) {
         _requireEligible(msg.sender);
         if (side > uint8(Side.Buy)) revert InvalidSide();
+        if (
+            side == uint8(Side.Buy) && !isMerchant(msg.sender)
+                && stats[msg.sender].ordersCompleted < BUY_AD_MIN_COMPLETED
+        ) {
+            revert BuyAdNotAllowed();
+        }
         if (!supportedCurrency[currency]) revert UnsupportedCurrency(currency);
         _validatePrice(priceE6);
         if (minAmount == 0 || minAmount > maxAmount || maxAmount > totalAmount) revert InvalidAmount();
         if (paymentMask == 0) revert InvalidPaymentMask();
         if (windowMinutes < 10 || windowMinutes > 1440) revert InvalidWindow();
-        if (bytes(details).length > 200 || (side == uint8(Side.Sell) && bytes(details).length == 0)) {
+        if (ttlHours < MIN_AD_TTL_HOURS || ttlHours > MAX_AD_TTL_HOURS) revert InvalidTtl();
+        if (detailsMode > DETAILS_AUTO) revert InvalidDetailsMode();
+        if (detailsMode != DETAILS_PLAIN) {
+            if (!sealedEnabled) revert SealedDisabled();
+            if (detailsHash == bytes32(0)) revert InvalidDetails();
+        }
+        if (
+            bytes(details).length > 200
+                || (detailsMode == DETAILS_PLAIN && side == uint8(Side.Sell) && bytes(details).length == 0)
+        ) {
             revert InvalidDetails();
         }
 
-        adId = ++adCount;
+        _touchFirstSeen(msg.sender);
+
+        uint256 fee = listingFee;
+        uint256 adId;
+        unchecked {
+            if (fee != 0) feesAccrued += fee;
+            adId = ++adCount;
+        }
         Ad storage ad = _ads[adId];
         ad.maker = msg.sender;
         ad.side = Side(side);
@@ -249,9 +403,33 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         ad.details = details;
         ad.minTakerCompleted = minTakerCompleted;
         ad.merchantAd = isMerchant(msg.sender);
+        unchecked {
+            ad.expiresAt = uint64(block.timestamp + uint256(ttlHours) * 1 hours);
+        }
+        ad.detailsMode = detailsMode;
+        ad.detailsHash = detailsHash;
+
         _userAdIds[msg.sender].push(adId);
-        emit AdCreated(adId, msg.sender, Side(side), currency, totalAmount);
-        if (side == uint8(Side.Sell)) usdc.safeTransferFrom(msg.sender, address(this), totalAmount);
+        emit AdCreated(adId, msg.sender, ad.side, ad.currency, ad.initialAmount);
+        uint256 pull;
+        unchecked {
+            pull = (ad.side == Side.Sell ? uint256(ad.initialAmount) : 0) + fee;
+        }
+        if (pull != 0) _pullUsdc(msg.sender, pull);
+        return adId;
+    }
+
+    /// @notice Extend an open ad's expiry window from the current timestamp.
+    function refreshAd(uint256 adId, uint16 ttlHours) external {
+        Ad storage ad = _makerAd(adId);
+        if (ad.closed) revert AdUnavailable();
+        if (ttlHours < MIN_AD_TTL_HOURS || ttlHours > MAX_AD_TTL_HOURS) revert InvalidTtl();
+        uint64 expiresAt;
+        unchecked {
+            expiresAt = uint64(block.timestamp + uint256(ttlHours) * 1 hours);
+        }
+        ad.expiresAt = expiresAt;
+        emit AdRefreshed(adId, expiresAt);
     }
 
     /// @notice Change the price for future orders only.
@@ -265,14 +443,14 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     }
 
     /// @notice Pause or resume new orders without affecting existing orders.
-    function setAdPaused(uint256 adId, bool paused) external {
+    function setAdPaused(uint256 adId, bool paused_) external {
         Ad storage ad = _makerAd(adId);
         if (ad.closed) revert AdUnavailable();
-        ad.paused = paused;
-        emit AdPaused(adId, paused);
+        ad.paused = paused_;
+        emit AdPaused(adId, paused_);
     }
 
-    /// @notice Permanently close an ad and refund unreserved Sell inventory.
+    /// @notice Permanently close an ad (including expired ads) and refund unreserved Sell inventory.
     function closeAd(uint256 adId) external nonReentrant {
         Ad storage ad = _makerAd(adId);
         if (ad.closed) revert AdUnavailable();
@@ -285,31 +463,48 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     }
 
     /// @notice Reserve inventory/capacity and open a Pending trade.
-    /// @param paymentDetails Seller's fiat receiving details for Buy ads; ignored for Sell ads.
-    function openOrder(uint256 adId, uint128 amount, uint128 limitPriceE6, string calldata paymentDetails)
-        external nonReentrant whenNotPaused returns (uint256 orderId)
-    {
+    /// @param detailsHash Ciphertext commitment for sealed Buy ads (or optional fingerprint in plain mode).
+    /// @param paymentDetails Seller's fiat receiving details for plain Buy ads; ignored for Sell ads.
+    function openOrder(
+        uint256 adId,
+        uint128 amount,
+        uint128 limitPriceE6,
+        bytes32 detailsHash,
+        string calldata paymentDetails
+    ) external nonReentrant returns (uint256 orderId) {
         _requireEligible(msg.sender);
         Ad storage ad = _getAd(adId);
         _requireEligible(ad.maker);
-        if (ad.merchantAd && !isMerchant(ad.maker)) revert MerchantMarginTooLow();
-        if (stats[msg.sender].ordersCompleted < ad.minTakerCompleted) revert RequirementNotMet();
-        if (stats[msg.sender].ordersCompleted == 0 && amount > NEW_TAKER_MAX) revert NewUserLimit();
         if (ad.closed || ad.paused) revert AdUnavailable();
+        if (block.timestamp > ad.expiresAt) revert AdExpired();
+        if (ad.merchantAd && !isMerchant(ad.maker)) revert MerchantMarginTooLow();
         if (msg.sender == ad.maker) revert SelfTrade();
+        if (stats[msg.sender].ordersCompleted < ad.minTakerCompleted) revert RequirementNotMet();
         if (amount == 0 || amount > ad.available) revert InvalidAmount();
         if (amount > ad.maxAmount || (amount < ad.minAmount && amount != ad.available)) {
             revert InvalidAmount();
         }
-        if ((ad.side == Side.Sell && ad.priceE6 > limitPriceE6)
-            || (ad.side == Side.Buy && ad.priceE6 < limitPriceE6)) revert PriceMoved();
+        if (amount > orderCap(msg.sender)) revert AboveCap();
+        if ((ad.side == Side.Sell && ad.priceE6 > limitPriceE6) || (ad.side == Side.Buy && ad.priceE6 < limitPriceE6)) {
+            revert PriceMoved();
+        }
         if (openOrderCount[msg.sender] >= 5) revert OpenOrderLimit(msg.sender);
-        if (ad.side == Side.Buy && (bytes(paymentDetails).length == 0 || bytes(paymentDetails).length > 200)) {
-            revert InvalidDetails();
+        if (ad.detailsMode != DETAILS_PLAIN && !sealedEnabled) revert SealedDisabled();
+        if (bytes(paymentDetails).length > 200) revert InvalidDetails();
+        if (ad.side == Side.Buy) {
+            if (ad.detailsMode != DETAILS_PLAIN) {
+                if (detailsHash == bytes32(0)) revert InvalidDetails();
+            } else if (bytes(paymentDetails).length == 0) {
+                revert InvalidDetails();
+            }
         }
 
-        ad.available -= amount;
-        orderId = ++orderCount;
+        _touchFirstSeen(msg.sender);
+
+        unchecked {
+            ad.available -= amount;
+            orderId = ++orderCount;
+        }
         Order storage order = _orders[orderId];
         order.adId = adId;
         order.buyer = ad.side == Side.Sell ? msg.sender : ad.maker;
@@ -318,144 +513,295 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         order.status = OrderStatus.Pending;
         order.paymentMask = ad.paymentMask;
         order.createdAt = uint64(block.timestamp);
-        order.deadline = uint64(block.timestamp + uint256(ad.windowMinutes) * 60);
         order.amount = amount;
         order.priceE6 = ad.priceE6;
-        order.fiatAmountE6 = uint256(amount) * uint256(ad.priceE6) / 1e6;
-        if (ad.side == Side.Sell) order.paymentDetails = ad.details;
-        else order.paymentDetails = paymentDetails;
+        unchecked {
+            order.fiatAmountE6 = uint256(amount) * uint256(ad.priceE6) / 1e6;
+        }
         order.taker = msg.sender;
-        ++openOrderCount[order.taker];
-        ++partyOpenOrders[order.buyer];
-        ++partyOpenOrders[order.seller];
-        ++stats[order.buyer].ordersCreated;
-        ++stats[order.seller].ordersCreated;
+        order.bond = computeBond(amount);
+
+        unchecked {
+            if (ad.side == Side.Sell) {
+                if (ad.detailsMode == DETAILS_HANDSHAKE) {
+                    order.detailsReady = false;
+                    order.revealDeadline = uint64(block.timestamp + REVEAL_WINDOW);
+                } else {
+                    order.detailsReady = true;
+                    order.deadline = uint64(block.timestamp + uint256(ad.windowMinutes) * 60);
+                    order.detailsHash = ad.detailsHash;
+                }
+            } else {
+                order.detailsReady = true;
+                order.deadline = uint64(block.timestamp + uint256(ad.windowMinutes) * 60);
+                order.detailsHash = detailsHash;
+                if (ad.detailsMode == DETAILS_PLAIN) order.paymentDetails = paymentDetails;
+            }
+
+            ++openOrderCount[order.taker];
+            ++partyOpenOrders[order.buyer];
+            ++partyOpenOrders[order.seller];
+            ++stats[order.buyer].ordersCreated;
+            ++stats[order.seller].ordersCreated;
+        }
         _userOrderIds[order.buyer].push(orderId);
         _userOrderIds[order.seller].push(orderId);
         emit OrderOpened(orderId, adId, order.buyer, order.seller, amount);
-        if (ad.side == Side.Buy) usdc.safeTransferFrom(msg.sender, address(this), amount);
+        if (ad.side == Side.Buy) _pullUsdc(msg.sender, amount);
     }
 
-    /// @notice Buyer attests to sending fiat before the payment deadline (inclusive).
-    function markPaid(uint256 orderId) external {
+    /// @notice Seller reveals encrypted receiving-details hash for a handshake Sell order and starts the payment timer.
+    function shareDetails(uint256 orderId, bytes32 detailsHash) external {
+        Order storage order = _getOrder(orderId);
+        if (msg.sender != order.seller) revert Unauthorized();
+        _requireStatus(order, OrderStatus.Pending);
+        if (order.detailsReady) revert DetailsAlreadyReady();
+        if (block.timestamp > order.revealDeadline) revert DeadlinePassed();
+        if (detailsHash == bytes32(0)) revert InvalidDetails();
+
+        Ad storage ad = _ads[order.adId];
+        uint64 deadline;
+        unchecked {
+            deadline = uint64(block.timestamp + uint256(ad.windowMinutes) * 60);
+        }
+        order.detailsReady = true;
+        order.detailsHash = detailsHash;
+        order.deadline = deadline;
+        emit DetailsShared(orderId, detailsHash, deadline);
+    }
+
+    /// @notice Buyer attests to sending fiat within the payment deadline plus the 5-minute grace window.
+    /// @dev Late marks always require payerProof != 0 and are capped at 2 per rolling 30-day window.
+    function markPaid(uint256 orderId, bytes32 payerProof) external {
         Order storage order = _getOrder(orderId);
         if (msg.sender != order.buyer) revert Unauthorized();
         _requireStatus(order, OrderStatus.Pending);
-        if (block.timestamp > order.deadline) revert DeadlinePassed();
+        if (!order.detailsReady) revert DetailsNotReady();
+        unchecked {
+            if (block.timestamp > uint256(order.deadline) + GRACE) revert DeadlinePassed();
+        }
+        bool late = block.timestamp > order.deadline;
+        if ((late || payerProofRequired) && payerProof == bytes32(0)) revert PayerProofRequired();
+        if (late) {
+            Stats storage s = stats[msg.sender];
+            unchecked {
+                if (s.lateMarkWindowStart == 0 || block.timestamp > uint256(s.lateMarkWindowStart) + LATE_MARK_WINDOW) {
+                    s.lateMarkWindowStart = uint64(block.timestamp);
+                    s.lateMarks = 0;
+                }
+                if (s.lateMarks >= MAX_LATE_MARKS) revert LateMarkLimit();
+                ++s.lateMarks;
+            }
+        }
+
         order.status = OrderStatus.Paid;
         order.paidAt = uint64(block.timestamp);
+        order.paidLate = late;
+        order.payerProof = payerProof;
         emit OrderPaid(orderId, order.paidAt);
     }
 
-    /// @notice Seller releases USDC voluntarily while the order is Pending or Paid.
-    /// @dev Once a dispute is open only the arbiter can settle, so a losing seller cannot
-    ///      front-run a ruling to dodge dispute-loss counts or margin slashing.
-    ///      Only voluntary releases increment completed-order and volume statistics.
+    /// @notice Seller releases USDC in Pending, Paid or Disputed.
+    /// @dev Releasing from Disputed settles without completion credit or bond (clean in 30m cooling-off, concession after, loss if in review).
     function release(uint256 orderId) external nonReentrant {
         Order storage order = _getOrder(orderId);
         if (msg.sender != order.seller) revert Unauthorized();
-        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Paid)
-            revert InvalidStatus(order.status);
-        _finish(order, OrderStatus.Completed);
-        if (order.amount >= QUALIFY_MIN) {
-            bytes32 pairKey = order.buyer < order.seller
-                ? keccak256(abi.encodePacked(order.buyer, order.seller))
-                : keccak256(abi.encodePacked(order.seller, order.buyer));
-            if (!pairCounted[pairKey]) {
-                pairCounted[pairKey] = true;
-                ++stats[order.buyer].ordersCompleted;
-                ++stats[order.seller].ordersCompleted;
+        OrderStatus st = order.status;
+        if (st == OrderStatus.Disputed) {
+            _settleDisputed(orderId, order, order.seller, order.buyer);
+        } else {
+            if (st != OrderStatus.Pending && st != OrderStatus.Paid) revert InvalidStatus(st);
+            _finish(order, OrderStatus.Completed);
+            unchecked {
+                if (order.amount >= QUALIFY_MIN) {
+                    (address lo, address hi) =
+                        order.buyer < order.seller ? (order.buyer, order.seller) : (order.seller, order.buyer);
+                    bytes32 pairKey = keccak256(abi.encodePacked(lo, hi));
+                    if (!pairCounted[pairKey]) {
+                        pairCounted[pairKey] = true;
+                        ++stats[order.buyer].ordersCompleted;
+                        ++stats[order.seller].ordersCompleted;
+                    }
+                }
+                stats[order.buyer].volume += order.amount;
+                stats[order.seller].volume += order.amount;
             }
+            emit OrderReleased(orderId, order.buyer, order.amount);
+            _payout(order.buyer, order.amount);
         }
-        stats[order.buyer].volume += order.amount;
-        stats[order.seller].volume += order.amount;
-        emit OrderReleased(orderId, order.buyer, order.amount);
-        _payout(order.buyer, order.amount);
     }
 
-    /// @notice Buyer may cancel Pending orders anytime; anyone may cancel strictly after expiry.
-    /// @dev Sellers cannot cancel before expiry; Paid and Disputed orders cannot be cancelled.
+    /// @notice Cancel a Pending order (buyer anytime; others after grace/reveal expiry) or settle a Disputed order as buyer.
     function cancelOrder(uint256 orderId) external nonReentrant {
         Order storage order = _getOrder(orderId);
-        _requireStatus(order, OrderStatus.Pending);
-        if (msg.sender != order.buyer && block.timestamp <= order.deadline) revert Unauthorized();
-        Ad storage ad = _ads[order.adId];
-        _finish(order, OrderStatus.Cancelled);
-        if (order.buyer == order.taker) {
-            _addStrike(order.buyer);
-        } else if (!ad.closed) {
-            ad.paused = true;
-            emit AdPaused(order.adId, true);
+        OrderStatus st = order.status;
+        if (st == OrderStatus.Disputed) {
+            if (msg.sender != order.buyer) revert Unauthorized();
+            _settleDisputed(orderId, order, order.buyer, order.seller);
+        } else {
+            if (st != OrderStatus.Pending) revert InvalidStatus(st);
+            uint256 expiry;
+            unchecked {
+                expiry = order.detailsReady ? uint256(order.deadline) + GRACE : uint256(order.revealDeadline);
+            }
+            if (msg.sender != order.buyer && block.timestamp <= expiry) revert Unauthorized();
+
+            Ad storage ad = _ads[order.adId];
+            _finish(order, OrderStatus.Cancelled);
+            if (order.buyer == order.taker) {
+                if (order.detailsReady) _addStrike(order.buyer);
+            } else if (!ad.closed) {
+                ad.paused = true;
+                emit AdPaused(order.adId, true);
+            }
+            if (!ad.closed) {
+                unchecked {
+                    ad.available += order.amount;
+                }
+            }
+            emit OrderCancelled(orderId, msg.sender);
+            if (ad.side == Side.Buy) _payout(order.seller, order.amount);
+            else if (ad.closed) _payout(ad.maker, order.amount);
         }
-        if (!ad.closed) ad.available += order.amount;
-        emit OrderCancelled(orderId, msg.sender);
-        if (ad.side == Side.Buy) _payout(order.seller, order.amount);
-        else if (ad.closed) _payout(ad.maker, order.amount);
     }
 
-    /// @notice Seller may dispute Paid orders immediately; buyer must wait fifteen minutes.
+    /// @notice Permissionless fallback: seller may dispute Paid orders immediately; buyer after 15 minutes. No bond upfront.
     function openDispute(uint256 orderId) external {
         Order storage order = _getOrder(orderId);
         _requireStatus(order, OrderStatus.Paid);
         if (msg.sender != order.seller) {
             if (msg.sender != order.buyer) revert Unauthorized();
-            if (block.timestamp < uint256(order.paidAt) + 15 minutes) revert TooEarly();
+            unchecked {
+                if (block.timestamp < uint256(order.paidAt) + 15 minutes) revert TooEarly();
+            }
         }
         order.status = OrderStatus.Disputed;
         order.disputedAt = uint64(block.timestamp);
         emit OrderDisputed(orderId, msg.sender, order.disputedAt);
     }
 
-    /// @notice Arbiter awards the full escrow to a party; lost disputes never replenish inventory.
-    /// @dev The owner can replace an inactive arbiter with setArbiter.
-    /// @param slashLoser Whether to compensate the winner from the loser's margin, capped at escrow size.
-    function resolveDispute(uint256 orderId, bool toBuyer, bool slashLoser) external nonReentrant {
-        if (msg.sender != arbiter) revert Unauthorized();
+    /// @notice Arbiter (or backupArbiter after 7 days) takes an offchain/onchain dispute into active review.
+    function takeCase(uint256 orderId) external {
         Order storage order = _getOrder(orderId);
-        _requireStatus(order, OrderStatus.Disputed);
-        if (msg.sender == order.buyer || msg.sender == order.seller) revert ArbiterIsParty();
+        _startReview(orderId, order);
+        order.status = OrderStatus.Disputed;
+        emit CaseTaken(orderId, msg.sender, order.reviewStartedAt);
+    }
+
+    /// @notice Primary arbiter (or backupArbiter after 7 days) awards full escrow to winner from Paid or Disputed.
+    /// @param slashLoser Extra compensation from remaining margin up to the order amount.
+    /// @param applyBond Whether the loser owes the dispute bond (from free margin first, shortfall as Debt).
+    function resolveDispute(uint256 orderId, bool toBuyer, bool slashLoser, bool applyBond) external nonReentrant {
+        Order storage order = _getOrder(orderId);
+        _startReview(orderId, order);
+
         address recipient = toBuyer ? order.buyer : order.seller;
         address loser = toBuyer ? order.seller : order.buyer;
         _finish(order, toBuyer ? OrderStatus.ResolvedToBuyer : OrderStatus.ResolvedToSeller);
-        ++stats[loser].disputesLost;
+
+        Stats storage s = stats[loser];
+        uint32 oldEff = _effectiveLosses(s);
+        unchecked {
+            ++s.disputesLost;
+        }
+        _checkClearWaiver(loser, s, oldEff);
+
+        uint256 bondFromMargin;
+        if (applyBond) {
+            uint256 bond = order.bond;
+            uint256 free = effectiveMargin(loser);
+            bondFromMargin = free < bond ? free : bond;
+            uint256 bondDebt;
+            unchecked {
+                bondDebt = bond - bondFromMargin;
+                if (bondFromMargin != 0) margin[loser] -= bondFromMargin;
+            }
+            if (bondDebt != 0) {
+                _recordDebt(loser, recipient, uint128(bondDebt));
+                emit DebtCreated(orderId, loser, recipient, uint128(bondDebt));
+            }
+        }
+
         uint256 slash;
         if (slashLoser) {
             slash = margin[loser] < order.amount ? margin[loser] : order.amount;
-            margin[loser] -= slash;
+            unchecked {
+                margin[loser] -= slash;
+            }
             MarginWithdrawal storage pending = marginWithdrawal[loser];
             if (pending.amount > margin[loser]) pending.amount = uint128(margin[loser]);
             emit MarginSlashed(orderId, loser, recipient, slash);
         }
+
         emit DisputeResolved(orderId, toBuyer, recipient, order.amount);
-        _payout(recipient, order.amount);
-        if (slash != 0) _payout(recipient, slash);
+        unchecked {
+            _payout(recipient, uint256(order.amount) + bondFromMargin + slash);
+        }
     }
 
-    /// @notice Emit a public trade message without persisting its text in storage.
-    /// @dev Messages are public; never include secrets or sensitive personal data.
+    /// @notice Repay outstanding dispute-bond debts oldest first; pulls at most caller's totalDebt.
+    function repayDebt(uint256 amount) external nonReentrant {
+        uint256 owed = totalDebt[msg.sender];
+        if (amount == 0 || owed == 0) revert InvalidAmount();
+        uint256 pay = amount < owed ? amount : owed;
+        _pullUsdc(msg.sender, pay);
+        _repayDebtFromEscrow(msg.sender, pay);
+    }
+
+    /// @notice Emit a public trade message without persisting its text in storage (emergency fallback).
     function postMessage(uint256 orderId, string calldata text) external {
         Order storage order = _getOrder(orderId);
-        if (order.status != OrderStatus.Pending && order.status != OrderStatus.Paid
-            && order.status != OrderStatus.Disputed) revert InvalidStatus(order.status);
-        if (msg.sender != order.buyer && msg.sender != order.seller
-            && !(msg.sender == arbiter && order.status == OrderStatus.Disputed)) revert Unauthorized();
+        _requireMessageSender(order);
         if (bytes(text).length == 0 || bytes(text).length > MESSAGE_MAX) revert InvalidMessage();
         emit OrderMessage(orderId, msg.sender, text);
     }
 
-    /// @notice Deposit six-decimal USDC as slashable security margin, even while paused.
-    function depositMargin(uint256 amount) external nonReentrant {
-        if (amount == 0) revert InvalidAmount();
-        margin[msg.sender] += amount;
-        emit MarginDeposited(msg.sender, amount);
-        usdc.safeTransferFrom(msg.sender, address(this), amount);
+    /// @notice Register or rotate caller's public encryption key (33..65 bytes).
+    function registerEncryptionKey(bytes calldata key) external {
+        if (key.length < 33 || key.length > 65) revert InvalidEncryptionKey();
+        encryptionKey[msg.sender] = key;
+        emit EncryptionKeyRegistered(msg.sender, key);
     }
 
-    /// @notice Queue a withdrawal; queued margin remains slashable but does not confer merchant status.
+    /// @notice Return registered encryption keys for an order's buyer, seller and current primary arbiter.
+    function encryptionKeysFor(uint256 orderId)
+        external
+        view
+        returns (bytes memory buyerKey, bytes memory sellerKey, bytes memory arbiterKey)
+    {
+        Order storage order = _getOrder(orderId);
+        return (encryptionKey[order.buyer], encryptionKey[order.seller], encryptionKey[arbiter]);
+    }
+
+    /// @notice Deposit six-decimal USDC as security margin; offsets any unpaid debt of the caller first.
+    function depositMargin(uint256 amount) external nonReentrant {
+        if (amount == 0) revert InvalidAmount();
+        _pullUsdc(msg.sender, amount);
+        uint256 owed = totalDebt[msg.sender];
+        uint256 toDebt = amount < owed ? amount : owed;
+        uint256 toMargin;
+        unchecked {
+            toMargin = amount - toDebt;
+        }
+        if (toDebt != 0) {
+            _repayDebtFromEscrow(msg.sender, toDebt);
+        }
+        if (toMargin != 0) {
+            unchecked {
+                margin[msg.sender] += toMargin;
+            }
+            emit MarginDeposited(msg.sender, toMargin);
+        }
+    }
+
+    /// @notice Queue a withdrawal; queued margin remains slashable for extra slashes but is not free margin.
     function requestMarginWithdrawal(uint256 amount) external {
         if (amount == 0 || amount > margin[msg.sender] || amount > type(uint128).max) revert InvalidAmount();
         if (marginWithdrawal[msg.sender].amount != 0) revert WithdrawalPending();
-        uint64 unlockAt = uint64(block.timestamp + MARGIN_WITHDRAW_DELAY);
+        uint64 unlockAt;
+        unchecked {
+            unlockAt = uint64(block.timestamp + MARGIN_WITHDRAW_DELAY);
+        }
         marginWithdrawal[msg.sender] = MarginWithdrawal(uint128(amount), unlockAt);
         emit MarginWithdrawalRequested(msg.sender, uint128(amount), unlockAt);
     }
@@ -469,52 +815,162 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     }
 
     /// @notice Withdraw unlocked margin once all of the caller's trades are terminal.
-    /// @dev A failed token payout becomes claimable via the existing deferred-payout mechanism.
     function completeMarginWithdrawal() external nonReentrant {
         MarginWithdrawal memory pending = marginWithdrawal[msg.sender];
         if (pending.amount == 0) revert NothingToWithdraw();
         if (block.timestamp < pending.unlockAt) revert TooEarly();
         if (partyOpenOrders[msg.sender] != 0) revert OpenOrdersRemain();
         uint256 amount = pending.amount < margin[msg.sender] ? pending.amount : margin[msg.sender];
-        margin[msg.sender] -= amount;
+        unchecked {
+            margin[msg.sender] -= amount;
+        }
         delete marginWithdrawal[msg.sender];
         emit MarginWithdrawn(msg.sender, amount);
         if (amount != 0) _payout(msg.sender, amount);
     }
 
     /// @notice Ownership cannot be renounced so governance remains available.
-    function renounceOwnership() public override onlyOwner {
+    function renounceOwnership() public view override onlyOwner {
         revert RenounceDisabled();
     }
 
     /// @notice Pause only new ad creation and new order opening.
-    function pause() external onlyOwner { _pause(); }
+    function pause() external onlyOwner {
+        paused = true;
+        emit Paused(msg.sender);
+    }
 
     /// @notice Resume new ad creation and new order opening.
-    function unpause() external onlyOwner { _unpause(); }
+    function unpause() external onlyOwner {
+        paused = false;
+        emit Unpaused(msg.sender);
+    }
 
     /// @notice Owner or arbiter can restrict new trading without blocking any exit.
     function setRestricted(address account, bool value) external {
-        if (msg.sender != owner() && msg.sender != arbiter) revert NotAdmin();
+        _requireAdmin();
         restricted[account] = value;
         emit RestrictionUpdated(account, value);
     }
 
-    /// @notice Withdraw an existing deferred USDC payout, including while paused or restricted.
+    /// @notice Owner or arbiter can waive (or reinstate) the automatic lost-dispute restriction.
+    function setDisputeWaiver(address account, bool waived) external {
+        _requireAdmin();
+        _nonZero(account);
+        disputeLimitWaived[account] = waived;
+        emit DisputeWaiverUpdated(account, waived);
+    }
+
+    /// @notice Withdraw an existing deferred USDC payout; consumes claimable to repay caller's debt first.
     function withdrawClaimable() external nonReentrant {
         uint256 amount = claimable[msg.sender];
         if (amount == 0) revert NothingToWithdraw();
         claimable[msg.sender] = 0;
-        emit Withdrawn(msg.sender, amount);
-        usdc.safeTransfer(msg.sender, amount);
+
+        uint256 owed = totalDebt[msg.sender];
+        uint256 toDebt = amount < owed ? amount : owed;
+        uint256 remainder;
+        unchecked {
+            remainder = amount - toDebt;
+        }
+
+        if (toDebt != 0) {
+            _repayDebtFromEscrow(msg.sender, toDebt);
+        }
+        if (remainder != 0) {
+            emit Withdrawn(msg.sender, remainder);
+            _pushUsdc(msg.sender, remainder);
+        }
     }
 
-    /// @notice Governance appoints a nonzero arbiter, including for existing disputes.
+    /// @notice Governance sets the flat per-ad listing fee (capped at 0.50 USDC); affects future ads only.
+    function setListingFee(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_LISTING_FEE) revert InvalidFee();
+        uint256 oldFee = listingFee;
+        listingFee = newFee;
+        emit ListingFeeUpdated(oldFee, newFee);
+    }
+
+    /// @notice Governance updates the nonzero listing-fee recipient.
+    function setFeeRecipient(address newRecipient) external onlyOwner {
+        _nonZero(newRecipient);
+        address oldRecipient = feeRecipient;
+        feeRecipient = newRecipient;
+        emit FeeRecipientUpdated(oldRecipient, newRecipient);
+    }
+
+    /// @notice Permissionlessly transfer accrued listing fees to feeRecipient (blocklist-safe via _payout).
+    function collectFees() external nonReentrant {
+        uint256 amount = feesAccrued;
+        if (amount == 0) revert NothingToWithdraw();
+        feesAccrued = 0;
+        address recipient = feeRecipient;
+        emit FeesCollected(recipient, amount);
+        _payout(recipient, amount);
+    }
+
+    /// @notice Governance appoints or clears the KYC verifier address (verifier can never move funds).
+    function setVerifier(address newVerifier) external onlyOwner {
+        address oldVerifier = verifier;
+        verifier = newVerifier;
+        emit VerifierUpdated(oldVerifier, newVerifier);
+    }
+
+    /// @notice Governance toggles whether createAd and openOrder require active KYC verification.
+    function setKycRequired(bool required) external onlyOwner {
+        kycRequired = required;
+        emit KycRequiredUpdated(required);
+    }
+
+    /// @notice Verifier records an address's KYC level (>= 1) and future expiry timestamp.
+    function setVerification(address account, uint8 level, uint64 expiry) external {
+        if (msg.sender != verifier) revert Unauthorized();
+        _nonZero(account);
+        if (level == 0 || expiry <= block.timestamp) revert InvalidVerification();
+        verification[account] = Verification({level: level, expiry: expiry});
+        emit VerificationUpdated(account, level, expiry);
+    }
+
+    /// @notice Verifier or owner revokes an address's KYC verification.
+    function revokeVerification(address account) external {
+        if (msg.sender != verifier && msg.sender != owner()) revert Unauthorized();
+        _nonZero(account);
+        delete verification[account];
+        emit VerificationRevoked(account, msg.sender);
+    }
+
+    /// @notice Whether `account` holds a non-expired verification with level >= 1.
+    function isVerified(address account) public view returns (bool) {
+        Verification storage v = verification[account];
+        return v.level != 0 && block.timestamp <= v.expiry;
+    }
+
+    /// @notice Governance appoints a nonzero primary arbiter, including for existing disputes.
     function setArbiter(address newArbiter) external onlyOwner {
-        if (newArbiter == address(0)) revert InvalidAddress();
+        _nonZero(newArbiter);
         address oldArbiter = arbiter;
         arbiter = newArbiter;
         emit ArbiterUpdated(oldArbiter, newArbiter);
+    }
+
+    /// @notice Governance appoints a nonzero backup arbiter able to rule disputes >= 7 days old.
+    function setBackupArbiter(address newBackupArbiter) external onlyOwner {
+        _nonZero(newBackupArbiter);
+        address oldBackup = backupArbiter;
+        backupArbiter = newBackupArbiter;
+        emit BackupArbiterUpdated(oldBackup, newBackupArbiter);
+    }
+
+    /// @notice Governance enables or disables creation and opening of sealed-details ads.
+    function setSealedEnabled(bool enabled) external onlyOwner {
+        sealedEnabled = enabled;
+        emit SealedEnabledUpdated(enabled);
+    }
+
+    /// @notice Governance toggles whether markPaid requires a non-zero payerProof hash.
+    function setPayerProofRequired(bool required) external onlyOwner {
+        payerProofRequired = required;
+        emit PayerProofRequiredUpdated(required);
     }
 
     /// @notice Governance controls currencies for new ads; existing ads/orders are unaffected.
@@ -522,26 +978,62 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         _setCurrency(currency, supported);
     }
 
+    /// @notice Dispute bond for an order size: min(5 USDC, max(2 USDC, 5% of amount)).
+    function computeBond(uint128 amount) public pure returns (uint128) {
+        unchecked {
+            uint256 pct = uint256(amount) * BOND_BPS / 10_000;
+            uint256 b = pct > BOND_MIN ? pct : BOND_MIN;
+            if (b > BOND_MAX) b = BOND_MAX;
+            return uint128(b);
+        }
+    }
+
+    /// @notice Per-order taker cap in six-decimal USDC based on completed trades, account age, KYC level and merchant status.
+    function orderCap(address account) public view returns (uint256 cap) {
+        (, cap) = _tierOf(account);
+    }
+
+    /// @notice Whether an account has hit the automatic lost-dispute limit (1 if <3 completed, else 2; 2 concessions = 1 loss) and is not waived.
+    function isDisputeLimitReached(address account) public view returns (bool) {
+        if (disputeLimitWaived[account]) return false;
+        Stats storage s = stats[account];
+        return _effectiveLosses(s) >= _lossLimit(s);
+    }
+
+    /// @notice Return outstanding debt records owed by `account` in FIFO repayment order.
+    function getDebts(address account) external view returns (Debt[] memory) {
+        return _debts[account];
+    }
+
     /// @notice Return one ad; invalid IDs revert.
-    function getAd(uint256 id) external view returns (Ad memory) { return _getAd(id); }
+    function getAd(uint256 id) external view returns (Ad memory) { return _copyAd(_getAd(id)); }
 
     /// @notice Return one order; invalid IDs revert.
-    function getOrder(uint256 id) external view returns (Order memory) { return _getOrder(id); }
+    function getOrder(uint256 id) external view returns (Order memory) { return _copyOrder(_getOrder(id)); }
 
     /// @notice Return ads with IDs offset+1 onward, clipped to the latest ID.
     function getAds(uint256 offset, uint256 limit) external view returns (Ad[] memory result) {
-        uint256 size = offset < adCount ? adCount - offset : 0;
-        if (size > limit) size = limit;
-        result = new Ad[](size);
-        for (uint256 i; i < size; ++i) result[i] = _ads[offset + i + 1];
+        unchecked {
+            uint256 size = _pageSize(adCount, offset, limit);
+            result = new Ad[](size);
+            for (uint256 i; i < size; ++i) result[i] = _copyAd(_ads[offset + i + 1]);
+        }
     }
 
     /// @notice Return orders with IDs offset+1 onward, clipped to the latest ID.
     function getOrders(uint256 offset, uint256 limit) external view returns (Order[] memory result) {
-        uint256 size = offset < orderCount ? orderCount - offset : 0;
+        unchecked {
+            uint256 size = _pageSize(orderCount, offset, limit);
+            result = new Order[](size);
+            for (uint256 i; i < size; ++i) result[i] = _copyOrder(_orders[offset + i + 1]);
+        }
+    }
+
+    function _pageSize(uint256 total, uint256 offset, uint256 limit) private pure returns (uint256 size) {
+        unchecked {
+            size = offset < total ? total - offset : 0;
+        }
         if (size > limit) size = limit;
-        result = new Order[](size);
-        for (uint256 i; i < size; ++i) result[i] = _orders[offset + i + 1];
     }
 
     /// @notice Return all order IDs involving a user, in creation order.
@@ -561,7 +1053,9 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
     function effectiveMargin(address account) public view returns (uint256) {
         uint256 balance = margin[account];
         uint256 pending = marginWithdrawal[account].amount;
-        return balance - (pending < balance ? pending : balance);
+        unchecked {
+            return balance - (pending < balance ? pending : balance);
+        }
     }
 
     /// @notice Whether unqueued margin meets the merchant threshold; not an eligibility guarantee.
@@ -569,12 +1063,13 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         return effectiveMargin(account) >= MERCHANT_MARGIN;
     }
 
-    /// @notice Return combined trading, margin, safety and claimable-payout state.
-    /// @dev `restricted` is the explicit flag; disputesLost and bannedUntil remain independently visible.
+    /// @notice Return combined trading, margin, safety, tier, debt and claimable-payout state.
     function getAccount(address account) external view returns (AccountView memory result) {
         Stats storage s = stats[account];
         MarginWithdrawal storage pending = marginWithdrawal[account];
         Penalty storage penalty = penalties[account];
+        (uint8 tier, uint256 cap) = _tierOf(account);
+
         result.ordersCreated = s.ordersCreated;
         result.ordersCompleted = s.ordersCompleted;
         result.disputesLost = s.disputesLost;
@@ -589,32 +1084,233 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         result.strikes = penalty.strikes;
         result.partyOpen = partyOpenOrders[account];
         result.claimable = claimable[account];
+        result.firstSeen = s.firstSeen;
+        result.totalDebt = totalDebt[account];
+        result.orderCap = cap;
+        result.tier = tier;
+        result.disputesSettled = s.disputesSettled;
+        result.disputeLimitReached = isDisputeLimitReached(account);
+        result.concessions = s.concessions;
+        unchecked {
+            result.lateMarks =
+                s.lateMarkWindowStart == 0 || block.timestamp > uint256(s.lateMarkWindowStart) + LATE_MARK_WINDOW
+                    ? 0
+                    : s.lateMarks;
+        }
     }
 
-    /// @dev Entry-only eligibility gate; never applied to an existing trade or withdrawal.
+    function _nonZero(address a) private pure {
+        if (a == address(0)) revert InvalidAddress();
+    }
+
+    function _requireAdmin() private view {
+        if (msg.sender != owner() && msg.sender != arbiter) revert NotAdmin();
+    }
+
+    /// @dev Entry-only eligibility gate; never applied to an existing trade, settlement or withdrawal.
     function _requireEligible(address account) internal view {
-        if (restricted[account] || stats[account].disputesLost >= MAX_DISPUTES_LOST) revert Restricted();
+        if (paused) revert EnforcedPause();
+        if (restricted[account] || isDisputeLimitReached(account)) revert Restricted();
+        if (totalDebt[account] != 0) revert DebtOutstanding();
         if (block.timestamp < penalties[account].bannedUntil) revert CooldownActive();
+        if (kycRequired && !isVerified(account)) revert NotVerified();
     }
 
-    /// @dev Only Pending cancellations where the buyer is the taker add a strike.
+    function _startReview(uint256 orderId, Order storage order) private {
+        if (msg.sender != arbiter && msg.sender != backupArbiter) revert Unauthorized();
+        OrderStatus st = order.status;
+        if (st != OrderStatus.Paid && st != OrderStatus.Disputed) revert InvalidStatus(st);
+        if (msg.sender == order.buyer || msg.sender == order.seller) revert ArbiterIsParty();
+        unchecked {
+            if (order.disputedAt == 0 && block.timestamp < uint256(order.paidAt) + 15 minutes) {
+                revert TooEarly();
+            }
+            if (msg.sender != arbiter) {
+                uint256 anchor = order.disputedAt != 0 ? order.disputedAt : order.paidAt;
+                if (block.timestamp < anchor + BACKUP_ARBITER_DELAY) revert TooEarly();
+            }
+        }
+        uint64 nowTs = uint64(block.timestamp);
+        if (order.disputedAt == 0) {
+            order.disputedAt = nowTs;
+            emit OrderDisputed(orderId, msg.sender, nowTs);
+        }
+        if (order.reviewStartedAt == 0) {
+            order.reviewStartedAt = nowTs;
+        }
+    }
+
+    function _settleDisputed(uint256 orderId, Order storage order, address conceder, address recipient) private {
+        _finish(order, OrderStatus.Settled);
+        Stats storage s = stats[conceder];
+        uint32 oldEff = _effectiveLosses(s);
+        unchecked {
+            ++s.disputesSettled;
+            if (order.reviewStartedAt != 0) {
+                ++s.disputesLost;
+            } else if (block.timestamp > uint256(order.disputedAt) + COOLING_OFF) {
+                ++s.concessions;
+            }
+        }
+        _checkClearWaiver(conceder, s, oldEff);
+        emit DisputeSettled(orderId, conceder, recipient, order.amount);
+        _payout(recipient, order.amount);
+    }
+
+    function _effectiveLosses(Stats storage s) private view returns (uint32) {
+        unchecked {
+            return s.disputesLost + (s.concessions / 2);
+        }
+    }
+
+    function _lossLimit(Stats storage s) private view returns (uint32) {
+        return s.ordersCompleted < BUY_AD_MIN_COMPLETED ? 1 : 2;
+    }
+
+    function _checkClearWaiver(address account, Stats storage s, uint32 oldEff) private {
+        if (disputeLimitWaived[account]) {
+            uint32 newEff = _effectiveLosses(s);
+            if (newEff > oldEff && newEff >= _lossLimit(s)) {
+                disputeLimitWaived[account] = false;
+                emit DisputeWaiverUpdated(account, false);
+            }
+        }
+    }
+
+    function _requireMessageSender(Order storage order) private view {
+        OrderStatus st = order.status;
+        if (st != OrderStatus.Pending && st != OrderStatus.Paid && st != OrderStatus.Disputed) {
+            revert InvalidStatus(st);
+        }
+        if (msg.sender == order.buyer || msg.sender == order.seller) return;
+        if (st == OrderStatus.Disputed) {
+            if (msg.sender == arbiter) return;
+            unchecked {
+                if (
+                    msg.sender == backupArbiter
+                        && block.timestamp >= uint256(order.disputedAt) + BACKUP_ARBITER_DELAY
+                ) {
+                    return;
+                }
+            }
+        }
+        revert Unauthorized();
+    }
+
+    function _tierOf(address account) private view returns (uint8 tier, uint256 cap) {
+        Stats storage s = stats[account];
+        unchecked {
+            uint256 age = s.firstSeen != 0 && block.timestamp >= s.firstSeen ? block.timestamp - s.firstSeen : 0;
+            if (s.ordersCompleted >= 20 && age >= TIER3_MIN_AGE) {
+                tier = 3;
+            } else if (s.ordersCompleted >= 5 && age >= TIER2_MIN_AGE) {
+                tier = 2;
+            } else if (s.ordersCompleted >= 1) {
+                tier = 1;
+            }
+            if (tier < 3 && isVerified(account) && verification[account].level >= 2) {
+                ++tier;
+            }
+            if (tier < 1 && isMerchant(account)) {
+                tier = 1;
+            }
+        }
+        if (tier == 3) cap = type(uint256).max;
+        else if (tier == 2) cap = TIER2_CAP;
+        else if (tier == 1) cap = TIER1_CAP;
+        else cap = TIER0_CAP;
+    }
+
+    function _touchFirstSeen(address account) private {
+        if (stats[account].firstSeen == 0) {
+            stats[account].firstSeen = uint64(block.timestamp);
+        }
+    }
+
+    function _recordDebt(address debtor, address creditor, uint128 amount) private {
+        Debt[] storage debts = _debts[debtor];
+        unchecked {
+            totalDebt[debtor] += amount;
+            uint256 len = debts.length;
+            if (len < MAX_DEBTS_PER_ACCOUNT) {
+                debts.push(Debt({creditor: creditor, amount: amount}));
+                return;
+            }
+            for (uint256 i = len; i > 0; --i) {
+                if (debts[i - 1].creditor == creditor) {
+                    debts[i - 1].amount += amount;
+                    return;
+                }
+            }
+            debts[0].amount += amount;
+        }
+    }
+
+    function _repayDebtFromEscrow(address debtor, uint256 budget) private {
+        Debt[] storage debts = _debts[debtor];
+        uint256 len = debts.length;
+        uint256 spent;
+        uint256 popped;
+        unchecked {
+            while (popped < len && spent < budget) {
+                address cred = debts[popped].creditor;
+                uint128 owed = debts[popped].amount;
+                uint256 rem = budget - spent;
+                uint128 pay = rem >= owed ? owed : uint128(rem);
+                spent += pay;
+                totalDebt[debtor] -= pay;
+                if (pay == owed) {
+                    ++popped;
+                } else {
+                    debts[popped].amount = owed - pay;
+                }
+                emit DebtRepaid(debtor, cred, pay);
+                _payout(cred, pay);
+            }
+            if (popped != 0) {
+                uint256 remaining = len - popped;
+                for (uint256 i; i < remaining; ++i) {
+                    debts[i] = debts[i + popped];
+                }
+                for (uint256 i; i < popped; ++i) {
+                    debts.pop();
+                }
+            }
+        }
+    }
+
+    /// @dev Buyer cancellations in Pending (when buyer == taker and detailsReady) add a strike.
     function _addStrike(address buyer) private {
         Penalty storage penalty = penalties[buyer];
-        if (block.timestamp > uint256(penalty.windowStart) + STRIKE_WINDOW) {
-            penalty.windowStart = uint64(block.timestamp);
-            penalty.strikes = 0;
-        }
-        ++penalty.strikes;
-        emit StrikeAdded(buyer, penalty.strikes);
-        if (penalty.strikes >= MAX_CANCEL_STRIKES) {
-            penalty.bannedUntil = uint64(block.timestamp + COOLDOWN);
-            penalty.strikes = 0;
-            emit CooldownStarted(buyer, penalty.bannedUntil);
+        unchecked {
+            if (block.timestamp > uint256(penalty.windowStart) + STRIKE_WINDOW) {
+                penalty.windowStart = uint64(block.timestamp);
+                penalty.strikes = 0;
+            }
+            ++penalty.strikes;
+            emit StrikeAdded(buyer, penalty.strikes);
+            if (penalty.strikes >= MAX_CANCEL_STRIKES) {
+                penalty.bannedUntil = uint64(block.timestamp + COOLDOWN);
+                penalty.strikes = 0;
+                emit CooldownStarted(buyer, penalty.bannedUntil);
+            }
         }
     }
 
     function _validatePrice(uint128 priceE6) private pure {
         if (priceE6 == 0 || priceE6 > 1e15) revert InvalidPrice();
+    }
+
+    function _copyAd(Ad storage ad) private pure returns (Ad memory m) {
+        m = ad;
+    }
+
+    function _copyOrder(Order storage order) private view returns (Order memory m) {
+        m = order;
+        Ad storage ad = _ads[m.adId];
+        if (ad.side == Side.Sell && ad.detailsMode == DETAILS_PLAIN) {
+            m.paymentDetails = ad.details;
+        }
     }
 
     function _getAd(uint256 id) private view returns (Ad storage ad) {
@@ -636,23 +1332,54 @@ contract P2PEscrow is Ownable2Step, ReentrancyGuard, Pausable {
         if (order.status != expected) revert InvalidStatus(order.status);
     }
 
+    function _pullUsdc(address from, uint256 amount) private {
+        address token = address(usdc);
+        bool ok;
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, 0x23b872dd00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), and(from, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(ptr, 0x24), address())
+            mstore(add(ptr, 0x44), amount)
+            let s := call(gas(), token, 0, ptr, 0x64, 0x00, 0x20)
+            ok := and(s, or(iszero(returndatasize()), and(gt(returndatasize(), 0x1f), eq(mload(0x00), 1))))
+        }
+        if (!ok) revert SafeERC20FailedOperation(token);
+    }
+
+    function _tryTransfer(address to, uint256 amount, bool strictErc20) private returns (bool ok) {
+        address token = address(usdc);
+        assembly ("memory-safe") {
+            let ptr := mload(0x40)
+            mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
+            mstore(add(ptr, 0x04), and(to, 0xffffffffffffffffffffffffffffffffffffffff))
+            mstore(add(ptr, 0x24), amount)
+            let s := call(gas(), token, 0, ptr, 0x44, 0x00, 0x20)
+            let hasTrue := and(gt(returndatasize(), 0x1f), eq(mload(0x00), 1))
+            ok := and(s, or(and(iszero(strictErc20), iszero(returndatasize())), hasTrue))
+        }
+    }
+
+    function _pushUsdc(address to, uint256 amount) private {
+        if (!_tryTransfer(to, amount, false)) revert SafeERC20FailedOperation(address(usdc));
+    }
+
     function _payout(address to, uint256 amount) internal {
-        try usdc.transfer(to, amount) returns (bool ok) {
-            if (!ok) {
+        if (!_tryTransfer(to, amount, true)) {
+            unchecked {
                 claimable[to] += amount;
-                emit PayoutDeferred(to, amount);
             }
-        } catch {
-            claimable[to] += amount;
             emit PayoutDeferred(to, amount);
         }
     }
 
     function _finish(Order storage order, OrderStatus terminalStatus) private {
         order.status = terminalStatus;
-        --openOrderCount[order.taker];
-        --partyOpenOrders[order.buyer];
-        --partyOpenOrders[order.seller];
+        unchecked {
+            --openOrderCount[order.taker];
+            --partyOpenOrders[order.buyer];
+            --partyOpenOrders[order.seller];
+        }
     }
 
     function _setCurrency(bytes3 currency, bool supported) private {

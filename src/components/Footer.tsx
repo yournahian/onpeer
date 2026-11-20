@@ -89,6 +89,11 @@ export function Footer() {
                 Brand kit
               </AppLink>
             </li>
+            <li>
+              <AppLink to="/privacy" className={linkClass}>
+                Privacy &amp; encryption
+              </AppLink>
+            </li>
             {ESCROW_ADDRESS && (
               <li>
                 <a

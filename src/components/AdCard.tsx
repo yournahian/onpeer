@@ -1,167 +1,290 @@
-import { motion } from 'framer-motion'
-import { BadgeCheck, Clock, ShieldCheck, UserCheck } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Clock, Lock, ShieldCheck } from 'lucide-react'
 import type { Account, AdWithId } from '@/hooks/useEscrow'
 import {
   fiatFor,
   formatFiat,
+  formatOrderCap,
   formatPrice,
   formatUsdcAmount,
+  isUncapped,
   maskToMethods,
   shortAddr,
   type Country,
 } from '@/lib/p2p'
-import { Avatar, Button } from '@/components/ui'
-import { CountryFlag, MethodLogo } from '@/components/logos'
+import { InlineOrderDrawer } from '@/components/TradeSheet'
 
 export function AdCard({
   ad,
   country,
   mode,
   account,
+  viewerAccount,
   own,
-  index,
-  onTrade,
+  expanded,
+  initialUsdc,
+  onToggleExpand,
+  onMobileSelect,
+  onOpened,
 }: {
   ad: AdWithId
   country: Country
   mode: 'buy' | 'sell'
   account: Account | undefined
+  viewerAccount?: Account
   own: boolean
-  index: number
-  onTrade: (ad: AdWithId) => void
+  expanded: boolean
+  initialUsdc?: string
+  onToggleExpand: (ad: AdWithId | null) => void
+  onMobileSelect: (ad: AdWithId) => void
+  onOpened: (orderId: bigint) => void
 }) {
-  const rate =
-    account && account.ordersCreated > 0 ? Math.round((account.ordersCompleted / account.ordersCreated) * 100) : null
+  const completionPct =
+    account && account.ordersCreated > 0
+      ? ((account.ordersCompleted / account.ordersCreated) * 100).toFixed(1)
+      : null
   const cap = ad.maxAmount > ad.available ? ad.available : ad.maxAmount
   const floor = ad.minAmount > ad.available ? ad.available : ad.minAmount
-  const left = ad.initialAmount > 0n ? Number((ad.available * 1000n) / ad.initialAmount) / 1000 : 0
   const methods = maskToMethods(ad.paymentMask)
-  const tone = mode === 'buy' ? 'var(--success)' : 'var(--danger)'
+
+  const unmetRequirement =
+    viewerAccount !== undefined && ad.minTakerCompleted > 0 && viewerAccount.ordersCompleted < ad.minTakerCompleted
+
+  const viewerCapped =
+    viewerAccount !== undefined && !isUncapped(viewerAccount.orderCap) && viewerAccount.orderCap < cap
 
   return (
-    <motion.li
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: Math.min(index * 0.05, 0.35), ease: [0.22, 1, 0.36, 1] }}
-      whileHover={{ y: -3, transition: { type: 'spring', stiffness: 400, damping: 28 } }}
-      className="glass relative overflow-hidden rounded-3xl transition-colors hover:border-[var(--accent)]"
-    >
-      <span
-        aria-hidden
-        className="absolute inset-x-0 top-0 h-px"
-        style={{ background: `linear-gradient(90deg, transparent, ${tone}, transparent)`, opacity: 0.7 }}
-      />
+    <>
+      {/* MOBILE OFFER CARD (< 768px — Binance Mobile App Pattern) */}
+      <li className="p2p-card rounded-[12px] p-4 md:hidden">
+        {/* Card Top Row: Advertiser + Shield on left | Trades & Completion % on right */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="p2p-mono flex size-6 shrink-0 items-center justify-center rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-[10px] font-bold text-[#FF5A00]">
+              {ad.maker.slice(2, 4).toUpperCase()}
+            </span>
+            <span className="p2p-mono truncate text-xs font-bold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
+            {ad.merchantAd && <ShieldCheck className="size-3.5 shrink-0 text-[#FF5A00]" />}
+          </div>
+          <span className="p2p-mono shrink-0 text-[0.75rem] text-[var(--p2p-muted)]">
+            {account ? `${account.ordersCompleted} trades` : '...'}
+            {completionPct !== null && ` | ${completionPct}%`}
+          </span>
+        </div>
 
-      <div className="grid gap-5 p-5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] md:items-center">
-        <div className="flex items-center gap-3">
-          <Avatar address={ad.maker} size={44} />
-          <div className="min-w-0">
-            <p className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
-              <span className="mono">{shortAddr(ad.maker)}</span>
-              {ad.merchantAd && (
+        {/* Card Middle Row: Hero Price */}
+        <div className="mt-2.5">
+          <span className="block text-[11px] text-[var(--p2p-muted)]">Price</span>
+          <p className="p2p-mono mt-0.5 flex items-baseline gap-1.5">
+            <span className="text-[1.35rem] font-bold leading-tight text-[var(--p2p-ink)]">
+              {formatPrice(ad.priceE6)}
+            </span>
+            <span className="text-xs font-bold text-[var(--p2p-ink)]">{country.currency}</span>
+          </p>
+        </div>
+
+        {/* Card Bottom Row: Left stacked details + tags | Bottom-Right Buy/Sell Pill */}
+        <div className="mt-2.5 flex items-end justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1 text-xs">
+            <p className="truncate text-[var(--p2p-muted)]">
+              Crypto: <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</span>
+            </p>
+            <p className="truncate text-[var(--p2p-muted)]">
+              Limit:{' '}
+              <span className="p2p-mono text-[var(--p2p-ink)]">
+                {country.symbol}
+                {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {country.symbol}
+                {formatFiat(fiatFor(cap, ad.priceE6), 0)}
+              </span>
+            </p>
+            {viewerCapped && viewerAccount && (
+              <span className="p2p-mono inline-block rounded bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-semibold text-[#FF5A00]">
+                Cap: {formatOrderCap(viewerAccount.orderCap)}
+              </span>
+            )}
+            <div className="flex flex-wrap gap-2 pt-1">
+              {methods.map((m) => (
                 <span
-                  className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold"
-                  style={{ background: 'rgba(141,216,159,0.14)', color: 'var(--success)' }}
-                  title="Verified merchant: security margin deposited"
+                  key={m.bit}
+                  className="inline-flex items-center pl-1.5 text-[11px] font-medium text-[var(--p2p-ink)]"
+                  style={{ borderLeft: '2px solid #FF5A00' }}
                 >
-                  <BadgeCheck className="size-3" /> Merchant
+                  {m.name}
                 </span>
-              )}
-            </p>
-            <p className="mt-0.5 flex items-center gap-1 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
-              <ShieldCheck className="size-3" />
-              {account ? `${account.ordersCompleted} trades` : '...'}
-              {rate !== null && ` · ${rate}% completion`}
-            </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="shrink-0">
+            {own ? (
+              <span className="inline-flex h-[38px] items-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-muted)]">
+                Your Ad
+              </span>
+            ) : unmetRequirement ? (
+              <button
+                type="button"
+                disabled
+                className="inline-flex h-[38px] items-center gap-1 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-[11px] font-semibold text-[var(--p2p-muted)]"
+              >
+                <Lock className="size-3 text-[#FF5A00]" /> {ad.minTakerCompleted}+
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onMobileSelect(ad)}
+                className="inline-flex h-[38px] items-center justify-center rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] active:scale-95"
+              >
+                {mode === 'buy' ? 'Buy' : 'Sell'}
+              </button>
+            )}
           </div>
         </div>
+      </li>
 
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.1em]" style={{ color: 'var(--subtle)' }}>
-            Price per USDC
-          </p>
-          <p className="display mt-0.5 flex items-center gap-2 text-3xl font-bold tabular-nums">
-            <CountryFlag code={country.code} size={24} />
-            {formatPrice(ad.priceE6)}
-            <span className="text-sm font-medium" style={{ color: 'var(--subtle)' }}>
-              {country.currency}
-            </span>
-          </p>
-        </div>
-
-        <div className="space-y-2 text-sm tabular-nums">
-          <div className="flex items-center justify-between gap-3">
-            <span style={{ color: 'var(--subtle)' }}>Available</span>
-            <span className="flex items-center gap-1.5 font-semibold">
-              <TokenUSDC variant="branded" size={14} />
-              {formatUsdcAmount(ad.available)}
-            </span>
-          </div>
-          <div
-            className="h-1.5 overflow-hidden rounded-full"
-            style={{ background: 'var(--fill-3)' }}
-            role="img"
-            aria-label={`${Math.round(left * 100)}% of the original inventory is left`}
-          >
-            <motion.div
-              className="h-full origin-left rounded-full"
-              style={{ background: `linear-gradient(90deg, ${tone}, var(--accent))` }}
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: Math.max(0.04, left) }}
-              transition={{ duration: 0.9, delay: 0.1 + Math.min(index * 0.05, 0.35), ease: [0.22, 1, 0.36, 1] }}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3">
-            <span style={{ color: 'var(--subtle)' }}>Limit</span>
-            <span>
-              {country.symbol} {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {formatFiat(fiatFor(cap, ad.priceE6), 0)}
-            </span>
-          </div>
-        </div>
-
-        {own ? (
-          <span
-            className="rounded-xl px-4 py-2 text-center text-xs font-semibold"
-            style={{ background: 'var(--fill-2)', color: 'var(--subtle)' }}
-          >
-            Your ad
-          </span>
-        ) : (
-          <Button variant={mode === 'buy' ? 'buy' : 'sell'} onClick={() => onTrade(ad)} className="md:min-w-32">
-            {mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
-          </Button>
-        )}
-      </div>
-
-      <div
-        className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3 text-xs"
-        style={{ borderTop: '1px solid var(--border)', background: 'var(--fill-1)' }}
+      {/* DESKTOP 5-COLUMN ROW + INLINE DRAWER (>= 768px) */}
+      <li
+        className={`hidden border-b border-[var(--p2p-border)] transition-colors last:border-b-0 md:block ${
+          expanded ? 'bg-[var(--p2p-row-hover)]' : 'bg-[var(--p2p-canvas)] hover:bg-[var(--p2p-row-hover)]'
+        }`}
       >
-        <span className="flex flex-wrap items-center gap-1.5">
-          {methods.slice(0, 5).map((m) => (
-            <span
-              key={m.bit}
-              className="inline-flex items-center gap-1.5 rounded-lg py-0.5 pl-0.5 pr-2 font-medium"
-              style={{ background: 'var(--fill-3)', color: 'var(--ink-2)' }}
+        <div className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.35fr)_minmax(0,1.15fr)_150px] md:items-center">
+          {/* Column 1: Advertiser */}
+          <div className="flex items-start gap-3">
+            <span className="p2p-mono flex size-9 shrink-0 items-center justify-center rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-xs font-bold text-[#FF5A00]">
+              {ad.maker.slice(2, 4).toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="p2p-mono text-sm font-semibold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
+                {ad.merchantAd && (
+                  <span
+                    title="Verified Merchant (100+ USDC margin staked)"
+                    className="inline-flex items-center gap-1 rounded bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-bold text-[#FF5A00]"
+                  >
+                    <ShieldCheck className="size-3" /> Merchant
+                  </span>
+                )}
+              </div>
+              <div className="p2p-mono mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--p2p-muted)]">
+                <span>{account ? `${account.ordersCompleted} orders` : '...'}</span>
+                {completionPct !== null && (
+                  <>
+                    <span>|</span>
+                    <span>{completionPct}% completion</span>
+                  </>
+                )}
+              </div>
+              <div className="mt-1 inline-flex items-center gap-1 text-[11px] text-[var(--p2p-muted)]">
+                <Clock className="size-3 text-[#FF5A00]" />
+                <span className="p2p-mono">~ {ad.windowMinutes} mins window</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Column 2: Price */}
+          <div>
+            <p className="p2p-mono flex items-baseline gap-1.5">
+              <span className="text-[1.25rem] font-bold leading-tight text-[var(--p2p-ink)]">
+                {formatPrice(ad.priceE6)}
+              </span>
+              <span className="text-xs font-semibold text-[var(--p2p-ink)]">{country.currency}</span>
+              <span className="text-xs text-[var(--p2p-muted)]">/ USDC</span>
+            </p>
+          </div>
+
+          {/* Column 3: Available & Order Limits */}
+          <div className="space-y-1 text-xs">
+            <div className="flex items-baseline gap-2">
+              <span className="w-16 shrink-0 text-[var(--p2p-muted)]">Available</span>
+              <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="w-16 shrink-0 text-[var(--p2p-muted)]">Limit</span>
+              <span className="p2p-mono text-[var(--p2p-ink)]">
+                {country.symbol}
+                {formatFiat(fiatFor(floor, ad.priceE6))} - {country.symbol}
+                {formatFiat(fiatFor(cap, ad.priceE6))}
+              </span>
+            </div>
+            {viewerCapped && viewerAccount && (
+              <span
+                title="Your current account tier limits individual order size"
+                className="p2p-mono inline-block rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-medium text-[#FF5A00]"
+              >
+                Tier cap: {formatOrderCap(viewerAccount.orderCap)}
+              </span>
+            )}
+          </div>
+
+          {/* Column 4: Payment Methods */}
+          <div className="flex flex-wrap gap-1.5">
+            {methods.map((m) => (
+              <span
+                key={m.bit}
+                className="inline-flex items-center rounded bg-[var(--p2p-input-bg)] px-2 py-1 text-xs font-medium text-[var(--p2p-ink)] ring-1 ring-inset ring-[var(--p2p-border)]"
+                style={{ borderLeft: '3px solid #FF5A00' }}
+              >
+                {m.name}
+              </span>
+            ))}
+          </div>
+
+          {/* Column 5: Action CTA */}
+          <div className="flex justify-end">
+            {own ? (
+              <span className="inline-flex min-h-10 min-w-[136px] items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-muted)]">
+                Your Ad
+              </span>
+            ) : unmetRequirement ? (
+              <button
+                type="button"
+                disabled
+                title={`Advertiser requires ${ad.minTakerCompleted}+ completed trades`}
+                className="inline-flex min-h-10 min-w-[136px] cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-[11px] font-semibold text-[var(--p2p-muted)]"
+              >
+                <Lock className="size-3.5 shrink-0 text-[#FF5A00]" />
+                <span>Requires {ad.minTakerCompleted}+</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onToggleExpand(expanded ? null : ad)}
+                className={`inline-flex min-h-10 min-w-[136px] items-center justify-center rounded-lg px-4 text-xs font-bold transition-all ${
+                  expanded
+                    ? 'border border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                    : 'bg-[#FF5A00] text-[#FFFFFF] hover:opacity-90'
+                }`}
+              >
+                {expanded ? 'Close' : mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Inline Slide-Down Order Drawer */}
+        <AnimatePresence initial={false}>
+          {expanded && !own && !unmetRequirement && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
             >
-              <MethodLogo name={m.name} size={20} />
-              {m.name}
-            </span>
-          ))}
-          {methods.length > 5 && <span style={{ color: 'var(--subtle)' }}>+{methods.length - 5}</span>}
-        </span>
-        <span className="ml-auto flex items-center gap-3" style={{ color: 'var(--subtle)' }}>
-          <span className="flex items-center gap-1">
-            <Clock className="size-3" /> {ad.windowMinutes} min to pay
-          </span>
-          {ad.minTakerCompleted > 0 && (
-            <span className="flex items-center gap-1" style={{ color: 'var(--warn)' }}>
-              <UserCheck className="size-3" /> {ad.minTakerCompleted}+ trades required
-            </span>
+              <div className="px-5 pb-5 pt-1">
+                <InlineOrderDrawer
+                  key={ad.id.toString()}
+                  ad={ad}
+                  makerAccount={account}
+                  initialUsdc={initialUsdc}
+                  onCancel={() => onToggleExpand(null)}
+                  onOpened={onOpened}
+                />
+              </div>
+            </motion.div>
           )}
-        </span>
-      </div>
-    </motion.li>
+        </AnimatePresence>
+      </li>
+    </>
   )
 }

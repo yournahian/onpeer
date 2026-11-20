@@ -19,8 +19,8 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
 
         assertEq(uint8(_status(oid)), uint8(P2PEscrow.OrderStatus.Cancelled));
         assertEq(esc.getAd(adId).available, 100e6);
-        assertEq(_bal(address(esc)), 100e6); // stays escrowed as inventory
-        assertEq(_bal(alice), a0 - 100e6);
+        assertEq(_bal(address(esc)), 100e6 + FEE);
+        assertEq(_bal(alice), a0 - 100e6 - FEE);
         assertEq(_bal(bob), b0);
         assertEq(esc.openOrderCount(bob), 0);
         assertEq(esc.partyOpenOrders(alice), 0);
@@ -29,42 +29,108 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         assertFalse(esc.getAd(adId).paused);
     }
 
-    function test_Cancel_SellerCannotBeforeDeadline_NorStranger() public {
+    function test_Cancel_SellerAndStrangerBlockedDuringDeadlineAndGrace() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
+        uint256 dl = esc.getOrder(oid).deadline;
+
         vm.prank(alice);
         vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
         vm.prank(stranger);
         vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
-        // deadline itself is still "before expiry" (strictly after is required)
-        vm.warp(esc.getOrder(oid).deadline);
+
+        // At deadline: still inside grace
+        vm.warp(dl);
         vm.prank(alice);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.cancelOrder(oid);
+
+        // At deadline + 1: still inside 5-min grace
+        vm.warp(dl + 1);
+        vm.prank(alice);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.cancelOrder(oid);
+
+        // Exactly at deadline + GRACE: still inside grace (buyer can still markPaid)
+        vm.warp(dl + esc.GRACE());
+        vm.prank(alice);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.cancelOrder(oid);
+        vm.prank(stranger);
         vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
     }
 
-    function test_Cancel_SellerAfterDeadline() public {
+    function test_Cancel_BuyerMarksPaidInGrace_NotCancelledNotStruck() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
-        vm.warp(uint256(esc.getOrder(oid).deadline) + 1);
+        uint256 dl = esc.getOrder(oid).deadline;
+
+        vm.warp(dl + 4 minutes);
+        vm.prank(bob);
+        esc.markPaid(oid, keccak256("late-tx"));
+        assertTrue(esc.getOrder(oid).paidLate);
+        assertEq(_strikes(bob), 0);
+
+        // Even after grace ends, nobody can cancel because order is Paid
+        vm.warp(dl + esc.GRACE() + 10);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(P2PEscrow.InvalidStatus.selector, P2PEscrow.OrderStatus.Paid));
+        esc.cancelOrder(oid);
+    }
+
+    function test_Cancel_SellerAfterGrace() public {
+        uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
+        uint256 oid = _open(bob, adId, 40e6);
+        vm.warp(uint256(esc.getOrder(oid).deadline) + esc.GRACE() + 1);
         _cancel(alice, oid);
         assertEq(uint8(_status(oid)), uint8(P2PEscrow.OrderStatus.Cancelled));
         assertEq(esc.getAd(adId).available, 100e6);
-        assertEq(_strikes(bob), 1); // buyer-taker still gets the strike
+        assertEq(_strikes(bob), 1);
     }
 
-    function test_Cancel_AnyoneAfterDeadline() public {
+    function test_Cancel_AnyoneAfterGrace() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
-        vm.warp(uint256(esc.getOrder(oid).deadline) + 1);
+        vm.warp(uint256(esc.getOrder(oid).deadline) + esc.GRACE() + 1);
         _cancel(stranger, oid);
         assertEq(uint8(_status(oid)), uint8(P2PEscrow.OrderStatus.Cancelled));
         assertEq(esc.getAd(adId).available, 100e6);
+        assertEq(_strikes(bob), 1);
     }
 
-    function test_Cancel_RevertsWhenNotPending() public {
+    function test_Cancel_SealedSellAd_NeverRevealed_NoStrikeForBuyer() public {
+        vm.prank(owner);
+        esc.setSealedEnabled(true);
+        vm.prank(alice);
+        uint256 adId =
+            esc.createAd(SELL, INR, PRICE, 100e6, 1e6, 100e6, 1, 30, 0, DEFAULT_TTL, 1, keccak256("ad"), "");
+
+        // 1) Buyer cancels early while waiting for reveal -> no strike
+        vm.prank(bob);
+        uint256 oid1 = esc.openOrder(adId, 20e6, PRICE, bytes32(0), "");
+        _cancel(bob, oid1);
+        assertEq(_strikes(bob), 0);
+
+        // 2) Seller never reveals; non-buyer blocked until revealDeadline, allowed after, still 0 strikes on buyer
+        vm.prank(bob);
+        uint256 oid2 = esc.openOrder(adId, 20e6, PRICE, bytes32(0), "");
+        uint64 revDl = esc.getOrder(oid2).revealDeadline;
+        vm.warp(revDl);
+        vm.prank(stranger);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.cancelOrder(oid2);
+
+        vm.warp(uint256(revDl) + 1);
+        _cancel(stranger, oid2);
+        assertEq(uint8(_status(oid2)), uint8(P2PEscrow.OrderStatus.Cancelled));
+        assertEq(_strikes(bob), 0);
+        assertEq(esc.getAd(adId).available, 100e6);
+    }
+
+    function test_Cancel_RevertsWhenPaidOrNonBuyerInDisputed() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
         _paid(oid);
@@ -76,8 +142,11 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         vm.expectRevert(abi.encodeWithSelector(P2PEscrow.InvalidStatus.selector, P2PEscrow.OrderStatus.Paid));
         esc.cancelOrder(oid);
         _disputeBySeller(oid);
-        vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(P2PEscrow.InvalidStatus.selector, P2PEscrow.OrderStatus.Disputed));
+        vm.prank(alice);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.cancelOrder(oid);
+        vm.prank(stranger);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(P2PEscrow.OrderNotFound.selector, 42));
@@ -100,12 +169,12 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         uint256 oid = _open(bob, adId, 40e6);
         vm.prank(alice);
         esc.closeAd(adId);
-        assertEq(_bal(alice), a0 - 40e6);
-        assertEq(_bal(address(esc)), 40e6);
+        assertEq(_bal(alice), a0 - 40e6 - FEE);
+        assertEq(_bal(address(esc)), 40e6 + FEE);
 
         _cancel(bob, oid);
-        assertEq(_bal(alice), a0);
-        assertEq(_bal(address(esc)), 0);
+        assertEq(_bal(alice), a0 - FEE);
+        assertEq(_bal(address(esc)), FEE);
         P2PEscrow.Ad memory ad = esc.getAd(adId);
         assertEq(ad.available, 0);
         assertTrue(ad.closed);
@@ -113,6 +182,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
     }
 
     function test_Cancel_BuyAdClosed_RefundsSellerNoInventoryNoPause() public {
+        _qualifyN(alice, 3);
         uint256 b0 = _bal(bob);
         uint256 adId = _buy(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
@@ -120,7 +190,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         esc.closeAd(adId);
         _cancel(alice, oid);
         assertEq(_bal(bob), b0);
-        assertEq(_bal(address(esc)), 0);
+        assertEq(_bal(address(esc)), FEE);
         P2PEscrow.Ad memory ad = esc.getAd(adId);
         assertEq(ad.available, 0);
         assertFalse(ad.paused);
@@ -129,6 +199,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
 
     // ---------------------------------------------------------------- buy-ad cancels
     function test_Cancel_BuyAd_BuyerCancelRefundsSellerAndPausesAd_NoStrike() public {
+        _qualifyN(alice, 3);
         uint256 b0 = _bal(bob);
         uint256 adId = _buy(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
@@ -139,7 +210,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         _cancel(alice, oid);
 
         assertEq(_bal(bob), b0);
-        assertEq(_bal(address(esc)), 0);
+        assertEq(_bal(address(esc)), FEE);
         P2PEscrow.Ad memory ad = esc.getAd(adId);
         assertTrue(ad.paused);
         assertEq(ad.available, 100e6);
@@ -148,7 +219,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
 
         vm.prank(carol);
         vm.expectRevert(P2PEscrow.AdUnavailable.selector);
-        esc.openOrder(adId, 1e6, PRICE, "x");
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
         vm.prank(alice);
         esc.setAdPaused(adId, false);
         _open(carol, adId, 1e6);
@@ -164,20 +235,21 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         }
         assertEq(_strikes(alice), 0);
         assertEq(_bannedUntil(alice), 0);
-        _sell(alice, 10e6, 1e6, 10e6); // maker can still act
+        _sell(alice, 10e6, 1e6, 10e6);
     }
 
-    function test_Cancel_BuyAd_SellerCannotBeforeDeadline_AnyoneAfter() public {
+    function test_Cancel_BuyAd_SellerCannotBeforeGrace_AnyoneAfter() public {
+        _qualifyN(alice, 3);
         uint256 b0 = _bal(bob);
         uint256 adId = _buy(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 40e6);
-        vm.prank(bob); // seller (taker)
+        vm.prank(bob);
         vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
         vm.prank(stranger);
         vm.expectRevert(P2PEscrow.Unauthorized.selector);
         esc.cancelOrder(oid);
-        vm.warp(uint256(esc.getOrder(oid).deadline) + 1);
+        vm.warp(uint256(esc.getOrder(oid).deadline) + esc.GRACE() + 1);
         _cancel(bob, oid);
         assertEq(_bal(bob), b0);
         assertTrue(esc.getAd(adId).paused);
@@ -212,16 +284,16 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
 
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.CooldownActive.selector);
-        esc.openOrder(adId, 1e6, PRICE, "x");
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.CooldownActive.selector);
-        esc.createAd(SELL, INR, PRICE, 10e6, 1e6, 10e6, 1, 60, 0, "d");
+        esc.createAd(SELL, INR, PRICE, 10e6, 1e6, 10e6, 1, 60, 0, DEFAULT_TTL, 0, bytes32(0), "d");
 
         vm.warp(expected - 1);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.CooldownActive.selector);
-        esc.openOrder(adId, 1e6, PRICE, "x");
-        vm.warp(expected); // ban is `now < bannedUntil`
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
+        vm.warp(expected);
         _open(bob, adId, 1e6);
     }
 
@@ -232,7 +304,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         _openCancel(bob, adId);
         _openCancel(bob, adId);
         assertGt(_bannedUntil(bob), block.timestamp);
-        _paid(pending); // existing order still progresses
+        _paid(pending);
         _release(pending);
         assertEq(uint8(_status(pending)), uint8(P2PEscrow.OrderStatus.Completed));
     }
@@ -243,17 +315,17 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         _openCancel(bob, adId);
         assertEq(_strikes(bob), 2);
         vm.warp(block.timestamp + 24 hours + 1);
-        _openCancel(bob, adId); // window rolled over: strike count restarts at 1
+        _openCancel(bob, adId);
         assertEq(_strikes(bob), 1);
         assertEq(_bannedUntil(bob), 0);
-        _open(bob, adId, 1e6); // not banned
+        _open(bob, adId, 1e6);
     }
 
     function test_Strikes_WindowBoundaryExactly24hStillCounts() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
-        _openCancel(bob, adId); // windowStart = T0
         _openCancel(bob, adId);
-        vm.warp(T0 + 24 hours); // `>` is required for reset, so this strike lands in the same window
+        _openCancel(bob, adId);
+        vm.warp(T0 + 24 hours);
         _openCancel(bob, adId);
         assertGt(_bannedUntil(bob), block.timestamp);
     }
@@ -261,7 +333,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
     function test_Strikes_SellAdExpiryCancelStrikesBuyer() public {
         uint256 adId = _sell(alice, 100e6, 1e6, 100e6);
         uint256 oid = _open(bob, adId, 1e6);
-        vm.warp(uint256(esc.getOrder(oid).deadline) + 1);
+        vm.warp(uint256(esc.getOrder(oid).deadline) + esc.GRACE() + 1);
         _cancel(stranger, oid);
         assertEq(_strikes(bob), 1);
         assertEq(_strikes(alice), 0);
@@ -279,7 +351,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         assertGt(_bannedUntil(bob), block.timestamp);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.CooldownActive.selector);
-        esc.openOrder(adId, 1e6, PRICE, "x");
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
     }
 
     // ---------------------------------------------------------------- maker eligibility in openOrder
@@ -289,7 +361,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         esc.setRestricted(alice, true);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.Restricted.selector);
-        esc.openOrder(adId, 1e6, PRICE, "x");
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
         vm.prank(owner);
         esc.setRestricted(alice, false);
         _open(bob, adId, 1e6);
@@ -303,7 +375,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         _openCancel(dave, carolAd);
         vm.prank(bob);
         vm.expectRevert(P2PEscrow.CooldownActive.selector);
-        esc.openOrder(daveAd, 1e6, PRICE, "x");
+        esc.openOrder(daveAd, 1e6, PRICE, bytes32(0), "x");
         vm.warp(block.timestamp + 24 hours);
         _open(bob, daveAd, 1e6);
     }
@@ -316,8 +388,8 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         assertEq(esc.openOrderCount(bob), 5);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(P2PEscrow.OpenOrderLimit.selector, bob));
-        esc.openOrder(adId, 1e6, PRICE, "x");
-        _cancel(bob, ids[0]); // frees one slot
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
+        _cancel(bob, ids[0]);
         _open(bob, adId, 1e6);
         assertEq(esc.openOrderCount(bob), 5);
     }
@@ -327,7 +399,7 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         for (uint256 i; i < 5; ++i) _open(bob, adId, 1e6);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(P2PEscrow.OpenOrderLimit.selector, bob));
-        esc.openOrder(adId, 1e6, PRICE, "x");
+        esc.openOrder(adId, 1e6, PRICE, bytes32(0), "x");
     }
 
     function test_OpenOrderCap_DoesNotApplyToMakers() public {
@@ -335,7 +407,6 @@ contract P2PEscrowCancelTest is P2PEscrowTestBase {
         for (uint256 i; i < 7; ++i) _open(_newFunded(), adId, 1e6);
         assertEq(esc.partyOpenOrders(alice), 7);
         assertEq(esc.openOrderCount(alice), 0);
-        // alice (as buyer-taker on another ad) is unaffected by her maker-side orders
         uint256 other = _sell(carol, 10e6, 1e6, 10e6);
         _open(alice, other, 1e6);
         assertEq(esc.openOrderCount(alice), 1);

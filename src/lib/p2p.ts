@@ -12,12 +12,44 @@ const rawBlock = (import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined)?.
 export const DEPLOY_BLOCK = rawBlock && /^\d+$/.test(rawBlock) ? BigInt(rawBlock) : 0n
 
 export const MAX_OPEN_ORDERS = 5
-export const NEW_TAKER_MAX = 200_000_000n
+export const GRACE_SECONDS = 5 * 60
+export const COOLING_OFF_SECONDS = 30 * 60
+export const BACKUP_ARBITER_DELAY_SECONDS = 7 * 24 * 3600
+export const DEFAULT_LISTING_FEE = 50_000n
+export const MAX_LISTING_FEE = 500_000n
+export const DETAILS_MODE = { PLAIN: 0, HANDSHAKE: 1, AUTO: 2 } as const
+export const BUY_AD_MIN_COMPLETED = 3
+export const BOND_MIN = 2_000_000n
+export const BOND_MAX = 5_000_000n
+export const BOND_BPS = 500n
+export const TIER0_CAP = 200_000_000n
+export const TIER1_CAP = 500_000_000n
+export const TIER2_CAP = 2_000_000_000n
+export const NEW_TAKER_MAX = TIER0_CAP
 export const MERCHANT_MARGIN = 100_000_000n
 export const MESSAGE_MAX_BYTES = 280
 export const MARGIN_DELAY_DAYS = 7
 export const MIN_TAKER_OPTIONS = [0, 1, 5, 10, 25]
+export const TTL_OPTIONS = [12, 24, 72, 168] as const
+export const DEFAULT_TTL_HOURS = 72
 export const DETAILS_MAX_BYTES = 200
+export const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000' as const
+
+export const TIER_TABLE = [
+  { tier: 0, label: 'Starter', requirement: '0 completed trades', cap: TIER0_CAP },
+  { tier: 1, label: 'Active', requirement: '1–4 trades, Merchant, or KYC L2', cap: TIER1_CAP },
+  { tier: 2, label: 'Established', requirement: '5–19 trades & 7d+ age (or 1+ & KYC L2)', cap: TIER2_CAP },
+  { tier: 3, label: 'Trusted', requirement: '20+ trades & 14d+ age (or Established + KYC L2)', cap: null },
+] as const
+
+export function computeBond(amountRaw: bigint): bigint {
+  const pct = (amountRaw * BOND_BPS) / 10_000n
+  const lo = pct > BOND_MIN ? pct : BOND_MIN
+  return lo > BOND_MAX ? BOND_MAX : lo
+}
+
+export const isUncapped = (cap: bigint) => cap > 1_000_000_000_000_000_000n
+export const isAdExpired = (expiresAt: bigint, nowSec: number) => Number(expiresAt) <= nowSec
 
 export type Country = {
   code: string
@@ -84,6 +116,7 @@ export const STATUS = {
   DISPUTED: 5,
   RESOLVED_BUYER: 6,
   RESOLVED_SELLER: 7,
+  SETTLED: 8,
 } as const
 
 export type StatusTone = 'info' | 'warn' | 'success' | 'danger' | 'neutral'
@@ -97,6 +130,7 @@ export const STATUS_META: Record<number, { label: string; tone: StatusTone }> = 
   5: { label: 'In dispute', tone: 'danger' },
   6: { label: 'Resolved: released to buyer', tone: 'success' },
   7: { label: 'Resolved: returned to seller', tone: 'neutral' },
+  8: { label: 'Settled by parties', tone: 'neutral' },
 }
 
 export const isActiveStatus = (s: number) => s === 1 || s === 2 || s === 5
@@ -133,6 +167,10 @@ export function formatUsdcAmount(raw: bigint, digits = 2): string {
   return f ? `${g}.${f}` : g
 }
 
+export function formatOrderCap(cap: bigint): string {
+  return isUncapped(cap) ? 'Uncapped' : `${formatUsdcAmount(cap, 0)} USDC`
+}
+
 /** Price (fiat per USDC) shown with up to 4 decimals, trimmed. */
 export function formatPrice(e6: bigint): string {
   const fixed = formatUnitsFixed(e6, 6, 4)
@@ -159,13 +197,27 @@ export function formatDuration(totalSeconds: number): string {
 const ERROR_COPY: Record<string, string> = {
   AdNotFound: 'This ad no longer exists.',
   AdUnavailable: 'This ad is paused, closed, or out of inventory.',
+  AdExpired: 'This ad has expired. Pick another ad or ask the advertiser to refresh it.',
   ArbiterIsParty: 'The arbiter cannot resolve an order they are part of.',
-  DeadlinePassed: 'The payment window has ended.',
+  DeadlinePassed: 'The payment deadline has ended.',
   InvalidAmount: 'That amount is outside the ad limits.',
+  InvalidFee: 'Listing fee cannot exceed 0.50 USDC.',
+  InvalidDetailsMode: 'Invalid payment details mode.',
+  InvalidTtl: 'Ad expiry must be between 1 and 168 hours.',
   Restricted: 'This account is restricted from opening new trades.',
+  DebtOutstanding: 'Repay your unpaid dispute bond on the Trust & margin tab before opening new ads or orders.',
   CooldownActive: 'A cooldown is active after repeated cancellations. Try again later.',
   RequirementNotMet: 'The advertiser requires more completed trades than you have.',
-  NewUserLimit: 'New accounts are limited to 200 USDC per order until their first completed trade.',
+  AboveCap: 'That amount is above your current per-order account tier limit.',
+  BuyAdNotAllowed: 'Posting a buy ad requires a Merchant badge (100+ USDC margin) or at least 3 completed trades.',
+  SealedDisabled: 'Sealed payment details are currently disabled.',
+  PayerProofRequired: 'Enter your transfer ID and payer details to mark this order as paid.',
+  LateMarkLimit: 'Late payment marking is disabled for 30 days after more than 2 late marks.',
+  NotVerified: 'Active KYC verification is required to post ads or open orders.',
+  InvalidVerification: 'Verification requires level >= 1 and a future expiry timestamp.',
+  DetailsNotReady: 'Waiting for the seller to share payment details.',
+  DetailsAlreadyReady: 'Payment details have already been shared for this order.',
+  InvalidEncryptionKey: 'Encryption key must be between 33 and 65 bytes.',
   MerchantMarginTooLow: 'This merchant ad is paused until the advertiser restores their margin.',
   WithdrawalPending: 'You already have a margin withdrawal in progress.',
   OpenOrdersRemain: 'Finish your open orders before withdrawing margin.',
