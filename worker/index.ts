@@ -624,8 +624,9 @@ export function createWorkerApp(deps?: WorkerDependencies) {
           try {
             await scanChainEvents(env, db, chain)
             await recordCronHealth(db, 'chain_scanner', null)
-          } catch {
-            await recordCronHealth(db, 'chain_scanner', 'chain_scanner_err')
+          } catch (err) {
+            const code = err instanceof Error ? err.message.slice(0, 80) : 'chain_scanner_err'
+            await recordCronHealth(db, 'chain_scanner', `chain_scanner:${code}`)
           }
           try {
             await processNotificationsOutbox(env, db, chain)
