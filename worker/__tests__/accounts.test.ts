@@ -343,4 +343,49 @@ describe('Step 5: P2P Accounts, Consent Gate, Email Double Opt-In & PII Deletion
     )
     expect(afterDelGet?.status).toBe(401)
   })
+
+  it('blocks account deletion with 409 active_ads_remain via chain.getUserAdIds + getAd (even without vault blobs)', async () => {
+    const db = new AccountMemoryDb()
+    await db.seedSession(TEST_TOKEN, TEST_WALLET)
+    const env = makeEnv('sandbox')
+
+    const chain = {
+      getRoles: async () => ({
+        owner: TEST_WALLET,
+        arbiter: TEST_WALLET,
+        backupArbiter: TEST_WALLET,
+        verifier: TEST_WALLET,
+        kycRequired: false,
+        sealedEnabled: false,
+        payerProofRequired: false,
+      }),
+      getOrder: async () => null,
+      isVerified: async () => false,
+      getOpenOrderCount: async () => 0n,
+      getUserAdIds: async () => [5n],
+      getAd: async (id: bigint) => ({
+        id,
+        maker: TEST_WALLET,
+        side: 0,
+        paused: false,
+        closed: false,
+        expiresAt: BigInt(Math.floor(db.nowMs / 1000) + 3600),
+        detailsMode: 0,
+        detailsHash: ('0x' + '00'.repeat(32)) as `0x${string}`,
+      }),
+    }
+
+    const delRes = await handleAccountRoutes(
+      new Request('https://app.onpeer.xyz/api/account', {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      }),
+      env,
+      db,
+      '/account',
+      { nowMs: db.nowMs, chain },
+    )
+    expect(delRes?.status).toBe(409)
+    expect(await delRes!.json()).toEqual({ error: 'active_ads_remain' })
+  })
 })

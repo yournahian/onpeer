@@ -241,4 +241,46 @@ describe('notify — processNotificationsOutbox', () => {
     // Skipped because sendEmail returns false when no key
     expect(db.outbox[0]!.status).toBe('pending')
   })
+
+  it('delivers arbiter alert via ADMIN_ALERT_EMAIL when roles.arbiter is checksummed and wallet is lowercase', async () => {
+    const db = new NotifyMemoryDb()
+    const env = {
+      ...makeEnv(),
+      ADMIN_ALERT_EMAIL: 'arbiter-alerts@onpeer.xyz',
+    } as unknown as Env
+    const checksumArbiter = '0x54190a788EEf66d9AbddcF7d135B09B4D2b72F3A' as `0x${string}`
+    const lowerArbiter = checksumArbiter.toLowerCase() as `0x${string}`
+
+    // Arbiter has no P2P account email row; outbox stores lowercase wallet
+    await queueNotification(db, lowerArbiter, 'dispute_filed', 12n)
+
+    const chain = {
+      getRoles: async () => ({
+        owner: checksumArbiter,
+        arbiter: checksumArbiter,
+        backupArbiter: checksumArbiter,
+        verifier: '0xeebd29441AF1a931C4a6eEc2265B0757fd992f5e' as `0x${string}`,
+        kycRequired: false,
+        sealedEnabled: false,
+        payerProofRequired: false,
+      }),
+      getOrder: async () => null,
+      getAd: async () => null,
+      isVerified: async () => false,
+      getOpenOrderCount: async () => 0n,
+      getUserAdIds: async () => [],
+    }
+
+    const restore = patchFetch(db)
+    try {
+      await processNotificationsOutbox(env, db, chain)
+    } finally {
+      restore()
+    }
+
+    expect(db.sentEmails).toHaveLength(1)
+    expect(db.sentEmails[0]!.to).toBe('arbiter-alerts@onpeer.xyz')
+    expect(db.sentEmails[0]!.body).toContain('order=12')
+    expect(db.outbox[0]!.status).toBe('sent')
+  })
 })

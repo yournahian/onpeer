@@ -96,7 +96,7 @@ export default function PrivacyPage() {
             When a sandbox session is approved, OnPeer stores only your verification status, level, expiry date, and an
             AES-256-GCM encrypted copy of the verified name so the backend can check whether a seller&apos;s payment
             holder name or a buyer&apos;s sender name matches. Counterparties only see a{' '}
-            <strong>Name Matches / Mismatch / Unverified</strong> indicator and masked initials (for example,{' '}
+            <strong>Name Matches / Name not confirmed / Unverified</strong> indicator and masked initials (for example,{' '}
             <code className="mono">T*** R***</code>)—never your full name.
           </p>
           <p>

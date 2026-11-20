@@ -231,10 +231,21 @@ export async function checkKycExpiry(db: Queryable): Promise<number> {
  * - OrderReleased -> buyer + seller
  * - OrderDisputed -> buyer + seller + arbiter
  */
+export interface ChainLogClient {
+  getBlockNumber(): Promise<bigint>
+  getLogs(params: {
+    address: `0x${string}`
+    events: AbiEvent[]
+    fromBlock: bigint
+    toBlock: bigint
+  }): Promise<Array<{ eventName?: string; args?: unknown }>>
+}
+
 export async function scanChainEvents(
   env: Env,
   db: Queryable,
   chain: ChainReader,
+  rpcClient?: ChainLogClient,
 ): Promise<{
   fromBlock: bigint
   toBlock: bigint
@@ -244,7 +255,7 @@ export async function scanChainEvents(
   queued: number
 }> {
   const escrow = requireEscrowAddress(env)
-  const client = createArcPublicClient()
+  const client: ChainLogClient = rpcClient ?? createArcPublicClient()
   const latestBlock = await client.getBlockNumber()
 
   const curRes = await db.query<{ last_block: string | number }>(

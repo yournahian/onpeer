@@ -459,21 +459,14 @@ export async function handleAccountRoutes(
     }
     // Block account deletion while the wallet has any open orders or active ads onchain
     if (opts?.chain) {
-      if (opts.chain.getOpenOrderCount) {
-        const openOrders = await opts.chain.getOpenOrderCount(wallet)
-        if (openOrders > 0n) {
-          return json(409, { error: 'open_orders_remain' })
-        }
+      const openOrders = await opts.chain.getOpenOrderCount(wallet)
+      if (openOrders > 0n) {
+        return json(409, { error: 'open_orders_remain' })
       }
-      const adBlobs = await db.query<{ ad_id: string | number }>(
-        `SELECT DISTINCT ad_id
-           FROM public.vault_blobs
-          WHERE author = $1 AND kind = 'ad_details' AND ad_id IS NOT NULL`,
-        [wallet],
-      )
+      const adIds = await opts.chain.getUserAdIds(wallet)
       const nowSec = Math.floor(nowMs / 1000)
-      for (const row of adBlobs.rows) {
-        const ad = await opts.chain.getAd(BigInt(row.ad_id))
+      for (const adId of adIds) {
+        const ad = await opts.chain.getAd(adId)
         if (ad && !ad.closed && Number(ad.expiresAt) > nowSec) {
           return json(409, { error: 'active_ads_remain' })
         }

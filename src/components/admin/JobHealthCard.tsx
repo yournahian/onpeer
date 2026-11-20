@@ -15,6 +15,8 @@ interface AdminHealthPayload {
   outbox: Record<string, number>
   onchainJobs: Record<string, number>
   headBlock: string | null
+  verifierBalanceUsdc: string | null
+  verifierBalanceLow: boolean
   cursors: Array<{ name: string; last_block: string; updated_at: string; lagBlocks: number | null }>
 }
 
@@ -112,6 +114,16 @@ export function JobHealthCard() {
               <strong>{data.onchainJobs.done ?? 0}</strong> done ·{' '}
               <strong>{data.onchainJobs.failed ?? 0}</strong> failed
             </span>
+            {data.verifierBalanceUsdc !== null && (
+              <span
+                className="mono inline-flex items-center gap-1"
+                style={data.verifierBalanceLow ? { color: 'var(--danger)' } : undefined}
+              >
+                {data.verifierBalanceLow && <AlertTriangle className="size-3" />}
+                Verifier gas: <strong>{data.verifierBalanceUsdc} USDC</strong>
+                {data.verifierBalanceLow ? ' (LOW — top up)' : ''}
+              </span>
+            )}
             {data.cursors.map((c) => (
               <span
                 key={c.name}

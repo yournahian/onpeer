@@ -280,6 +280,8 @@ function makeChain(verifiedSet: Set<string>): ChainReader {
     getOrder: async () => null,
     getAd: async () => null,
     isVerified: async (w) => verifiedSet.has(w.toLowerCase()),
+    getOpenOrderCount: async () => 0n,
+    getUserAdIds: async () => [],
   }
 }
 

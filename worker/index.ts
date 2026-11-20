@@ -1,4 +1,4 @@
-import { isAddress, verifyMessage } from 'viem'
+import { formatEther, isAddress, verifyMessage } from 'viem'
 import { SYSTEM_PROMPT, TOOLS } from '../server/agent'
 import type { ProviderId, SavedSettings } from '../server/settings'
 import {
@@ -415,9 +415,10 @@ async function handleApi(
       const adminWallet = await resolveAdminWallet(req, env, chain, runDb)
       if (!adminWallet) return json(401, { error: 'unauthorized' })
 
-      // M8: Scheduled job health & queue counters for Admin panel (with head - cursor lag)
+      // M8: Scheduled job health & queue counters for Admin panel (with head - cursor lag + verifier gas balance)
       if (req.method === 'GET' && path === '/admin/health') {
-        const [health, headBlock] = await Promise.all([
+        const rpc = createArcPublicClient()
+        const [health, headBlock, verifierBalanceWei] = await Promise.all([
           runDb(env, async (db) => {
             const [cronRows, outboxRows, jobRows, cursorRows] = await Promise.all([
               db.query<{
@@ -450,13 +451,21 @@ async function handleApi(
               cursors: cursorRows.rows,
             }
           }),
-          createArcPublicClient()
-            .getBlockNumber()
+          rpc.getBlockNumber().catch(() => null),
+          chain
+            .getRoles()
+            .then((r) => rpc.getBalance({ address: r.verifier }))
             .catch(() => null),
         ])
+        const verifierBalanceUsdc =
+          verifierBalanceWei !== null ? Number(formatEther(verifierBalanceWei)).toFixed(4) : null
+        const verifierBalanceLow =
+          verifierBalanceWei !== null && verifierBalanceWei < 1_000_000_000_000_000_000n // < 1.0 USDC
         return json(200, {
           ...health,
           headBlock: headBlock !== null ? headBlock.toString() : null,
+          verifierBalanceUsdc,
+          verifierBalanceLow,
           cursors: health.cursors.map((c) => {
             const lag = headBlock !== null ? headBlock - BigInt(c.last_block) : null
             return {
@@ -639,9 +648,8 @@ export function createWorkerApp(deps?: WorkerDependencies) {
           try {
             await scanChainEvents(env, db, chain)
             await recordCronHealth(db, 'chain_scanner', null)
-          } catch (err) {
-            const code = err instanceof Error ? err.message.slice(0, 80) : 'chain_scanner_err'
-            await recordCronHealth(db, 'chain_scanner', `chain_scanner:${code}`)
+          } catch {
+            await recordCronHealth(db, 'chain_scanner', 'chain_scanner_err')
           }
           try {
             await processNotificationsOutbox(env, db, chain)

@@ -84,7 +84,9 @@ function makeChain(opts?: { order?: ChainOrder | null; arbiterIsBackup?: boolean
     getOrder: async (id: bigint) => (id === 1n ? order : null),
     getAd: async () => null,
     isVerified: async () => false,
-  } as unknown as ChainReader
+    getOpenOrderCount: async () => 0n,
+    getUserAdIds: async () => [],
+  }
 }
 
 interface FilingStore {

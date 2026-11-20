@@ -1,4 +1,6 @@
 import {
+  BaseError,
+  ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
   http,
@@ -73,7 +75,8 @@ export interface ChainReader {
   getOrder(orderId: bigint): Promise<ChainOrder | null>
   getAd(adId: bigint): Promise<ChainAd | null>
   isVerified(wallet: `0x${string}`): Promise<boolean>
-  getOpenOrderCount?(wallet: `0x${string}`): Promise<bigint>
+  getOpenOrderCount(wallet: `0x${string}`): Promise<bigint>
+  getUserAdIds(wallet: `0x${string}`): Promise<readonly bigint[]>
 }
 
 export type OrderPartyRole = 'buyer' | 'seller' | 'arbiter' | 'backup_arbiter'
@@ -105,6 +108,14 @@ export type AdminAccessResult =
 
 const lowerAddr = (a: string): `0x${string}` => a.toLowerCase() as `0x${string}`
 const lowerHex = (h: string): `0x${string}` => h.toLowerCase() as `0x${string}`
+
+function isContractRevert(err: unknown): boolean {
+  if (err instanceof ContractFunctionRevertedError) return true
+  if (err instanceof BaseError) {
+    return err.walk((e) => e instanceof ContractFunctionRevertedError) !== null
+  }
+  return false
+}
 
 export function requireEscrowAddress(env: Env): Address {
   const raw = env.VITE_P2P_ESCROW_ADDRESS?.trim()
@@ -183,8 +194,9 @@ export function createChainReader(env: Env): ChainReader {
           payerProof: lowerHex(o.payerProof),
           paidLate: o.paidLate,
         }
-      } catch {
-        return null
+      } catch (err) {
+        if (isContractRevert(err)) return null
+        throw err
       }
     },
 
@@ -208,8 +220,9 @@ export function createChainReader(env: Env): ChainReader {
           detailsMode: Number(ad.detailsMode),
           detailsHash: lowerHex(ad.detailsHash),
         }
-      } catch {
-        return null
+      } catch (err) {
+        if (isContractRevert(err)) return null
+        throw err
       }
     },
 
@@ -227,6 +240,15 @@ export function createChainReader(env: Env): ChainReader {
         address: escrow,
         abi: p2pEscrowAbi,
         functionName: 'partyOpenOrders',
+        args: [wallet],
+      })
+    },
+
+    async getUserAdIds(wallet: `0x${string}`): Promise<readonly bigint[]> {
+      return client.readContract({
+        address: escrow,
+        abi: p2pEscrowAbi,
+        functionName: 'getUserAdIds',
         args: [wallet],
       })
     },

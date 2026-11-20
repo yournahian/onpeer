@@ -97,7 +97,7 @@ function NameMatchBadge({ match }: { match: NameMatchBadgeData }) {
   if (match.status === 'mismatch') {
     return (
       <span className="inline-flex items-center gap-1 rounded border border-red-500/50 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-400">
-        <AlertTriangle className="size-3" /> KYC Name Mismatch{match.maskedInitials ? ` (${match.maskedInitials})` : ''}
+        <AlertTriangle className="size-3" /> Name not confirmed{match.maskedInitials ? ` (${match.maskedInitials})` : ''}
       </span>
     )
   }

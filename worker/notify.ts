@@ -276,7 +276,7 @@ export async function processNotificationsOutbox(
       } else if (
         adminFallbackEmail &&
         roles &&
-        (wallet === roles.arbiter || wallet === roles.backupArbiter)
+        (wallet === roles.arbiter.toLowerCase() || wallet === roles.backupArbiter.toLowerCase())
       ) {
         // Fallback for arbiter alerts when arbiter wallet has no verified P2P account email
         plainEmail = adminFallbackEmail

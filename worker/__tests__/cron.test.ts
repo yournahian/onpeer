@@ -3,7 +3,9 @@ import { decodeEventLog, encodeAbiParameters, encodeEventTopics, toEventSelector
 import type { QueryResultRow } from 'pg'
 import { p2pEscrowAbi } from '../../src/abi/p2pEscrow'
 import type { Queryable } from '../db'
-import { SCANNED_EVENTS, sweepExpiredRows, sweepExpiredSessions, checkKycExpiry } from '../cron'
+import { SCANNED_EVENTS, scanChainEvents, sweepExpiredRows, sweepExpiredSessions, checkKycExpiry } from '../cron'
+import type { ChainReader } from '../chain'
+import type { Env } from '../env'
 
 class CronMemoryDb implements Queryable {
   vaultBlobs: Array<{ id: string; delete_after: string | null }> = []
@@ -15,6 +17,7 @@ class CronMemoryDb implements Queryable {
   onchainJobs: Array<{ kind: string; payload: string; status: string }> = []
   outboxRows: Array<{ wallet: string; event: string; dedupe_key: string | null }> = []
   audits: Array<{ actor: string; action: string; subject: string | null }> = []
+  cursors = new Map<string, string>()
 
   past(daysAgo: number): string {
     return new Date(Date.now() - daysAgo * 86400_000).toISOString()
@@ -107,6 +110,16 @@ class CronMemoryDb implements Queryable {
     // audit_log
     if (n.startsWith('INSERT INTO public.audit_log')) {
       this.audits.push({ actor: String(values[0]), action: String(values[1]), subject: values[2] ? String(values[2]) : null })
+      return { rows: [], rowCount: 1 }
+    }
+
+    // chain_cursor
+    if (n.startsWith('SELECT last_block FROM public.chain_cursor')) {
+      const lb = this.cursors.get(String(values[0]))
+      return lb ? { rows: [{ last_block: lb } as unknown as R], rowCount: 1 } : { rows: [], rowCount: 0 }
+    }
+    if (n.startsWith('INSERT INTO public.chain_cursor')) {
+      this.cursors.set(String(values[0]), String(values[1]))
       return { rows: [], rowCount: 1 }
     }
 
@@ -331,5 +344,81 @@ describe('cron — SCANNED_EVENTS match deployed P2PEscrow ABI & decode real log
     })
     expect(resolved.eventName).toBe('DisputeResolved')
     expect((resolved.args as { orderId: bigint; toBuyer: boolean }).toBuyer).toBe(true)
+  })
+
+  it('retries the window without advancing chain_cursor when chain.getOrder throws a transient RPC error', async () => {
+    const db = new CronMemoryDb()
+    db.cursors.set('escrow_events', '100')
+
+    const buyer = '0x1111111111111111111111111111111111111111' as const
+    const seller = '0x2222222222222222222222222222222222222222' as const
+    let failNextOrderRead = true
+
+    const chain: ChainReader = {
+      getRoles: async () => ({
+        owner: buyer,
+        arbiter: buyer,
+        backupArbiter: buyer,
+        verifier: buyer,
+        kycRequired: false,
+        sealedEnabled: false,
+        payerProofRequired: false,
+      }),
+      getAd: async () => null,
+      isVerified: async () => false,
+      getOpenOrderCount: async () => 0n,
+      getUserAdIds: async () => [],
+      getOrder: async (orderId: bigint) => {
+        if (failNextOrderRead) {
+          throw new Error('rpc_timeout')
+        }
+        return {
+          id: orderId,
+          adId: 1n,
+          buyer,
+          seller,
+          taker: buyer,
+          status: 2,
+          createdAt: 1000n,
+          deadline: 2000n,
+          paidAt: 1100n,
+          disputedAt: 0n,
+          reviewStartedAt: 0n,
+          amount: 10_000000n,
+          detailsReady: true,
+          detailsHash: ('0x' + '00'.repeat(32)) as `0x${string}`,
+          payerProof: ('0x' + '00'.repeat(32)) as `0x${string}`,
+          paidLate: false,
+        }
+      },
+    }
+
+    const rpcClient = {
+      getBlockNumber: async () => 150n,
+      getLogs: async () => [{ eventName: 'OrderPaid', args: { orderId: 7n } }],
+    }
+
+    const env = {
+      VITE_P2P_ESCROW_ADDRESS: '0xf719ebbc5080aee09e38909764b897e0bf01a9b0',
+    } as unknown as Env
+
+    // Tick 1: transient RPC error aborts scan before advancing chain_cursor
+    await expect(scanChainEvents(env, db, chain, rpcClient)).rejects.toThrow('rpc_timeout')
+    expect(db.cursors.get('escrow_events')).toBe('100')
+    expect(db.outboxRows).toHaveLength(0)
+
+    // Tick 2: RPC recovers -> same window is re-scanned and OrderPaid email is queued
+    failNextOrderRead = false
+    const res = await scanChainEvents(env, db, chain, rpcClient)
+    expect(res.fromBlock).toBe(101n)
+    expect(res.toBlock).toBe(150n)
+    expect(res.queued).toBe(1)
+    expect(db.cursors.get('escrow_events')).toBe('150')
+    expect(db.outboxRows).toHaveLength(1)
+    expect(db.outboxRows[0]).toEqual({
+      wallet: seller,
+      event: 'order_paid',
+      dedupe_key: `order_paid:${seller}:7`,
+    })
   })
 })

@@ -161,6 +161,8 @@ function makeChainMock(opts?: {
     getOrder: async (id) => orders.get(id) ?? null,
     getAd: async (id) => ads.get(id) ?? null,
     isVerified: async () => false,
+    getOpenOrderCount: async () => 0n,
+    getUserAdIds: async () => [],
   }
 }
 
