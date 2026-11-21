@@ -312,9 +312,7 @@ body {
   animation: drift-a 26s ease-in-out infinite alternate;
   transition: opacity 0.35s ease;
 }
-:root[data-helix='off'] .aurora-a,
-:root[data-helix='off'] .aurora-b,
-:root[data-helix='off'] .aurora-c {
+:root[data-helix='off'] .aurora-a {
   opacity: 0;
   animation: none;
 }

@@ -13,6 +13,11 @@ const PRIMARY: Record<Theme, [string, string, string]> = {
   dark: ['#c94100', '#FF5A00', '#ff8c42'],
   light: ['#b83a00', '#e04e00', '#FF5A00'],
 }
+/** Same Helix palette without the bright peach right-edge hotspot when FX is off. */
+const PRIMARY_NO_RIGHT_GLOW: Record<Theme, [string, string, string]> = {
+  dark: ['#c94100', '#FF5A00', '#e85200'],
+  light: ['#b83a00', '#e04e00', '#e85200'],
+}
 /** Matches `--bg` in index.css so the canvas blends into the page. */
 const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xfaf9f7 }
 
@@ -142,23 +147,26 @@ export function RibbonBackdrop() {
     const applyTheme = () => {
       state.theme = currentTheme()
       const active = isHelixActive()
-      state.stops = PRIMARY[state.theme].map((c) => new THREE.Color(c))
-      rimR.intensity = active ? 45 : 0
-      bloom.strength = active ? 0.4 : 0
+      const palette = active ? PRIMARY[state.theme] : PRIMARY_NO_RIGHT_GLOW[state.theme]
+      state.stops = palette.map((c) => new THREE.Color(c))
+      // Keep the Helix's own bloom & starfield intact; only tame the right-side hotspot when FX is off.
+      rimR.color.set(active ? 0xff8c42 : 0xff5a00)
+      rimR.intensity = active ? 45 : 20
+      bloom.strength = 0.4
       if (state.theme === 'dark') {
         // Opaque page colour so bloom works, identical to the page background.
         renderer.setClearColor(PAGE_BG.dark, 1)
         ambient.intensity = 0.12
         hemi.intensity = 0.4
         dustMat.color.set(0xffb380)
-        dustMat.opacity = active ? 0.55 : 0.15
+        dustMat.opacity = 0.55
       } else {
         // Transparent: the page's own light background shows through.
         renderer.setClearColor(PAGE_BG.light, 0)
         ambient.intensity = 0.35
         hemi.intensity = 0.7
         dustMat.color.set(0xff5a00)
-        dustMat.opacity = active ? 0.35 : 0.1
+        dustMat.opacity = 0.35
       }
     }
     applyTheme()

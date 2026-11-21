@@ -26,9 +26,8 @@ export function AgentChat({ route }: { route: string }) {
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close assistant' : 'Open assistant'}
         aria-expanded={open}
-        className={`launcher-ring glow-accent btn-shine fixed right-4 z-[9999] flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-transform duration-200 hover:scale-105 active:scale-95 sm:min-h-12 sm:px-5 ${
-          route === 'p2p' ? 'bottom-20 md:bottom-4' : 'bottom-4'
-        }`}
+        className={`launcher-ring glow-accent btn-shine fixed right-4 z-[9999] flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-transform duration-200 hover:scale-105 active:scale-95 sm:min-h-12 sm:px-5 ${route === 'p2p' ? 'bottom-20 md:bottom-4' : 'bottom-4'
+          }`}
         style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
       >
         {open ? <X className="size-4" /> : <Sparkles className="size-4" />}
