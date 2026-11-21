@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useMotionValueEvent, useScroll } from 'framer-motion'
-import { ArrowLeftRight, ArrowRight, Orbit, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, CreditCard, Orbit, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
 import { ConnectKitButton } from 'connectkit'
 import { isLandingDomain, useRoute, type Route } from '@/lib/router'
 import { shortAddr } from '@/lib/p2p'
@@ -13,6 +13,7 @@ import { useAdminRoles } from '@/hooks/useAdmin'
 
 const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] = [
   { to: '/p2p', route: 'p2p', label: 'P2P', icon: ArrowLeftRight },
+  { to: '/buy', route: 'buy', label: 'Buy USDC', icon: CreditCard },
   { to: '/swap', route: 'swap', label: 'Swap', icon: Repeat },
   { to: '/bridge', route: 'bridge', label: 'Bridge', icon: Waypoints },
   { to: '/assistant', route: 'assistant', label: 'Assistant', icon: Sparkles },
@@ -38,13 +39,13 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
         <Brand tagline="USDC for South Asia" />
 
         {!isLandingDomain() && (
-          <nav className="order-last flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto" aria-label="Products">
+          <nav className="order-last flex w-full gap-0.5 overflow-x-auto sm:order-none sm:w-auto sm:gap-1" aria-label="Products">
             {links.map((l) => (
               <AppLink
                 key={l.to}
                 to={l.to}
                 aria-current={route === l.route ? 'page' : undefined}
-                className="relative flex min-h-10 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none sm:px-4 sm:text-sm"
+                className="relative flex min-h-10 shrink-0 flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg px-1.5 text-xs font-semibold transition-colors hover:text-[var(--ink)] sm:flex-none sm:gap-1.5 sm:px-3.5 sm:text-sm"
                 style={{ color: route === l.route ? 'var(--ink)' : 'var(--subtle)' }}
               >
                 {route === l.route && (
@@ -55,8 +56,8 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
                     transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                   />
                 )}
-                <span className="relative flex items-center gap-1.5">
-                  <l.icon className="size-4" /> {l.label}
+                <span className="relative flex items-center gap-1 sm:gap-1.5">
+                  <l.icon className="hidden size-3.5 min-[420px]:inline-block sm:size-4" /> {l.label}
                 </span>
               </AppLink>
             ))}

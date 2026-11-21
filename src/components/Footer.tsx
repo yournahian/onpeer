@@ -53,6 +53,16 @@ export function Footer() {
               </AppLink>
             </li>
             <li>
+              <AppLink to="/buy" className={linkClass}>
+                Buy USDC (sandbox)
+              </AppLink>
+            </li>
+            <li>
+              <AppLink to="/p2p?mode=sell" className={linkClass}>
+                Cash out (P2P)
+              </AppLink>
+            </li>
+            <li>
               <AppLink to="/swap" className={linkClass}>
                 Swap
               </AppLink>

@@ -16,6 +16,7 @@ import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
 import { handleChatRoutes } from './chat'
 import { handleVaultRoutes } from './vault'
 import { handleDisputeRoutes } from './disputes'
+import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
 import { checkRateLimit } from './db'
@@ -189,7 +190,9 @@ function sanitizeMessages(messages: unknown): ChatMessage[] | null {
 function contextLine(ctx: unknown): string {
   const c = (ctx ?? {}) as Record<string, unknown>
   const address = typeof c.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(c.address) ? c.address : null
-  const route = ['home', 'p2p', 'swap', 'bridge'].includes(String(c.route)) ? String(c.route) : 'home'
+  const route = ['home', 'p2p', 'swap', 'bridge', 'buy'].includes(String(c.route))
+    ? String(c.route)
+    : 'home'
   return `\n\nSession: wallet ${address ?? 'not connected'}; current page: ${route}; today: ${new Date().toISOString().slice(0, 10)}.`
 }
 
@@ -295,6 +298,12 @@ async function handleApi(
     if (/^\/orders\/\d+\/disputes$/.test(path) || path === '/admin/disputes') {
       const chain = makeChain(env)
       const res = await runDb(env, (db) => handleDisputeRoutes(req, env, db, chain, path))
+      return res ?? json(404, { error: 'not_found' })
+    }
+
+    // ---- Phase 3 Circle Onramp Sandbox Session (/api/onramp/session) ----
+    if (path === '/onramp/session' || path.startsWith('/onramp/')) {
+      const res = await runDb(env, (db) => handleOnrampRoutes(req, env, db, path))
       return res ?? json(404, { error: 'not_found' })
     }
 
@@ -579,15 +588,29 @@ async function handleApi(
   }
 }
 
-const APP_PATHS = ['/p2p', '/swap', '/bridge', '/admin', '/assistant']
+const APP_PATHS = ['/p2p', '/swap', '/bridge', '/buy', '/cashout', '/admin', '/assistant']
 
 const API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
-const APP_CSP =
-  "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
 
-function withSecurityHeaders(res: Response, isApi: boolean): Response {
+function resolveHttpsOrigin(raw: string | undefined, fallback: string): string {
+  try {
+    if (!raw) return fallback
+    const u = new URL(raw.trim())
+    return u.protocol === 'https:' ? u.origin : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function buildAppCsp(env: Env): string {
+  const widgetOrigin = resolveHttpsOrigin(env.ONRAMP_WIDGET_BASE_URL, SANDBOX_WIDGET_BASE_URL)
+  const apiOrigin = resolveHttpsOrigin(env.ONRAMP_API_BASE_URL, SANDBOX_API_BASE_URL)
+  return `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ${widgetOrigin} ${apiOrigin} https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${widgetOrigin}; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
+}
+
+function withSecurityHeaders(res: Response, isApi: boolean, env: Env): Response {
   const headers = new Headers(res.headers)
-  headers.set('Content-Security-Policy', isApi ? API_CSP : APP_CSP)
+  headers.set('Content-Security-Policy', isApi ? API_CSP : buildAppCsp(env))
   headers.set('X-Content-Type-Options', 'nosniff')
   headers.set('X-Frame-Options', 'DENY')
   headers.set('Referrer-Policy', 'no-referrer')
@@ -610,7 +633,7 @@ export function createWorkerApp(deps?: WorkerDependencies) {
       // Never redirect /api on app.onpeer.xyz, onpeer.xyz, or any host
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
         const res = await handleApi(request, env, ctx, url.pathname.slice(4) || '/', deps)
-        return withSecurityHeaders(res, true)
+        return withSecurityHeaders(res, true, env)
       }
 
       // Redirect app routes from landing domain to app.onpeer.xyz (keep /privacy public on both)
@@ -622,11 +645,12 @@ export function createWorkerApp(deps?: WorkerDependencies) {
         return withSecurityHeaders(
           Response.redirect(`https://app.onpeer.xyz${url.pathname}${url.search}`, 302),
           false,
+          env,
         )
       }
 
       const assetRes = await env.ASSETS.fetch(request)
-      return withSecurityHeaders(assetRes, false)
+      return withSecurityHeaders(assetRes, false, env)
     },
 
     async scheduled(

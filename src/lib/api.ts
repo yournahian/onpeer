@@ -37,6 +37,11 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_file_signature: 'File content does not match the allowed image or PDF type.',
   invalid_reason_code: 'Select a valid dispute reason.',
   statement_too_long: 'Statement must be under 8 KB.',
+  onramp_not_configured: 'Sandbox checkout is not configured on this server right now.',
+  onramp_env_mismatch: 'Sandbox checkout is temporarily unavailable due to a server configuration mismatch.',
+  onramp_sandbox_only: 'OnPeer checkout is currently restricted to sandbox mode.',
+  onramp_invalid_referrer_domain: 'Sandbox checkout is temporarily unavailable due to a server domain configuration issue.',
+  onramp_provider_error: 'Could not start a sandbox checkout session right now. Please try again.',
   service_unavailable: 'Backend service is temporarily unavailable.',
   offline: 'Could not reach the OnPeer backend (/api). Make sure wrangler dev is running.',
 }

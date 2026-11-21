@@ -85,6 +85,39 @@ export default function Home() {
               </Reveal>
             ))}
           </div>
+
+          <Reveal delay={0.2}>
+            <div
+              className="mt-5 flex flex-col items-start justify-between gap-4 rounded-3xl p-5 sm:flex-row sm:items-center sm:px-6"
+              style={{ background: 'var(--fill-1)', border: '1px solid var(--border)' }}
+            >
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--accent)' }}>
+                  Fiat ramps • Sandbox &amp; P2P
+                </p>
+                <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>
+                  Try Circle&apos;s hosted Onramp sandbox with dummy data, or cash out USDC for local currency via
+                  OnPeer P2P escrow.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <AppLink
+                  to="/buy"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-4 text-xs font-bold transition-transform hover:-translate-y-0.5"
+                  style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
+                >
+                  Buy USDC (sandbox) <ArrowRight className="size-3.5" />
+                </AppLink>
+                <AppLink
+                  to="/p2p?mode=sell"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-full px-4 text-xs font-semibold transition-colors hover:bg-[var(--fill-3)]"
+                  style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                >
+                  Cash out USDC <ArrowRight className="size-3.5" />
+                </AppLink>
+              </div>
+            </div>
+          </Reveal>
         </section>
 
         <HowItWorks />

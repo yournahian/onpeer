@@ -1,6 +1,15 @@
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'home' | 'p2p' | 'swap' | 'bridge' | 'admin' | 'assistant' | 'brand-kit' | 'privacy'
+export type Route =
+  | 'home'
+  | 'p2p'
+  | 'swap'
+  | 'bridge'
+  | 'buy'
+  | 'admin'
+  | 'assistant'
+  | 'brand-kit'
+  | 'privacy'
 
 export const LANDING_URL = 'https://onpeer.xyz'
 export const APP_URL = 'https://app.onpeer.xyz'
@@ -22,6 +31,8 @@ function currentRoute(): Route {
   if (pathname.startsWith('/p2p')) return 'p2p'
   if (pathname.startsWith('/swap')) return 'swap'
   if (pathname.startsWith('/bridge')) return 'bridge'
+  if (pathname.startsWith('/buy')) return 'buy'
+  if (pathname.startsWith('/cashout')) return 'p2p'
   if (pathname.startsWith('/admin')) return 'admin'
   if (pathname.startsWith('/assistant')) return 'assistant'
   if (pathname.startsWith('/brand-kit')) return 'brand-kit'

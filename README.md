@@ -12,6 +12,8 @@ Built with [Arc Studio](https://studio.arc.io)
 - Admin panel at /admin for the owner, arbiter and 7-day backup arbiter: offchain/onchain dispute queue with "Take case" and 4-arg rulings (`applyBond` + `slashLoser`), settled-dispute tracking, account lookup with tiers, KYC status, concessions, late marks, unpaid bond debts, restrictions and dispute waivers, pause switch, listing fee & accrued-fee collection, KYC verifier & `kycRequired` switch, primary/backup arbiter, Phase 2 privacy switches, currency controls, and an AI provider tab (choose OpenRouter, Groq, Gemini or a custom OpenAI-compatible endpoint, save its key on the server, test the connection). The tab is unlocked by signing a free message with the owner or arbiter wallet.
 - Swap USDC and EURC on Arc Testnet with a quote and fee preview
 - Bridge USDC between Arc and Ethereum, Base, Arbitrum, Optimism, Avalanche and Polygon testnets
+- Buy USDC sandbox page at `/buy` powered by Circle App Kit Onramp (`@circle-fin/app-kit` + `@circle-fin/app-kit/server`, sandbox dummy data only, server-locked wallet destination)
+- Direct cash-out deep-links (`/p2p?mode=sell`) into the P2P Sell USDC marketplace
 
 - Buy and sell USDC with country and payment-method filters (UPI, bKash, Raast, eSewa and more); 0% per-trade fee with a flat 0.05 USDC per-ad listing fee
 - Post buy or sell ads with your own price, limits, payment window and expiry (1–168 hours, refreshable for free anytime; Buy ads require a Merchant badge or 3+ completed trades plus the 0.05 USDC listing fee)
@@ -45,12 +47,13 @@ bun run contracts:test
 Copy `.env.example` → `.dev.vars` and fill in the Worker secrets. The file is gitignored.
 See `.env.example` for a full description of every variable.
 
-**Required for Phase 2 features:**
+**Required for Phase 2 & Phase 3 features:**
 - `SESSION_SECRET` — 64 hex chars (`openssl rand -hex 32`)
 - `VAULT_MASTER_KEY` — 64 hex chars (`openssl rand -hex 32`)
 - `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` — from [didit.me](https://didit.me)
 - `VERIFIER_PRIVATE_KEY` — separate relayer wallet (not owner/arbiter)
 - `RESEND_API_KEY`, `EMAIL_FROM` — from [resend.com](https://resend.com)
+- `CIRCLE_API_KEY` — Circle Testnet Onramp API key (`TEST_API_KEY:...`, sandbox only) paired with `ONRAMP_API_BASE_URL`, `ONRAMP_WIDGET_BASE_URL`, `VITE_ONRAMP_WIDGET_BASE_URL`, and `ONRAMP_REFERRER_DOMAIN`
 
 ### Deployed contracts (Arc Testnet)
 

@@ -7,7 +7,11 @@
     "VITE_P2P_ESCROW_ADDRESS": "0xf719ebbc5080aee09e38909764b897e0bf01a9b0",
     "VITE_P2P_DEPLOY_BLOCK": "72902228",
     "DIDIT_MODE": "sandbox",
-    "PUBLIC_APP_URL": "https://app.onpeer.xyz"
+    "PUBLIC_APP_URL": "https://app.onpeer.xyz",
+    "ONRAMP_API_BASE_URL": "https://api-test.circle.com",
+    "ONRAMP_WIDGET_BASE_URL": "https://onramp-sandbox.arc.io",
+    "VITE_ONRAMP_WIDGET_BASE_URL": "https://onramp-sandbox.arc.io",
+    "ONRAMP_REFERRER_DOMAIN": "app.onpeer.xyz"
   },
   "hyperdrive": [
     {

@@ -11,6 +11,7 @@ import { getUsdc } from '@/onchain-facts'
 import { formatUsdc, parseUsdc } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
 import { SiteBar } from '@/components/SiteBar'
+import { AppLink } from '@/components/AppLink'
 import { Button } from '@/components/ui'
 import { ChainLogo, CoinLogo } from '@/components/logos'
 import { RollingNumber } from '@/components/fx/RollingNumber'
@@ -154,13 +155,13 @@ export default function SwapPage() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-hidden">
+    <div className="flex min-h-dvh flex-col overflow-x-clip">
       <SiteBar />
-      <div className="relative flex min-h-[calc(100dvh-108px)] w-full flex-col items-center justify-center px-4 py-8 sm:min-h-[calc(100dvh-64px)] sm:py-12">
+      <div className="relative flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
         <RibbonBackdrop />
 
         <motion.section
-          className="relative z-20 w-full max-w-[460px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[28px] sm:p-6"
+          className="relative z-20 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
           style={{
             background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
             border: '1px solid var(--border-strong)',
@@ -176,14 +177,14 @@ export default function SwapPage() {
               <span>You&apos;re swapping</span>
               <span>Balance: {fmt(balIn)}</span>
             </div>
-            <div className="mt-2.5 flex items-center justify-between gap-3">
+            <div className="mt-2 flex items-center justify-between gap-3">
               <input
                 inputMode="decimal"
                 value={amount}
                 onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setAmount(e.target.value)}
                 placeholder="0.00"
                 aria-label="Amount to swap"
-                className="no-focus-ring display w-full min-w-0 bg-transparent text-3xl font-bold tabular-nums outline-none sm:text-4xl"
+                className="no-focus-ring display w-full min-w-0 bg-transparent text-2xl font-bold tabular-nums outline-none sm:text-3xl"
               />
               <button
                 type="button"
@@ -193,10 +194,10 @@ export default function SwapPage() {
                   setFlips((n) => n + 1)
                 }}
                 aria-label="Switch swap token"
-                className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold transition-transform hover:scale-[1.03] active:scale-[0.98]"
+                className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold transition-transform hover:scale-[1.03] active:scale-[0.98]"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                <CoinLogo symbol={tokenIn} size={20} />
+                <CoinLogo symbol={tokenIn} size={18} />
                 <span>{tokenIn}</span>
                 <motion.span animate={{ rotate: flips * 180 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
                   <ArrowDownUp className="size-3.5 opacity-70" />
@@ -205,14 +206,14 @@ export default function SwapPage() {
             </div>
 
             {/* 25% 50% 75% MAX pills */}
-            <div className="mt-4 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-4 gap-2">
               {PCT_PRESETS.map((p) => (
                 <button
                   key={p.label}
                   type="button"
                   disabled={balIn === undefined}
                   onClick={() => applyPct(p.num)}
-                  className="rounded-full py-1.5 text-xs font-semibold transition-colors hover:bg-[var(--fill-3)] disabled:opacity-50"
+                  className="rounded-full py-1 text-xs font-semibold transition-colors hover:bg-[var(--fill-3)] disabled:opacity-50"
                   style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)', color: 'var(--ink)' }}
                 >
                   {p.label}
@@ -222,7 +223,7 @@ export default function SwapPage() {
           </div>
 
           {/* Middle: Protocol, Slippage, Fees */}
-          <div className="mt-5 space-y-2.5 border-y py-4 text-xs" style={{ borderColor: 'var(--border)' }}>
+          <div className="mt-3.5 space-y-2 border-y py-3 text-xs" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Network</span>
               <span className="inline-flex items-center gap-1.5 font-semibold">
@@ -270,49 +271,49 @@ export default function SwapPage() {
           </div>
 
           {/* Bottom: To receive */}
-          <div className="mt-4">
+          <div className="mt-3">
             <div className="flex items-center justify-between text-xs" style={{ color: 'var(--subtle)' }}>
               <span>To receive</span>
               <span>Balance: {fmt(balOut)}</span>
             </div>
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <p className="display w-full min-w-0 truncate text-3xl font-bold tabular-nums sm:text-4xl" style={{ opacity: isReviewed ? 1 : 0.65 }}>
+            <div className="mt-1.5 flex items-center justify-between gap-3">
+              <p className="display w-full min-w-0 truncate text-2xl font-bold tabular-nums sm:text-3xl" style={{ opacity: isReviewed ? 1 : 0.65 }}>
                 <RollingNumber value={isReviewed ? String(reviewed.estimate.estimatedOutput.amount) : '0.00'} />
               </p>
               <span
-                className="flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-bold"
+                className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                <CoinLogo symbol={tokenOut} size={20} />
+                <CoinLogo symbol={tokenOut} size={18} />
                 <span>{tokenOut}</span>
               </span>
             </div>
           </div>
 
           {error && (
-            <p className="mt-4 text-xs font-medium" style={{ color: 'var(--danger)' }} role="alert">
+            <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }} role="alert">
               {error}
             </p>
           )}
           {insufficient && (
-            <p className="mt-4 text-xs font-medium" style={{ color: 'var(--danger)' }}>
+            <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }}>
               Not enough {tokenIn}. Use &quot;Get test USDC&quot; in the Arc Studio sidebar.
             </p>
           )}
 
           {/* Primary Pill CTA */}
-          <div className="mt-5">
+          <div className="mt-4">
             {!isConnected ? (
               <ConnectKitButton.Custom>
                 {({ show }) => (
-                  <Button className="w-full rounded-full py-3.5 text-sm font-bold" onClick={show}>
+                  <Button className="w-full rounded-full py-3 text-sm font-bold" onClick={show}>
                     Connect wallet
                   </Button>
                 )}
               </ConnectKitButton.Custom>
             ) : isReviewed ? (
               <Button
-                className="w-full rounded-full py-3.5 text-sm font-bold"
+                className="w-full rounded-full py-3 text-sm font-bold"
                 loading={busy === 'swap'}
                 disabled={busy !== null}
                 onClick={() => void swap()}
@@ -321,7 +322,7 @@ export default function SwapPage() {
               </Button>
             ) : (
               <Button
-                className="w-full rounded-full py-3.5 text-sm font-bold"
+                className="w-full rounded-full py-3 text-sm font-bold"
                 loading={busy === 'quote'}
                 disabled={amountRaw === 0n || insufficient || busy !== null}
                 onClick={() => void review()}
@@ -334,7 +335,7 @@ export default function SwapPage() {
 
         {done && (
           <motion.section
-            className="glass relative z-10 mt-4 w-full max-w-[460px] rounded-2xl p-4 text-sm"
+            className="glass relative z-10 mt-3 w-full max-w-[450px] rounded-2xl p-3.5 text-sm"
             aria-live="polite"
             initial={{ opacity: 0, y: 12, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -358,9 +359,20 @@ export default function SwapPage() {
           </motion.section>
         )}
 
-        <p className="relative z-20 mt-6 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
+        <p className="relative z-20 mt-3 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
           USDC is also the gas token on Arc. Keep some USDC in your wallet for transaction fees.
         </p>
+        <div className="relative z-20 mt-1.5 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold">
+          <AppLink to="/buy" className="underline hover:opacity-85" style={{ color: 'var(--accent)' }}>
+            Buy USDC (sandbox)
+          </AppLink>
+          <span aria-hidden style={{ color: 'var(--subtle)' }}>
+            •
+          </span>
+          <AppLink to="/p2p?mode=sell" className="underline hover:opacity-85" style={{ color: 'var(--muted)' }}>
+            Cash out USDC
+          </AppLink>
+        </div>
       </div>
     </div>
   )

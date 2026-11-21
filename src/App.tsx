@@ -11,6 +11,7 @@ import Home from '@/pages/Home'
 import P2PPage from '@/pages/P2P'
 import SwapPage from '@/pages/Swap'
 import BridgePage from '@/pages/Bridge'
+import BuyPage from '@/pages/Buy'
 import AdminPage from '@/pages/Admin'
 import AssistantPage from '@/pages/Assistant'
 import BrandKitPage from '@/pages/BrandKit'
@@ -24,8 +25,14 @@ export default function App() {
   useEffect(() => {
     if (redirectToApp) {
       window.location.replace(`${APP_URL}${window.location.pathname}${window.location.search}`)
+      return
     }
-  }, [redirectToApp])
+    if (window.location.pathname.startsWith('/cashout')) {
+      const q = new URLSearchParams(window.location.search)
+      if (!q.has('mode')) q.set('mode', 'sell')
+      window.history.replaceState(null, '', `/p2p?${q.toString()}`)
+    }
+  }, [redirectToApp, search])
 
   if (redirectToApp) return null
   // Swap and Bridge read their prefill from the URL on mount, so a new link remounts them.
@@ -36,6 +43,8 @@ export default function App() {
       <SwapPage key={search} />
     ) : route === 'bridge' ? (
       <BridgePage key={search} />
+    ) : route === 'buy' ? (
+      <BuyPage />
     ) : route === 'admin' ? (
       <AdminPage />
     ) : route === 'assistant' ? (

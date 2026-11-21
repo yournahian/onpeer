@@ -51,7 +51,17 @@ const decimalInput = (setter: (v: string) => void, places: number) => (e: React.
 
 const ttlLabel = (h: number) => (h >= 24 && h % 24 === 0 ? `${h / 24}d (${h}h)` : `${h}h`)
 
-export function PostAdSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function PostAdSheet({
+  open,
+  onClose,
+  initialSide,
+  initialCurrency,
+}: {
+  open: boolean
+  onClose: () => void
+  initialSide?: number
+  initialCurrency?: string
+}) {
   useEffect(() => {
     if (!open) return
     const prevOverflow = document.body.style.overflow
@@ -102,7 +112,7 @@ export function PostAdSheet({ open, onClose }: { open: boolean; onClose: () => v
               </button>
             </header>
             <div className="overflow-y-auto px-5 py-5">
-              <PostAdForm onDone={onClose} />
+              <PostAdForm onDone={onClose} initialSide={initialSide} initialCurrency={initialCurrency} />
             </div>
           </motion.section>
         </motion.div>
@@ -112,7 +122,15 @@ export function PostAdSheet({ open, onClose }: { open: boolean; onClose: () => v
   )
 }
 
-function PostAdForm({ onDone }: { onDone: () => void }) {
+function PostAdForm({
+  onDone,
+  initialSide,
+  initialCurrency,
+}: {
+  onDone: () => void
+  initialSide?: number
+  initialCurrency?: string
+}) {
   const { address, isConnected } = useAccount()
   const publicClient = usePublicClient({ chainId: CHAIN_ID })
   const balance = useUsdcBalance()
@@ -123,8 +141,10 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
   const { blocked, account } = useEligibility()
 
-  const [side, setSide] = useState<number>(SIDE_SELL)
-  const [countryCode, setCountryCode] = useState('BD')
+  const [side, setSide] = useState<number>(initialSide ?? SIDE_SELL)
+  const [countryCode, setCountryCode] = useState(
+    () => COUNTRIES.find((c) => c.currency === initialCurrency)?.code ?? 'BD',
+  )
   const [price, setPrice] = useState('')
   const [total, setTotal] = useState('')
   const [min, setMin] = useState('')

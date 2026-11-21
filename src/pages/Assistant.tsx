@@ -1,143 +1,186 @@
 import { motion } from 'framer-motion'
-import { useAccount } from 'wagmi'
-import { ArrowLeftRight, Repeat, RotateCcw, ShieldCheck, Sparkles, Waypoints, Wallet } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  CreditCard,
+  Repeat,
+  RotateCcw,
+  ShieldCheck,
+  Sparkles,
+  Wallet,
+  Waypoints,
+} from 'lucide-react'
 import { useAgentContext } from '@/agent/AgentContext'
-import { shortAddr } from '@/lib/p2p'
 import { SiteBar } from '@/components/SiteBar'
 import { ChatThread } from '@/components/chat/ChatThread'
-import { Reveal } from '@/components/fx/Reveal'
-
-const ease = [0.22, 1, 0.36, 1] as const
+import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 
 const CAPABILITIES = [
-  { icon: ArrowLeftRight, title: 'Find P2P deals', body: 'Search ads by country, payment method and amount, then prepare an order.' },
-  { icon: Repeat, title: 'Swap in chat', body: 'USDC and EURC on Arc. Get a quote, confirm and sign without leaving the chat.' },
-  { icon: Waypoints, title: 'Bridge in chat', body: 'Move USDC between Arc and six testnets with live progress and retry.' },
-  { icon: Wallet, title: 'Check your account', body: 'Balances, open orders and where each trade stands.' },
-]
+  {
+    icon: ArrowLeftRight,
+    title: 'P2P Deal Finder',
+    body: 'Compare live ads by currency & payment rail, then prefill an order.',
+  },
+  {
+    icon: Repeat,
+    title: 'Swap in Chat',
+    body: 'Quote and swap USDC ↔ EURC on Arc without leaving this thread.',
+  },
+  {
+    icon: Waypoints,
+    title: 'Bridge in Chat',
+    body: 'Move USDC across 7 testnets via Circle CCTP with live step tracking.',
+  },
+  {
+    icon: CreditCard,
+    title: 'Buy & Cash Out',
+    body: 'Launch Circle Onramp sandbox or jump straight to P2P Sell USDC.',
+  },
+  {
+    icon: Wallet,
+    title: 'Wallet & Orders',
+    body: 'Check Arc balances, tier limits, and open escrow order status.',
+  },
+] as const
 
 export default function AssistantPage() {
-  const { address, isConnected } = useAccount()
   const { items, health, reset } = useAgentContext()
   const ready = health.state === 'ready' && health.configured
 
-  return (
-    <div className="min-h-dvh">
-      <SiteBar sticky={false} />
-      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 sm:py-10 lg:px-12">
-        <motion.div
-          initial={{ opacity: 0, y: 14 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, ease }}
-          className="w-full"
-        >
-          <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
-            OnPeer assistant
-          </p>
-          <h1 className="display text-gradient mt-2 text-balance text-4xl font-bold sm:text-5xl">Do it by chatting</h1>
-          <p className="mt-3 text-pretty" style={{ color: 'var(--muted)' }}>
-            Tell me what you want in plain words. I find the deal, prepare the swap or bridge, and you confirm and sign in
-            your own wallet.
-          </p>
-        </motion.div>
+  const statusText =
+    health.state === 'loading'
+      ? 'Connecting...'
+      : health.state === 'offline'
+        ? 'Offline'
+        : ready
+          ? 'Online'
+          : 'Not configured'
 
-        <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <motion.section
-            aria-label="Conversation"
-            className="glass flex min-h-[600px] flex-col overflow-hidden rounded-[2rem] lg:h-[min(78dvh,780px)] lg:min-h-[640px]"
-            initial={{ opacity: 0, y: 20, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.65, delay: 0.1, ease }}
-          >
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6" style={{ borderBottom: '1px solid var(--border)' }}>
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex size-9 items-center justify-center rounded-xl" style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}>
+  return (
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <SiteBar />
+
+      <div className="relative flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
+        <RibbonBackdrop />
+
+        <motion.main
+          aria-label="OnPeer Assistant Workspace"
+          initial={{ opacity: 0, y: 14, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          className="relative z-20 grid h-full max-h-[620px] w-full max-w-5xl overflow-hidden rounded-[24px] backdrop-blur-2xl sm:rounded-[26px] lg:grid-cols-[minmax(0,1fr)_272px]"
+          style={{
+            background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
+            border: '1px solid var(--border-strong)',
+            boxShadow: '0 24px 80px -20px var(--accent-glow), 0 12px 40px -12px rgba(0,0,0,0.28)',
+          }}
+        >
+          {/* Left: Primary Conversation Console */}
+          <section aria-label="Conversation" className="flex min-h-0 flex-col overflow-hidden">
+            <header
+              className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-5"
+              style={{ borderBottom: '1px solid var(--border)', background: 'var(--fill-1)' }}
+            >
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className="relative flex size-8 shrink-0 items-center justify-center rounded-xl"
+                  style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
+                >
                   <Sparkles className="size-4" />
-                  {ready && (
-                    <span
-                      className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full ring-2"
-                      style={{ background: 'var(--success)', ['--tw-ring-color' as string]: 'var(--bg)' }}
-                    />
-                  )}
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full ring-2"
+                    style={{
+                      background: ready ? 'var(--success)' : 'var(--warn)',
+                      ['--tw-ring-color' as string]: 'var(--panel-solid)',
+                    }}
+                  />
                 </span>
-                <div className="leading-tight">
-                  <h2 className="display text-base font-semibold">Assistant</h2>
-                  <p className="text-xs" style={{ color: 'var(--subtle)' }}>
-                    {health.state === 'loading'
-                      ? 'Connecting...'
-                      : health.state === 'offline'
-                        ? 'Backend offline'
-                        : ready
-                          ? 'Online'
-                          : 'Needs setup'}
+                <div className="min-w-0 leading-tight">
+                  <div className="flex items-center gap-2">
+                    <h1 className="display truncate text-sm font-bold sm:text-base">OnPeer Assistant</h1>
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                      style={{
+                        background: 'var(--fill-2)',
+                        border: '1px solid var(--border)',
+                        color: ready ? 'var(--success)' : 'var(--muted)',
+                      }}
+                    >
+                      {statusText}
+                    </span>
+                  </div>
+                  <p className="truncate text-[11px]" style={{ color: 'var(--muted)' }}>
+                    Non-custodial copilot • Prepare trades, swaps &amp; bridges
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                {items.length > 0 && (
-                  <button
-                    onClick={reset}
-                    aria-label="Clear chat"
-                    title="Clear chat"
-                    className="flex size-10 items-center justify-center rounded-full hover:bg-[var(--fill-3)]"
-                  >
-                    <RotateCcw className="size-4" />
-                  </button>
-                )}
-              </div>
-            </div>
+
+              {items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={reset}
+                  aria-label="Clear chat"
+                  title="Clear conversation"
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold transition-colors hover:bg-[var(--fill-3)]"
+                  style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                >
+                  <RotateCcw className="size-3.5" />
+                  <span className="hidden sm:inline">Reset</span>
+                </button>
+              )}
+            </header>
+
             <ChatThread variant="page" />
-          </motion.section>
+          </section>
 
-          <aside className="space-y-4 lg:sticky lg:top-28" aria-label="What the assistant can do">
-            <Reveal>
-              <div className="glass rounded-3xl p-5">
-                <h2 className="display text-lg font-semibold">What I can do</h2>
-                <ul className="mt-4 space-y-4">
-                  {CAPABILITIES.map((c, i) => (
-                    <motion.li
-                      key={c.title}
-                      className="flex gap-3"
-                      initial={{ opacity: 0, x: 14 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.5, delay: 0.25 + i * 0.08, ease }}
+          {/* Right: Integrated Capabilities & Non-Custodial Guardrails Rail */}
+          <aside
+            aria-label="Assistant capabilities and guardrails"
+            className="hidden min-h-0 flex-col justify-between overflow-hidden p-4 lg:flex"
+            style={{ borderLeft: '1px solid var(--border)', background: 'var(--fill-1)' }}
+          >
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--subtle)' }}>
+                Capabilities
+              </p>
+              <ul className="mt-2.5 space-y-2">
+                {CAPABILITIES.map((c) => (
+                  <li key={c.title} className="flex items-start gap-2.5">
+                    <span
+                      className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg"
+                      style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--accent)' }}
                     >
-                      <span
-                        className="flex size-9 shrink-0 items-center justify-center rounded-xl"
-                        style={{ background: 'var(--fill-2)', color: 'var(--accent)' }}
-                      >
-                        <c.icon className="size-4" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold">{c.title}</p>
-                        <p className="mt-0.5 text-xs text-pretty" style={{ color: 'var(--muted)' }}>
-                          {c.body}
-                        </p>
-                      </div>
-                    </motion.li>
-                  ))}
-                </ul>
-              </div>
-            </Reveal>
+                      <c.icon className="size-3.5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--ink)' }}>
+                        {c.title}
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-snug" style={{ color: 'var(--muted)' }}>
+                        {c.body}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-            <Reveal delay={0.08}>
-              <div className="glass rounded-3xl p-5">
-                <h2 className="display flex items-center gap-2 text-lg font-semibold">
-                  <ShieldCheck className="size-4" style={{ color: 'var(--success)' }} /> You stay in control
-                </h2>
-                <ul className="mt-3 space-y-2 text-xs text-pretty" style={{ color: 'var(--muted)' }}>
-                  <li>Nothing is sent until you confirm and sign in your wallet.</li>
-                  <li>I can never pay fiat, mark an order as paid or release USDC for you.</li>
-                  <li>Ad notes, payment details and order messages are never shown to the AI.</li>
-                </ul>
-                <p className="mt-4 text-xs" style={{ color: 'var(--subtle)' }}>
-                  {isConnected && address ? `Wallet connected: ${shortAddr(address)}` : 'No wallet connected yet. You can connect it when a card asks.'}
-                </p>
-              </div>
-            </Reveal>
+            <div
+              className="mt-3 rounded-xl p-3 text-[11px] leading-snug"
+              style={{ background: 'var(--fill-2)', border: '1px solid var(--border)' }}
+            >
+              <p className="flex items-center gap-1.5 font-bold" style={{ color: 'var(--ink)' }}>
+                <ShieldCheck className="size-3.5 shrink-0" style={{ color: 'var(--success)' }} />
+                You stay in control
+              </p>
+              <ul className="mt-1.5 space-y-1" style={{ color: 'var(--muted)' }}>
+                <li>• Every transaction requires your wallet signature.</li>
+                <li>• Never marks orders paid or releases escrow.</li>
+                <li>• Encrypted chat &amp; bank details stay private.</li>
+              </ul>
+            </div>
           </aside>
-        </div>
-      </main>
+        </motion.main>
+      </div>
     </div>
   )
 }

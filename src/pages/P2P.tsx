@@ -3,7 +3,7 @@ import { useAccount } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
 import { AlertTriangle, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { ESCROW_ADDRESS, sameAddr } from '@/lib/p2p'
+import { ESCROW_ADDRESS, SIDE_BUY, SIDE_SELL, sameAddr } from '@/lib/p2p'
 import { useAds, useArbiter, useBackupArbiter } from '@/hooks/useEscrow'
 import { replaceQuery, useSearch } from '@/lib/router'
 import { unsubscribeEmailToken, useP2pAccount, verifyEmailToken } from '@/hooks/useAccount'
@@ -46,6 +46,13 @@ export default function P2PPage() {
   const orderId = parseId(params.get('order'))
   const deepTradeId = parseId(params.get('trade'))
   const deepAmount = params.get('amount') ?? undefined
+  const rawMode = params.get('mode')
+  const isCashoutAlias = typeof window !== 'undefined' && window.location.pathname.startsWith('/cashout')
+  const deepMode: 'buy' | 'sell' | undefined =
+    rawMode === 'sell' || rawMode === 'buy' ? rawMode : isCashoutAlias ? 'sell' : undefined
+  const deepCurrency = (params.get('currency') ?? '').trim().toUpperCase() || undefined
+  const rawPost = params.get('post')
+  const deepPostSide = rawPost === 'sell' ? SIDE_SELL : rawPost === 'buy' ? SIDE_BUY : undefined
   const { ads } = useAds()
   const deepAd = deepTradeId !== null ? ads.find((a) => a.id === deepTradeId) : undefined
 
@@ -105,6 +112,13 @@ export default function P2PPage() {
 
   const accountReady = isConnected && isSignedIn && !!profile?.exists && !!profile?.emailVerified
   const needsOnboarding = !accountReady && !(isArbiter && orderId !== null)
+  const postSheetOpen = postOpen || (!needsOnboarding && deepPostSide !== undefined)
+  const closePostSheet = () => {
+    setPostOpen(false)
+    if (deepPostSide !== undefined) {
+      replaceQuery((p) => p.delete('post'))
+    }
+  }
 
   return (
     <div className="relative min-h-dvh overflow-x-clip">
@@ -199,6 +213,9 @@ export default function P2PPage() {
             <>
               {tab === 'market' && (
                 <Market
+                  key={`${deepMode ?? ''}:${deepCurrency ?? ''}`}
+                  initialMode={deepMode}
+                  initialCurrency={deepCurrency}
                   deepAd={deepAd}
                   deepAmount={deepAmount}
                   onClearDeepTrade={clearDeepTrade}
@@ -221,7 +238,12 @@ export default function P2PPage() {
         {/* Mobile 60px Fixed 4-Tab Bottom Navigation Bar (Marketplace / Tabs view) */}
         {!needsOnboarding && orderId === null && <MobileBottomNav tab={tab} onTab={setTab} showArbiter={isArbiter} />}
 
-        <PostAdSheet open={postOpen} onClose={() => setPostOpen(false)} />
+        <PostAdSheet
+          open={postSheetOpen}
+          onClose={closePostSheet}
+          initialSide={deepPostSide}
+          initialCurrency={deepCurrency}
+        />
       </div>
     </div>
   )

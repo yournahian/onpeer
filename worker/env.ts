@@ -27,8 +27,11 @@ export interface Env {
   VITE_P2P_DEPLOY_BLOCK?: string
   DIDIT_MODE?: 'sandbox' | 'live' | string
   PUBLIC_APP_URL?: string
+  ONRAMP_API_BASE_URL?: string
+  ONRAMP_WIDGET_BASE_URL?: string
+  ONRAMP_REFERRER_DOMAIN?: string
 
-  // Phase 2 Worker secrets (.dev.vars locally, Cloudflare secrets in production — never logged)
+  // Phase 2 & Phase 3 Worker secrets (.dev.vars locally, Cloudflare secrets in production — never logged)
   SESSION_SECRET?: string
   VAULT_MASTER_KEY?: string
   DIDIT_API_KEY?: string
@@ -38,6 +41,7 @@ export interface Env {
   RESEND_API_KEY?: string
   EMAIL_FROM?: string
   ADMIN_ALERT_EMAIL?: string
+  CIRCLE_API_KEY?: string
 
   // Legacy / AI assistant secrets
   ADMIN_SESSION_SECRET?: string

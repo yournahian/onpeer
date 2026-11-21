@@ -4,12 +4,13 @@ OnPeer is a React + Vite app on **Arc Testnet** (chain id 5042002, USDC is the g
 
 | Area | Route | What it is | Where the logic lives |
 |---|---|---|---|
-| P2P | `/p2p` | Escrow marketplace for USDC against 8 South Asian currencies | `contracts/P2PEscrow.sol` + `src/pages/P2P.tsx` and friends |
+| P2P | `/p2p` | Escrow marketplace for USDC against 8 South Asian currencies (plus direct cash-out via `?mode=sell`) | `contracts/P2PEscrow.sol` + `src/pages/P2P.tsx` and friends |
+| Buy USDC | `/buy` | Hosted Circle Onramp sandbox widget (dummy data only, no real money) | `worker/onramp.ts` + `src/pages/Buy.tsx` + `src/components/BuyUsdcPanel.tsx` |
 | Swap | `/swap` | USDC <-> EURC on Arc Testnet | Circle App Kit, `src/pages/Swap.tsx`, `src/hooks/useSwapFlow.ts` |
 | Bridge | `/bridge` | USDC across 7 testnets (CCTP) | Circle App Kit, `src/pages/Bridge.tsx`, `src/hooks/useBridgeFlow.ts` |
-| Assistant | `/assistant` + floating panel | Chat that finds ads and prepares swaps, bridges and trades | `worker/index.ts` (AI proxy, IP rate-limited) + `src/agent/*` + `src/components/chat/*` |
+| Assistant | `/assistant` + floating panel | Chat that finds ads and prepares swaps, bridges, P2P trades, `/buy`, and P2P sell cash-out | `worker/index.ts` (AI proxy, IP rate-limited) + `src/agent/*` + `src/components/chat/*` |
 | Admin | `/admin` | Owner and arbiter console: disputes, filings, job health, accounts, controls, AI provider | `src/pages/Admin.tsx`, `src/components/admin/*` |
-| Privacy | `/privacy` | Encryption trust disclosure, Didit sandbox notice, retention schedule | `src/pages/Privacy.tsx` |
+| Privacy | `/privacy` | Encryption trust disclosure, Didit sandbox notice, Circle Onramp notice, retention schedule | `src/pages/Privacy.tsx` |
 
 ### Phase 2 Backend (`worker/` + Supabase Postgres via Hyperdrive)
 
@@ -25,6 +26,7 @@ All `/api/*` routes are served by the **Cloudflare Worker** (`worker/index.ts`),
   - Chat: `POST/GET /api/orders/:id/chat` (encrypted offchain, 30 msg/min write limit, 60 req/min read limit, 4 KB max plaintext, `after=` cursor pagination, verified `evidenceBlobId` ownership).
   - Disputes: `POST/GET /api/orders/:id/disputes` (buyer/seller only when order is `PAID` or `DISPUTED`, notifying counterparty + arbiter) and `GET /api/admin/disputes` (7-day backup arbiter filter per row). Arbiter reads of vault/chat/evidence are restricted to `DISPUTED`, filed, or `PAID >= 15m` orders and recorded in `audit_log`.
 - **Cron & Chain Scanner (`worker/cron.ts`):** Runs every minute (`* * * * *`) — processes `onchain_jobs`, scans `P2PEscrow` logs from `chain_cursor` (`OrderOpened`, `OrderPaid`, `OrderReleased`, `OrderDisputed`) into `notifications_outbox`, sends outbox emails, sweeps expired rows independently per table using each table's real primary key, checks KYC expiry, and records short non-PII status codes in `cron_health` (visible in `/admin` via `GET /api/admin/health`).
+- **Phase 3 Circle Onramp Sandbox (`worker/onramp.ts`):** `POST /api/onramp/session` requires an authenticated wallet session (`requireSession`), enforces environment consistency and sandbox-only operation (`CIRCLE_API_KEY` `TEST_API_KEY:` prefix + `ONRAMP_API_BASE_URL=https://api-test.circle.com` + `ONRAMP_WIDGET_BASE_URL=https://onramp-sandbox.arc.io` + bare hostname `ONRAMP_REFERRER_DOMAIN`), enforces dual rate limits (`5/min/wallet` and `20/hour/IP`), ignores any client-supplied `destinationAddress` or `appUserId` (forcing `session.wallet` and `wallet:<lowercase address>`), mints the session via `createAppServerKit` (`@circle-fin/app-kit/server`), logs `onramp.session` in `audit_log`, and returns only safe widget session fields with `Cache-Control: no-store`. App CSP allows the configured widget origin in `frame-src` and widget + API origins in `connect-src`.
 
 ## Run it
 
@@ -38,8 +40,8 @@ npm run worker:test    # Vitest Worker test suite
 Restart `wrangler dev` after editing `.dev.vars`. Use a separate dev Postgres database for local development (never point local dev at production).
 
 Environment variables (names only):
-- Public Vite / `wrangler.jsonc` vars: `VITE_P2P_ESCROW_ADDRESS`, `VITE_P2P_DEPLOY_BLOCK`, `VITE_ARC_TESTNET_EURC_ADDRESS`, `DIDIT_MODE`, `PUBLIC_APP_URL`.
-- Worker secrets (`.dev.vars` locally, `wrangler secret put` in production — never in `wrangler.jsonc`): `SESSION_SECRET`, `VAULT_MASTER_KEY`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `VERIFIER_PRIVATE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, and optional AI keys (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `CUSTOM_AI_API_KEY`).
+- Public Vite / `wrangler.jsonc` vars: `VITE_P2P_ESCROW_ADDRESS`, `VITE_P2P_DEPLOY_BLOCK`, `VITE_ARC_TESTNET_EURC_ADDRESS`, `VITE_ONRAMP_WIDGET_BASE_URL`, `ONRAMP_API_BASE_URL`, `ONRAMP_WIDGET_BASE_URL`, `ONRAMP_REFERRER_DOMAIN`, `DIDIT_MODE`, `PUBLIC_APP_URL`.
+- Worker secrets (`.dev.vars` locally, `wrangler secret put` in production — never in `wrangler.jsonc`): `SESSION_SECRET`, `VAULT_MASTER_KEY`, `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID`, `DIDIT_WEBHOOK_SECRET`, `VERIFIER_PRIVATE_KEY`, `RESEND_API_KEY`, `EMAIL_FROM`, `CIRCLE_API_KEY`, and optional AI keys (`OPENROUTER_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `CUSTOM_AI_API_KEY`).
 
 ## App shell (`src/main.tsx`, `src/App.tsx`)
 
@@ -77,9 +79,11 @@ Tests: `contracts/test/P2PEscrow.*.t.sol` (unit, fuzz, invariants; mock USDC wit
 - UI: `pages/P2P.tsx` (tabs, deep links `?order=ID`, `?trade=adId&amount=`), `Market.tsx` + `MarketHero.tsx` + `AdCard.tsx` (browse and filter), `TradeSheet.tsx` (open an order), `OrderRoom.tsx` (timer, steps, actions, release confirmation, `OrderChat.tsx`), `PostAdSheet.tsx`, `Lists.tsx` (My orders, My ads), `AccountPanel.tsx` (trust + margin), `hooks/useEligibility.ts` (paused, restricted, cooldown banners).
 - Payment details and messages are public onchain by design (known limitation).
 
-## Swap and Bridge (Circle App Kit)
+## Swap, Bridge, Buy USDC and Cash Out (Circle App Kit)
 
-- `src/lib/appkit.ts` exports one `AppKit` instance and error helpers. Wallet: wagmi connector -> `createViemAdapterFromProvider` (`@circle-fin/adapter-viem-v2`), switching to the right chain first.
+- `src/lib/appkit.ts` exports a shared `AppKit` instance (`appKit`) for Swap and Bridge (never throwing at module load if onramp env vars are unset) plus `getSandboxOnrampKit()` which lazily validates `VITE_ONRAMP_WIDGET_BASE_URL === 'https://onramp-sandbox.arc.io'` inside `/buy`. Wallet: wagmi connector -> `createViemAdapterFromProvider` (`@circle-fin/adapter-viem-v2`), switching to the right chain first.
+- **Buy USDC (`/buy`, `src/components/BuyUsdcPanel.tsx`)**: Sandbox only (`"Sandbox. No real money. Use dummy data."`). Two-step popup flow (`Continue` signs in + mints via `POST /api/onramp/session`; `Open checkout` calls `kit.onramp.openWindow` synchronously inside the click handler), with `popup_blocked` prompt and `720px` `mountIframe` fallback for in-app browsers/PWAs. Listens on `.event`, ends waiting state on `DEPOSIT_SUBMITTED` when `settlementExpected === false`, and refetches onchain Arc Testnet USDC balance.
+- **Cash Out (`/p2p?mode=sell`, `src/lib/offramp.ts`)**: Cash-out links open `/p2p?mode=sell` (with optional `&currency=<CODE>` / `&post=sell`) directly into the P2P Sell USDC flow; `src/lib/offramp.ts` holds only the empty `OFFRAMP_PROVIDERS` interface stub (`0` providers, `0` network calls).
 - **Swap**: Arc Testnet only, USDC and EURC enabled. Flow = `estimateSwap` (review) -> user confirms -> `swap`. The quote is tied to the connected account and inputs; any change invalidates it. Slippage options 0.5/1/3%.
 - **Bridge**: `Arc_Testnet, Ethereum_Sepolia, Base_Sepolia, Arbitrum_Sepolia, Optimism_Sepolia, Avalanche_Fuji, Polygon_Amoy_Testnet`. `estimateBridge` -> `bridge` with `useForwarder: true` (Circle mints on the destination, no destination gas). Step list comes from real `bridge.*` events; `retryBridge` resumes failed transfers.
 - Both are implemented twice on purpose: as full pages (`pages/Swap.tsx`, `pages/Bridge.tsx`) and as reusable state machines (`hooks/useSwapFlow.ts`, `hooks/useBridgeFlow.ts`) used by the chat cards (`components/chat/SwapCard.tsx`, `BridgeCard.tsx`). Keep behaviour in sync if you change one.

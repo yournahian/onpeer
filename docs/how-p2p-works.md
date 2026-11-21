@@ -97,6 +97,15 @@ Priya in India wants USDC. Sam has 100 USDC and wants rupees. The numbers below 
 4. Sam sees the rupees arrive, ticks the confirmation and releases. Priya receives 40 USDC. Sam's ad still holds 60 USDC for the next buyer.
 5. Both traders' records now show one completed trade.
 
+## Getting USDC in and out
+
+- **Getting USDC in (`/buy` vs `/p2p`):**
+  - On **`/buy`**, you can test Circle's hosted **Onramp Sandbox** widget (`onramp-sandbox.arc.io`) using dummy data only (no real money moves). The server locks the destination address to your signed-in wallet. Any identity check inside that widget is run by Circle's payment partner (separate from OnPeer's Didit P2P KYC), and country/payment coverage in South Asia (India, Pakistan, Bangladesh, Sri Lanka, Nepal, Bhutan, Maldives, Afghanistan) is **not guaranteed**.
+  - On **`/p2p`**, you can buy USDC from peers in 8 South Asian currencies using local payment methods (UPI, bKash, Nagad, Raast, eSewa, bank transfer, and more) while the escrow smart contract holds the seller's USDC.
+- **Getting local money out (`/p2p?mode=sell`):**
+  - Today, cashing out USDC on OnPeer works directly through **P2P escrow**: open **`/p2p?mode=sell`** (or click **Need to cash out USDC?** on `/buy` or `/swap`) to match an existing Buy ad at 0 platform trade fee, or post your own sell ad for a flat 0.05 USDC listing fee.
+  - Direct third-party bank withdrawal providers are not integrated yet.
+
 ## What the app cannot do
 
 - **It cannot check local payments.** Whether money arrived is decided by the seller, or by the arbiter in a dispute.

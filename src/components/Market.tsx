@@ -31,12 +31,16 @@ function parseFiatFilter(raw: string): bigint | null {
 }
 
 export function Market({
+  initialMode,
+  initialCurrency,
   deepAd,
   deepAmount,
   onClearDeepTrade,
   onOpenedOrder,
   onPostAd,
 }: {
+  initialMode?: 'buy' | 'sell'
+  initialCurrency?: string
   deepAd?: AdWithId
   deepAmount?: string
   onClearDeepTrade: () => void
@@ -49,8 +53,10 @@ export function Market({
   const viewerAccount = useMyAccount()
   const now = useNow()
 
-  const [mode, setMode] = useState<'buy' | 'sell'>('buy')
-  const [countryCode, setCountryCode] = useState('BD')
+  const [mode, setMode] = useState<'buy' | 'sell'>(initialMode ?? 'buy')
+  const [countryCode, setCountryCode] = useState(
+    () => COUNTRIES.find((c) => c.currency === initialCurrency)?.code ?? 'BD',
+  )
   const [method, setMethod] = useState<number | null>(null)
   const [amount, setAmount] = useState('')
   const [merchantsOnly, setMerchantsOnly] = useState(false)
