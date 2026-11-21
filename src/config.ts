@@ -3,7 +3,7 @@
  * Built with Arc Studio — https://studio.arc.io
  */
 
-import { http, createConfig } from 'wagmi'
+import { fallback, http, createConfig } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
 import {
   arbitrumSepolia,
@@ -35,7 +35,11 @@ export const config = createConfig({
   chains: [...supportedChains, mainnet], // mainnet needed for ENS resolution
   connectors: [injected()],
   transports: {
-    [arcTestnet.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2, timeout: 15_000 }),
+    [arcTestnet.id]: fallback([
+      http('https://rpc.testnet.arc.network', { batch: { wait: 50 }, retryCount: 1, timeout: 10_000 }),
+      http('https://rpc.testnet.arc.io', { batch: { wait: 50 }, retryCount: 1, timeout: 10_000 }),
+      http('https://rpc.blockdaemon.testnet.arc.io', { batch: { wait: 50 }, retryCount: 1, timeout: 10_000 }),
+    ]),
     [sepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
     [baseSepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
     [arbitrumSepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),

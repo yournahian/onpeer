@@ -35,29 +35,30 @@ export function useAds() {
   const count = useReadContract({
     ...base,
     functionName: 'adCount',
-    query: { enabled, refetchInterval: POLL },
+    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const total = count.data ?? 0n
   const offset = total > PAGE ? total - PAGE : 0n
+  // P2PEscrow.getAds(offset, limit) clips to adCount on-chain, so we can fetch immediately without waiting on adCount.
   const list = useReadContract({
     ...base,
     functionName: 'getAds',
     args: [offset, PAGE],
-    query: { enabled: enabled && total > 0n, refetchInterval: POLL, placeholderData: (prev) => prev },
+    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const ads = useMemo<AdWithId[]>(() => {
     const data = list.data
     if (!data) return []
     return data.map((ad, i) => ({ ...ad, id: offset + BigInt(i) + 1n })).reverse()
   }, [list.data, offset])
-  return { ads, isLoading: enabled && ads.length === 0 && (count.isLoading || list.isLoading), total }
+  return { ads, isLoading: enabled && list.data === undefined && list.isLoading, total: total || BigInt(ads.length) }
 }
 
 export function useOrders() {
   const count = useReadContract({
     ...base,
     functionName: 'orderCount',
-    query: { enabled, refetchInterval: POLL },
+    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const total = count.data ?? 0n
   const offset = total > PAGE ? total - PAGE : 0n
@@ -65,14 +66,14 @@ export function useOrders() {
     ...base,
     functionName: 'getOrders',
     args: [offset, PAGE],
-    query: { enabled: enabled && total > 0n, refetchInterval: POLL, placeholderData: (prev) => prev },
+    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const orders = useMemo<OrderWithId[]>(() => {
     const data = list.data
     if (!data) return []
     return data.map((o, i) => ({ ...o, id: offset + BigInt(i) + 1n })).reverse()
   }, [list.data, offset])
-  return { orders, isLoading: enabled && orders.length === 0 && (count.isLoading || list.isLoading) }
+  return { orders, isLoading: enabled && list.data === undefined && list.isLoading }
 }
 
 export function useOrder(id: bigint | undefined) {
