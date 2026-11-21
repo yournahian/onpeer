@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Lock, ShieldCheck } from 'lucide-react'
-import type { Account, AdWithId } from '@/hooks/useEscrow'
+import type { Account, AdWithId, KycInfo } from '@/hooks/useEscrow'
 import {
   fiatFor,
   formatFiat,
@@ -19,6 +19,7 @@ export function AdCard({
   country,
   mode,
   account,
+  makerKyc,
   viewerAccount,
   own,
   expanded,
@@ -31,6 +32,7 @@ export function AdCard({
   country: Country
   mode: 'buy' | 'sell'
   account: Account | undefined
+  makerKyc?: KycInfo
   viewerAccount?: Account
   own: boolean
   expanded: boolean
@@ -64,6 +66,15 @@ export function AdCard({
               {ad.maker.slice(2, 4).toUpperCase()}
             </span>
             <span className="p2p-mono truncate text-xs font-bold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
+            {makerKyc?.verified ? (
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                <ShieldCheck className="size-3" /> KYC
+              </span>
+            ) : makerKyc ? (
+              <span className="inline-flex shrink-0 items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
+                Unverified
+              </span>
+            ) : null}
             {ad.merchantAd && <ShieldCheck className="size-3.5 shrink-0 text-[#FF5A00]" />}
           </div>
           <span className="p2p-mono shrink-0 text-[0.75rem] text-[var(--p2p-muted)]">
@@ -156,6 +167,21 @@ export function AdCard({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="p2p-mono text-sm font-semibold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
+                {makerKyc?.verified ? (
+                  <span
+                    title="KYC Verified Advertiser"
+                    className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400"
+                  >
+                    <ShieldCheck className="size-3" /> KYC Verified
+                  </span>
+                ) : makerKyc ? (
+                  <span
+                    title="This advertiser has not completed KYC verification"
+                    className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400"
+                  >
+                    Unverified
+                  </span>
+                ) : null}
                 {ad.merchantAd && (
                   <span
                     title="Verified Merchant (100+ USDC margin staked)"

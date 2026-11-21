@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { ChevronDown, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
-import { useAds, useAccounts, useMyAccount, useNow, type AdWithId } from '@/hooks/useEscrow'
+import { useAds, useAccounts, useMyAccount, useNow, useVerifications, type AdWithId } from '@/hooks/useEscrow'
 import {
   COUNTRIES,
   SIDE_BUY,
@@ -54,6 +54,7 @@ export function Market({
   const [method, setMethod] = useState<number | null>(null)
   const [amount, setAmount] = useState('')
   const [merchantsOnly, setMerchantsOnly] = useState(false)
+  const [kycOnly, setKycOnly] = useState(false)
   const [expandedId, setExpandedId] = useState<bigint | null>(null)
   const [mobileSheetAd, setMobileSheetAd] = useState<AdWithId | null>(null)
 
@@ -115,10 +116,13 @@ export function Market({
     liveAds: hereAds.length,
   }
 
+  const verifications = useVerifications(hereAds.map((a) => a.maker))
+
   const fiatFilter = parseFiatFilter(amount)
   const filtered = hereAds
     .filter((ad) => ad.side === wantedSide)
     .filter((ad) => !merchantsOnly || ad.merchantAd)
+    .filter((ad) => !kycOnly || verifications.get(ad.maker.toLowerCase())?.verified === true)
     .filter((ad) => method === null || (ad.paymentMask & (1 << method)) !== 0)
     .filter((ad) => {
       if (fiatFilter === null) return true
@@ -234,6 +238,20 @@ export function Market({
           >
             <span>Payment: {selectedMethod ? selectedMethod.name : 'All'}</span>
             <ChevronDown className="size-3" />
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={kycOnly}
+            onClick={() => setKycOnly((v) => !v)}
+            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
+              kycOnly
+                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+            }`}
+          >
+            <ShieldCheck className="size-3.5 text-emerald-400" />
+            KYC Verified
           </button>
 
           <button
@@ -550,6 +568,21 @@ export function Market({
 
             <button
               type="button"
+              aria-pressed={kycOnly}
+              onClick={() => setKycOnly((v) => !v)}
+              title="Show KYC Verified Advertisers Only"
+              className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                kycOnly
+                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+              }`}
+            >
+              <ShieldCheck className="size-3.5 text-emerald-400" />
+              <span>KYC Verified</span>
+            </button>
+
+            <button
+              type="button"
               aria-pressed={merchantsOnly}
               onClick={() => setMerchantsOnly((v) => !v)}
               title="Show Verified Merchants Only (100+ USDC staked)"
@@ -637,6 +670,7 @@ export function Market({
                 country={country}
                 mode={activeMode}
                 account={accounts.get(ad.maker.toLowerCase())}
+                makerKyc={verifications.get(ad.maker.toLowerCase())}
                 viewerAccount={viewerAccount}
                 own={sameAddr(ad.maker, address)}
                 expanded={false}

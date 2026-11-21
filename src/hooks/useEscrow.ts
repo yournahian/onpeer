@@ -179,24 +179,24 @@ export function useVerifier() {
   return res.data
 }
 
-export type KycInfo = { verified: boolean; level: number; expiry: bigint }
+export type KycInfo = { verified: boolean; level: number; expiry: bigint; isLoading?: boolean }
 
 export function useVerification(address: Address | undefined): KycInfo {
   const ver = useReadContract({
     ...base,
     functionName: 'verification',
     args: [address as Address],
-    query: { enabled: enabled && !!address, refetchInterval: 15_000 },
+    query: { enabled: enabled && !!address, refetchInterval: 15_000, placeholderData: (prev) => prev },
   })
   const ok = useReadContract({
     ...base,
     functionName: 'isVerified',
     args: [address as Address],
-    query: { enabled: enabled && !!address, refetchInterval: 15_000 },
+    query: { enabled: enabled && !!address, refetchInterval: 15_000, placeholderData: (prev) => prev },
   })
   const level = ver.data ? Number(ver.data[0]) : 0
   const expiry = ver.data ? ver.data[1] : 0n
-  return { verified: ok.data === true, level, expiry }
+  return { verified: ok.data === true, level, expiry, isLoading: ok.isLoading || ver.isLoading }
 }
 
 export function useVerifications(addresses: Address[]) {

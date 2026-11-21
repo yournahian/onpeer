@@ -118,7 +118,7 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
   const balance = useUsdcBalance()
   const allowance = useUsdcAllowance()
   const listingFee = useListingFee()
-  const { sealedEnabled } = usePrivacySwitches()
+  const { sealedEnabled, isLoading: switchesLoading } = usePrivacySwitches()
   const { sealDetails, bindAdDetails } = useVaultActions()
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
   const { blocked, account } = useEligibility()
@@ -180,6 +180,7 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
     : details.trim().length > 0
 
   const ready =
+    !switchesLoading &&
     priceE6 > 0n &&
     totalRaw > 0n &&
     minRaw > 0n &&
