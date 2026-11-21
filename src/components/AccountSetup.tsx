@@ -248,7 +248,7 @@ function AccountSetupForm({
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
               <span className="p2p-mono text-[var(--p2p-ink)]">{profile.emailMasked}</span>
               {profile.emailVerified ? (
-                <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 font-bold text-emerald-400">
+                <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 font-bold text-[var(--p2p-ok-ink)]">
                   <CheckCircle2 className="size-3" /> Verified
                 </span>
               ) : (

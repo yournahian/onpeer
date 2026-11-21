@@ -78,7 +78,7 @@ function TapCopyButton({ text, label = 'Copy', toastText = 'Copied!' }: { text: 
           setTimeout(() => setCopied(false), 1500)
         })
       }}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-1 text-xs font-bold text-[#FF5A00] active:scale-95"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2.5 py-1 text-xs font-bold text-[var(--p2p-accent-ink)] hover:border-[#FF5A00] active:scale-95"
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
       {copied ? 'Copied!' : label}
@@ -89,20 +89,20 @@ function TapCopyButton({ text, label = 'Copy', toastText = 'Copied!' }: { text: 
 function NameMatchBadge({ match }: { match: NameMatchBadgeData }) {
   if (match.status === 'match') {
     return (
-      <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+      <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--p2p-ok-ink)]">
         <Check className="size-3" /> KYC Name Match{match.maskedInitials ? ` (${match.maskedInitials})` : ''}
       </span>
     )
   }
   if (match.status === 'mismatch') {
     return (
-      <span className="inline-flex items-center gap-1 rounded border border-red-500/50 bg-red-500/15 px-2 py-0.5 text-[10px] font-bold text-red-400">
+      <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-danger-border)] bg-[var(--p2p-danger-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--p2p-danger-ink)]">
         <AlertTriangle className="size-3" /> Name not confirmed{match.maskedInitials ? ` (${match.maskedInitials})` : ''}
       </span>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-2 py-0.5 text-[10px] font-semibold text-[var(--p2p-muted)]">
+    <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--p2p-muted)]">
       KYC Unverified
     </span>
   )
@@ -473,16 +473,16 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           </button>
           <div className="flex flex-wrap items-center gap-2">
             <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">Order #{order.id.toString()}</span>
-            <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
+            <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--p2p-accent-ink)]">
               {STATUS_META[status]?.label ?? 'Unknown'}
             </span>
             {order.paidLate && (
-              <span className="rounded border border-red-500/50 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-500">
+              <span className="rounded border border-[var(--p2p-danger-border)] bg-[var(--p2p-danger-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--p2p-danger-ink)]">
                 Marked paid late
               </span>
             )}
             {inReview && (
-              <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[10px] font-semibold text-[#FF5A00]">
+              <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[10px] font-semibold text-[var(--p2p-accent-ink)]">
                 Arbiter in review
               </span>
             )}
@@ -636,7 +636,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
               <div>
                 <dt className="text-[var(--p2p-muted)]">Escrow Status</dt>
-                <dd className="mt-0.5 inline-flex items-center gap-1 font-semibold text-[#FF5A00]">
+                <dd className="mt-0.5 inline-flex items-center gap-1 font-bold text-[var(--p2p-accent-ink)]">
                   <Lock className="size-3" /> {escrowStatusLabel}
                 </dd>
               </div>
@@ -663,7 +663,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--p2p-ink)]">
                     {isSeller ? 'Your Receiving Details' : "Seller's Payment Account"}
                   </h3>
-                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[10px] font-semibold text-[#FF5A00]">
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[10px] font-bold text-[var(--p2p-accent-ink)]">
                     <ShieldCheck className="size-3" />
                     {order.detailsHash !== ZERO_BYTES32 ? 'Vault Encrypted • Hash Verified' : 'Escrow Record'}
                   </span>
@@ -983,7 +983,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   </p>
                 </div>
                 {!canBuyerDispute && (
-                  <span className="p2p-mono rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3 py-1.5 text-xs font-bold text-[#FF5A00]">
+                  <span className="p2p-mono rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3 py-1.5 text-xs font-bold text-[var(--p2p-accent-ink)]">
                     Dispute in {formatDuration(disputeWaitLeft)}
                   </span>
                 )}
@@ -997,7 +997,11 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 type="button"
                 disabled={!canBuyerDispute || busy}
                 onClick={() => void callSimple('openDispute', 'Open dispute')}
-                className="hidden min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#FF5A00] bg-[var(--p2p-tint)] px-4 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
+                className={`hidden min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-4 text-xs font-bold transition-colors md:inline-flex ${
+                  canBuyerDispute
+                    ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)] hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:opacity-50'
+                    : 'cursor-not-allowed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+                }`}
               >
                 {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
                 {canBuyerDispute

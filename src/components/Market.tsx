@@ -246,11 +246,11 @@ export function Market({
             onClick={() => setKycOnly((v) => !v)}
             className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
               kycOnly
-                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                ? 'border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] text-[var(--p2p-ok-ink)]'
                 : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
             }`}
           >
-            <ShieldCheck className="size-3.5 text-emerald-400" />
+            <ShieldCheck className="size-3.5 text-[var(--p2p-ok-ink)]" />
             KYC Verified
           </button>
 
@@ -573,11 +573,11 @@ export function Market({
               title="Show KYC Verified Advertisers Only"
               className={`inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 kycOnly
-                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+                  ? 'border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] text-[var(--p2p-ok-ink)]'
                   : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
               }`}
             >
-              <ShieldCheck className="size-3.5 text-emerald-400" />
+              <ShieldCheck className="size-3.5 text-[var(--p2p-ok-ink)]" />
               <span>KYC Verified</span>
             </button>
 

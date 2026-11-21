@@ -67,11 +67,11 @@ export function AdCard({
             </span>
             <span className="p2p-mono truncate text-xs font-bold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
             {makerKyc?.verified ? (
-              <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--p2p-ok-ink)]">
                 <ShieldCheck className="size-3" /> KYC
               </span>
             ) : makerKyc ? (
-              <span className="inline-flex shrink-0 items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
+              <span className="inline-flex shrink-0 items-center rounded border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--p2p-warn-ink)]">
                 Unverified
               </span>
             ) : null}
@@ -170,14 +170,14 @@ export function AdCard({
                 {makerKyc?.verified ? (
                   <span
                     title="KYC Verified Advertiser"
-                    className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400"
+                    className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--p2p-ok-ink)]"
                   >
                     <ShieldCheck className="size-3" /> KYC Verified
                   </span>
                 ) : makerKyc ? (
                   <span
                     title="This advertiser has not completed KYC verification"
-                    className="inline-flex items-center rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400"
+                    className="inline-flex items-center rounded border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--p2p-warn-ink)]"
                   >
                     Unverified
                   </span>

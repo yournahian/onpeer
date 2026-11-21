@@ -52,15 +52,15 @@ export function KycPanel() {
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-bold text-[var(--p2p-ink)]">{titleLabel}</h2>
             {data.kycStatus === 'approved' && data.onchainVerified ? (
-              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-400">
+              <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--p2p-ok-ink)]">
                 <CheckCircle2 className="size-3.5" /> Verified Onchain (L{data.kycLevel})
               </span>
             ) : data.kycStatus === 'approved' ? (
-              <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-0.5 text-[11px] font-bold text-[#FF5A00]">
+              <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--p2p-accent-ink)]">
                 <Clock className="size-3.5" /> Approved — Syncing Onchain
               </span>
             ) : data.kycStatus === 'declined' || data.kycStatus === 'expired' || data.kycStatus === 'revoked' ? (
-              <span className="inline-flex items-center gap-1 rounded bg-red-500/15 px-2.5 py-0.5 text-[11px] font-bold text-red-400">
+              <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-danger-border)] bg-[var(--p2p-danger-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--p2p-danger-ink)]">
                 <XCircle className="size-3.5" /> {data.kycStatus.toUpperCase()}
               </span>
             ) : (

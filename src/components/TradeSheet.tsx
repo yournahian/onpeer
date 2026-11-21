@@ -263,27 +263,28 @@ function UnverifiedAdvertiserModal({
       aria-modal="true"
       aria-labelledby="unverified-kyc-title"
     >
-      <div className="p2p-glass-popover w-full max-w-md rounded-2xl !border-amber-500/60 p-5 text-[var(--p2p-ink)] shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border-2 border-[var(--p2p-warn-border)] bg-[var(--p2p-surface-solid)] p-5 text-[var(--p2p-ink)] shadow-2xl">
         <div className="flex items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] text-[var(--p2p-warn-ink)]">
             <AlertTriangle className="size-5" />
           </div>
           <div>
-            <h3 id="unverified-kyc-title" className="text-base font-bold text-amber-400">
+            <h3 id="unverified-kyc-title" className="text-base font-bold text-[var(--p2p-warn-ink)]">
               Advertiser Is Not KYC Verified
             </h3>
             <p className="mt-1 text-xs leading-relaxed text-[var(--p2p-muted)]">
               Advertiser <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">{shortAddr(maker)}</span> has{' '}
-              <strong>not</strong> completed KYC identity verification. Do you still want to trade with them?
+              <strong className="text-[var(--p2p-ink)]">not</strong> completed KYC identity verification. Do you still
+              want to trade with them?
             </p>
-            <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300">
+            <p className="mt-2.5 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3 py-2 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]">
               If you encounter a scam or lose funds when trading with an unverified counterparty, OnPeer is not
               responsible or liable.
             </p>
           </div>
         </div>
 
-        <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
+        <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs font-medium leading-relaxed text-[var(--p2p-ink)]">
           <input
             type="checkbox"
             checked={checked}
@@ -300,7 +301,7 @@ function UnverifiedAdvertiserModal({
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-10 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
+            className="min-h-10 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]"
           >
             Cancel
           </button>
@@ -308,7 +309,11 @@ function UnverifiedAdvertiserModal({
             type="button"
             disabled={!checked}
             onClick={onAccept}
-            className="min-h-10 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className={`min-h-10 rounded-lg px-4 text-xs font-bold transition-colors ${
+              checked
+                ? 'bg-[#FF5A00] text-[#FFFFFF] hover:opacity-90'
+                : 'cursor-not-allowed border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+            }`}
           >
             I Understand, Continue
           </button>
@@ -361,11 +366,11 @@ export function InlineOrderDrawer({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">{shortAddr(ad.maker)}</span>
                 {s.makerKyc.verified ? (
-                  <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-400">
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--p2p-ok-ink)]">
                     <ShieldCheck className="size-3" /> KYC Verified
                   </span>
                 ) : !s.makerKyc.isLoading ? (
-                  <span className="inline-flex items-center gap-1 rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-400">
+                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--p2p-warn-ink)]">
                     <AlertTriangle className="size-3" /> Not KYC Verified
                   </span>
                 ) : null}

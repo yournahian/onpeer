@@ -109,19 +109,19 @@ export function OrderChat({
           </div>
         </div>
 
-        <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-1 text-[10px] font-semibold text-[#FF5A00]">
+        <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-surface)] px-2 py-1 text-[10px] font-bold text-[var(--p2p-accent-ink)]">
           <Lock className="size-3" /> {useEncrypted ? 'Encrypted Chat' : 'Sign in to unlock'}
         </span>
       </div>
 
       {/* Anti-Scam Pinned Banner */}
       <div
-        className="mx-3 mt-3 flex items-start gap-2 rounded-lg bg-[var(--p2p-tint)] px-3 py-2.5 text-xs text-[var(--p2p-ink)]"
+        className="mx-3 mt-3 flex items-start gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2.5 text-xs text-[var(--p2p-ink)]"
         style={{ borderLeft: '3px solid #FF5A00' }}
       >
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--p2p-accent-ink)]" />
         <p className="leading-relaxed">
-          <strong className="text-[#FF5A00]">Security Notice:</strong> Never trust SMS payment alerts. Always verify inside your actual banking or mobile payment app before releasing USDC.
+          <strong className="text-[var(--p2p-accent-ink)]">Security Notice:</strong> Never trust SMS payment alerts. Always verify inside your actual banking or mobile payment app before releasing USDC.
         </p>
       </div>
 
@@ -167,14 +167,14 @@ export function OrderChat({
 
         {orderStatus === STATUS.PAID && (
           <div className="text-center">
-            <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3 py-1 text-[11px] text-[#FF5A00]">
+            <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3.5 py-1.5 text-[11px] font-semibold text-[var(--p2p-accent-ink)]">
               Buyer marked order as paid — awaiting seller verification
             </span>
           </div>
         )}
         {orderStatus === STATUS.DISPUTED && (
           <div className="text-center">
-            <span className="p2p-mono inline-block rounded-full border border-[#FF5A00] bg-[var(--p2p-tint)] px-3 py-1 text-[11px] font-semibold text-[#FF5A00]">
+            <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3.5 py-1.5 text-[11px] font-bold text-[var(--p2p-accent-ink)]">
               Dispute opened — arbiter evidence review active
             </span>
           </div>
