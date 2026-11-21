@@ -241,86 +241,107 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   }
 }
 
-function UnverifiedAdvertiserModal({
-  open,
+function UnverifiedAdvertiserCard({
   maker,
   onAccept,
   onCancel,
 }: {
-  open: boolean
   maker: string
   onAccept: () => void
   onCancel: () => void
 }) {
   const [checked, setChecked] = useState(false)
 
-  if (!open || typeof document === 'undefined') return null
-
-  return createPortal(
-    <div
-      className="p2p-terminal fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+  return (
+    <motion.div
       role="alertdialog"
       aria-modal="true"
       aria-labelledby="unverified-kyc-title"
+      initial={{ opacity: 0, scale: 0.96, y: 8 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.96, y: 8 }}
+      transition={{ duration: 0.18 }}
+      onClick={(e) => e.stopPropagation()}
+      className="w-full max-w-[460px] space-y-4 rounded-2xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-surface-solid)] p-6 text-[var(--p2p-ink)] shadow-2xl"
     >
-      <div className="w-full max-w-md rounded-2xl border-2 border-[var(--p2p-warn-border)] bg-[var(--p2p-surface-solid)] p-5 text-[var(--p2p-ink)] shadow-2xl">
-        <div className="flex items-start gap-3">
+      {/* Header Row — aligned flush left & right */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
           <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] text-[var(--p2p-warn-ink)]">
             <AlertTriangle className="size-5" />
           </div>
           <div>
-            <h3 id="unverified-kyc-title" className="text-base font-bold text-[var(--p2p-warn-ink)]">
+            <h3 id="unverified-kyc-title" className="text-base font-bold leading-snug text-[var(--p2p-warn-ink)]">
               Advertiser Is Not KYC Verified
             </h3>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--p2p-muted)]">
-              Advertiser <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">{shortAddr(maker)}</span> has{' '}
-              <strong className="text-[var(--p2p-ink)]">not</strong> completed KYC identity verification. Do you still
-              want to trade with them?
-            </p>
-            <p className="mt-2.5 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3 py-2 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]">
-              If you encounter a scam or lose funds when trading with an unverified counterparty, OnPeer is not
-              responsible or liable.
+            <p className="p2p-mono mt-0.5 text-xs text-[var(--p2p-muted)]">
+              Counterparty <span className="font-semibold text-[var(--p2p-ink)]">{shortAddr(maker)}</span> • Unverified
             </p>
           </div>
         </div>
 
-        <label className="mt-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs font-medium leading-relaxed text-[var(--p2p-ink)]">
-          <input
-            type="checkbox"
-            checked={checked}
-            onChange={(e) => setChecked(e.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
-          />
-          <span>
-            I understand this advertiser is not KYC verified, and I accept full responsibility. OnPeer is not liable if
-            I lose funds or get scammed.
-          </span>
-        </label>
-
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="min-h-10 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!checked}
-            onClick={onAccept}
-            className={`min-h-10 rounded-lg px-4 text-xs font-bold transition-colors ${
-              checked
-                ? 'bg-[#FF5A00] text-[#FFFFFF] hover:opacity-90'
-                : 'cursor-not-allowed border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
-          >
-            I Understand, Continue
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          aria-label="Close"
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] transition-colors hover:text-[var(--p2p-ink)]"
+        >
+          <X className="size-4" />
+        </button>
       </div>
-    </div>,
-    document.body,
+
+      {/* Description — aligned flush left & right */}
+      <p className="text-xs leading-relaxed text-[var(--p2p-muted)]">
+        This advertiser has <strong className="text-[var(--p2p-ink)]">not</strong> completed KYC identity verification.
+        Please review and acknowledge the risk notice below before opening an order with them.
+      </p>
+
+      {/* Liability Warning Box — exact same width & alignment */}
+      <div
+        className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-4 py-3 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]"
+        style={{ borderLeftWidth: '3px' }}
+      >
+        If you encounter a scam or lose funds when trading with an unverified counterparty, OnPeer is not responsible
+        or liable.
+      </div>
+
+      {/* Consent Checkbox Card — exact same width & alignment */}
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs font-medium leading-relaxed text-[var(--p2p-ink)] transition-colors hover:border-[var(--p2p-border-active)]">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => setChecked(e.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
+        />
+        <span>
+          I understand this advertiser is not KYC verified, and I accept full responsibility. OnPeer is not liable if I
+          lose funds or get scammed.
+        </span>
+      </label>
+
+      {/* Balanced 2-Column Action Row — exact same width & alignment */}
+      <div className="grid grid-cols-2 gap-3 pt-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-11 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] transition-colors hover:border-[var(--p2p-border-active)]"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={!checked}
+          onClick={onAccept}
+          className={`h-11 rounded-xl px-4 text-xs font-bold transition-colors ${
+            checked
+              ? 'bg-[#FF5A00] text-[#FFFFFF] shadow-sm hover:opacity-90'
+              : 'cursor-not-allowed border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+          }`}
+        >
+          I Understand, Continue
+        </button>
+      </div>
+    </motion.div>
   )
 }
 
@@ -338,8 +359,6 @@ export function InlineOrderDrawer({
   onOpened: (orderId: bigint) => void
 }) {
   const s = useOrderFormState(ad, initialUsdc)
-  const [unverifiedAccepted, setUnverifiedAccepted] = useState(false)
-  const showUnverifiedModal = !s.makerKyc.isLoading && !s.makerKyc.verified && !unverifiedAccepted
 
   const ttlLeft = Math.max(0, Number(ad.expiresAt) - s.now)
   const ttlText = ttlLeft >= 3600 ? `${Math.ceil(ttlLeft / 3600)}h left` : formatDuration(ttlLeft)
@@ -351,13 +370,7 @@ export function InlineOrderDrawer({
   const previewBond = computeBond(s.usdcRaw > 0n ? s.usdcRaw : s.adLow)
 
   return (
-    <div className="p2p-glass-popover rounded-xl !border-[#FF5A00] p-4 sm:p-6">
-      <UnverifiedAdvertiserModal
-        open={showUnverifiedModal}
-        maker={ad.maker}
-        onAccept={() => setUnverifiedAccepted(true)}
-        onCancel={onCancel}
-      />
+    <div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
         {/* Left Side */}
         <div className="flex flex-col justify-between space-y-4 border-b border-[var(--p2p-border)] pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-6">
@@ -704,14 +717,105 @@ export function InlineOrderDrawer({
   )
 }
 
-/** Binance Mobile Slide-Up Bottom Sheet (< 768px) for Order Placement */
-export function MobileOrderSheet({
+function TradePopupStage({
   ad,
+  makerAccount,
+  initialUsdc,
+  onClose,
+  onOpened,
+}: {
+  ad: AdWithId
+  makerAccount?: Account
+  initialUsdc?: string
+  onClose: () => void
+  onOpened: (orderId: bigint) => void
+}) {
+  const makerKyc = useVerification(ad.maker)
+  const [unverifiedAccepted, setUnverifiedAccepted] = useState(false)
+  const userBuys = ad.side === SIDE_SELL
+  const currency = hexToCurrency(ad.currency)
+
+  if (makerKyc.isLoading) {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-2.5 rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] px-5 py-3.5 text-xs font-semibold text-[var(--p2p-ink)] shadow-2xl"
+      >
+        <Loader2 className="size-4 animate-spin text-[#FF5A00]" />
+        Checking advertiser verification...
+      </div>
+    )
+  }
+
+  // Step 1: If advertiser is NOT KYC verified, ONLY show the risk consent modal first!
+  if (!makerKyc.verified && !unverifiedAccepted) {
+    return (
+      <UnverifiedAdvertiserCard
+        maker={ad.maker}
+        onAccept={() => setUnverifiedAccepted(true)}
+        onCancel={onClose}
+      />
+    )
+  }
+
+  // Step 2: Centered Order Form Popup Modal
+  return (
+    <motion.section
+      role="dialog"
+      aria-modal="true"
+      aria-label={userBuys ? 'Buy USDC' : 'Sell USDC'}
+      initial={{ opacity: 0, scale: 0.97, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.97, y: 10 }}
+      transition={{ duration: 0.2 }}
+      onClick={(e) => e.stopPropagation()}
+      className="flex max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] text-[var(--p2p-ink)] shadow-2xl"
+    >
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-3.5 sm:px-6">
+        <div className="flex items-center gap-2.5">
+          <TokenUSDC variant="branded" size={22} />
+          <div>
+            <h3 className="text-base font-bold text-[var(--p2p-ink)]">
+              {userBuys ? 'Buy USDC' : 'Sell USDC'} with {currency}
+            </h3>
+            <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+              Rate {formatPrice(ad.priceE6)} {currency}/USDC • Escrow Protected
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="flex size-8 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] transition-colors hover:text-[var(--p2p-ink)]"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <div className="overflow-y-auto p-5 sm:p-6">
+        <InlineOrderDrawer
+          ad={ad}
+          makerAccount={makerAccount}
+          initialUsdc={initialUsdc}
+          onCancel={onClose}
+          onOpened={onOpened}
+        />
+      </div>
+    </motion.section>
+  )
+}
+
+/** Unified Centered Popup Modal with soft backdrop blur (Step 1 KYC Consent if unverified -> Step 2 Order Form) */
+export function TradePopupModal({
+  ad,
+  makerAccount,
   initialUsdc,
   onClose,
   onOpened,
 }: {
   ad: AdWithId | null
+  makerAccount?: Account
   initialUsdc?: string
   onClose: () => void
   onOpened: (orderId: bigint) => void
@@ -734,279 +838,24 @@ export function MobileOrderSheet({
     <AnimatePresence>
       {ad && (
         <motion.div
-          className="p2p-terminal fixed inset-0 z-50 flex items-end justify-center bg-black/65 backdrop-blur-sm md:hidden"
+          className="p2p-terminal fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={onClose}
         >
-          <motion.section
-            role="dialog"
-            aria-modal="true"
-            aria-label={ad.side === SIDE_SELL ? 'Buy USDC' : 'Sell USDC'}
-            className="p2p-glass-popover relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl text-[var(--p2p-ink)]"
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            exit={{ y: '100%' }}
-            transition={{ type: 'spring', stiffness: 380, damping: 36 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-center pt-3">
-              <span className="h-1 w-11 rounded-full bg-[var(--p2p-border)]" />
-            </div>
-            <MobileOrderSheetBody key={ad.id.toString()} ad={ad} initialUsdc={initialUsdc} onClose={onClose} onOpened={onOpened} />
-          </motion.section>
+          <TradePopupStage
+            key={ad.id.toString()}
+            ad={ad}
+            makerAccount={makerAccount}
+            initialUsdc={initialUsdc}
+            onClose={onClose}
+            onOpened={onOpened}
+          />
         </motion.div>
       )}
     </AnimatePresence>,
     document.body,
-  )
-}
-
-function MobileOrderSheetBody({
-  ad,
-  initialUsdc,
-  onClose,
-  onOpened,
-}: {
-  ad: AdWithId
-  initialUsdc?: string
-  onClose: () => void
-  onOpened: (orderId: bigint) => void
-}) {
-  const s = useOrderFormState(ad, initialUsdc)
-  const [unverifiedAccepted, setUnverifiedAccepted] = useState(false)
-  const showUnverifiedModal = !s.makerKyc.isLoading && !s.makerKyc.verified && !unverifiedAccepted
-  const methods = maskToMethods(ad.paymentMask)
-  const byFiat = s.edited === 'fiat'
-
-  return (
-    <div className="flex flex-col overflow-y-auto px-4 pb-6 pt-3">
-      <UnverifiedAdvertiserModal
-        open={showUnverifiedModal}
-        maker={ad.maker}
-        onAccept={() => setUnverifiedAccepted(true)}
-        onCancel={onClose}
-      />
-      {/* Header: Title + Close */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <TokenUSDC variant="branded" size={20} />
-          <h3 className="text-base font-bold text-[var(--p2p-ink)]">
-            {s.userBuys ? 'Buy USDC' : 'Sell USDC'}
-          </h3>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="flex size-8 items-center justify-center rounded-full bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-
-      {/* Locked Rate & Price Protection Badge */}
-      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <span className="text-[var(--p2p-muted)]">
-          Price <strong className="p2p-mono text-sm text-[var(--p2p-ink)]">{formatPrice(ad.priceE6)} {s.currency}</strong>
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-0.5 text-[11px] font-semibold text-[#FF5A00]">
-          <Lock className="size-3" /> {ad.windowMinutes}m Price Lock
-        </span>
-      </div>
-
-      {/* Segmented Tab: By Fiat | By Crypto */}
-      <div className="mt-4 flex border-b border-[var(--p2p-border)]" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={byFiat}
-          onClick={() => s.setEdited('fiat')}
-          className={`relative pb-2.5 pr-5 text-xs font-bold transition-colors ${
-            byFiat ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)]'
-          }`}
-        >
-          By Fiat ({s.currency})
-          {byFiat && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#FF5A00]" />}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={!byFiat}
-          onClick={() => s.setEdited('usdc')}
-          className={`relative px-5 pb-2.5 text-xs font-bold transition-colors ${
-            !byFiat ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)]'
-          }`}
-        >
-          By Crypto (USDC)
-          {!byFiat && <span className="absolute inset-x-4 bottom-0 h-[3px] rounded-full bg-[#FF5A00]" />}
-        </button>
-      </div>
-
-      {/* Large Mobile Numeric Input Box */}
-      <div className="mt-4">
-        <div className="p2p-input flex items-center rounded-xl px-4 py-3.5">
-          {byFiat ? (
-            <>
-              <input
-                inputMode="decimal"
-                value={s.shownFiat}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9.]/g, '')
-                  if (/^\d*\.?\d{0,2}$/.test(v)) {
-                    s.setEdited('fiat')
-                    s.setFiat(v)
-                  }
-                }}
-                placeholder={`Enter ${s.currency} amount`}
-                className="p2p-mono w-full bg-transparent text-xl font-bold text-[var(--p2p-ink)] outline-none placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:text-[var(--p2p-muted)]"
-              />
-              <span className="mr-3 text-xs font-bold text-[var(--p2p-ink)]">{s.currency}</span>
-              <button
-                type="button"
-                onClick={() => s.setMaxAmount('fiat')}
-                className="border-l border-[var(--p2p-border)] pl-3 text-xs font-bold text-[#FF5A00]"
-              >
-                Max
-              </button>
-            </>
-          ) : (
-            <>
-              <input
-                inputMode="decimal"
-                value={s.shownUsdc}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/[^0-9.]/g, '')
-                  if (/^\d*\.?\d{0,6}$/.test(v)) {
-                    s.setEdited('usdc')
-                    s.setUsdc(v)
-                  }
-                }}
-                placeholder="Enter USDC amount"
-                className="p2p-mono w-full bg-transparent text-xl font-bold text-[var(--p2p-ink)] outline-none placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:text-[var(--p2p-muted)]"
-              />
-              <span className="mr-3 text-xs font-bold text-[var(--p2p-ink)]">USDC</span>
-              <button
-                type="button"
-                onClick={() => s.setMaxAmount('usdc')}
-                className="border-l border-[var(--p2p-border)] pl-3 text-xs font-bold text-[#FF5A00]"
-              >
-                Max
-              </button>
-            </>
-          )}
-        </div>
-        <p className="p2p-mono mt-1.5 text-[11px] text-[var(--p2p-muted)]">
-          Limit: {s.country?.symbol}
-          {formatFiat(fiatFor(s.adLow, ad.priceE6), 0)} - {s.country?.symbol}
-          {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6), 0)} ({formatUsdcAmount(s.adLow)} -{' '}
-          {formatUsdcAmount(s.effectiveHigh)} USDC)
-        </p>
-      </div>
-
-      {!s.userBuys && (
-        <div className="mt-3.5 space-y-2.5">
-          {s.isSealedBuyAd && (
-            <div>
-              <div className="mb-1 flex items-center justify-between text-xs">
-                <span className="inline-flex items-center gap-1 font-semibold text-[#FF5A00]">
-                  <Lock className="size-3" /> Account Holder Name
-                </span>
-              </div>
-              <input
-                value={s.holderName}
-                onChange={(e) => s.setHolderName(e.target.value.slice(0, 80))}
-                placeholder="Full name on your bank / wallet"
-                className="p2p-input h-10 w-full rounded-xl px-3.5 text-xs"
-              />
-            </div>
-          )}
-          <div>
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <span className="font-semibold text-[var(--p2p-muted)]">
-                {s.isSealedBuyAd ? 'Receiving Account (Encrypted Vault)' : 'Your Receiving Account'}
-              </span>
-              <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                {s.isSealedBuyAd ? `${s.details.length}/400` : `${s.detailBytes}/${DETAILS_MAX_BYTES}B`}
-              </span>
-            </div>
-            <textarea
-              value={s.details}
-              onChange={(e) => s.setDetails(e.target.value)}
-              rows={2}
-              placeholder="e.g. bKash Personal 01XXXXXXXXX (Name) or name@upi"
-              className="p2p-input p2p-mono w-full resize-none rounded-xl px-3.5 py-2.5 text-xs"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Live Calculated Summary */}
-      <div className="mt-4 space-y-2 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-[var(--p2p-muted)]">{s.userBuys ? 'You Receive' : 'You Sell'}</span>
-          <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
-            {s.usdcRaw > 0n ? formatUsdcAmount(s.usdcRaw) : '0.00'} USDC
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[var(--p2p-muted)]">{s.userBuys ? 'Fiat to Pay' : 'Fiat You Receive'}</span>
-          <span className="p2p-mono text-sm font-bold text-[#FF5A00]">
-            {s.country?.symbol}
-            {s.fiatRaw > 0n ? formatFiat(s.fiatRaw) : '0.00'} {s.currency}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[var(--p2p-muted)]">Payment Methods</span>
-          <span className="truncate font-semibold text-[var(--p2p-ink)]">
-            {methods.map((m) => m.name).join(', ')}
-          </span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-[var(--p2p-muted)]">Order Trade Fee</span>
-          <span className="p2p-mono font-bold text-[#FF5A00]">0.00 USDC (0.05/ad listing)</span>
-        </div>
-      </div>
-
-      {s.problem && (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3 py-2 text-xs text-[#FF5A00]">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{s.problem}</span>
-        </div>
-      )}
-
-      {/* Full-Width Sticky 48px CTA */}
-      <div className="mt-5">
-        {s.isConnected ? (
-          <button
-            type="button"
-            disabled={!s.ready || s.busy}
-            onClick={() => void s.submit(onOpened)}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {s.busy && <Loader2 className="size-4 animate-spin" />}
-            {s.pendingKey === 'approve'
-              ? 'Approve USDC in Wallet...'
-              : s.busy
-                ? 'Confirming Order...'
-                : `${s.userBuys ? 'Buy' : 'Sell'} USDC`}
-          </button>
-        ) : (
-          <ConnectKitButton.Custom>
-            {({ show }) => (
-              <button
-                type="button"
-                onClick={show}
-                className="h-12 w-full rounded-xl bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF]"
-              >
-                Connect Wallet
-              </button>
-            )}
-          </ConnectKitButton.Custom>
-        )}
-      </div>
-    </div>
   )
 }
 

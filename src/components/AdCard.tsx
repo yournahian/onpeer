@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Lock, ShieldCheck } from 'lucide-react'
 import type { Account, AdWithId, KycInfo } from '@/hooks/useEscrow'
 import {
@@ -12,7 +11,6 @@ import {
   shortAddr,
   type Country,
 } from '@/lib/p2p'
-import { InlineOrderDrawer } from '@/components/TradeSheet'
 
 export function AdCard({
   ad,
@@ -22,11 +20,7 @@ export function AdCard({
   makerKyc,
   viewerAccount,
   own,
-  expanded,
-  initialUsdc,
-  onToggleExpand,
-  onMobileSelect,
-  onOpened,
+  onSelectAd,
 }: {
   ad: AdWithId
   country: Country
@@ -35,11 +29,7 @@ export function AdCard({
   makerKyc?: KycInfo
   viewerAccount?: Account
   own: boolean
-  expanded: boolean
-  initialUsdc?: string
-  onToggleExpand: (ad: AdWithId | null) => void
-  onMobileSelect: (ad: AdWithId) => void
-  onOpened: (orderId: bigint) => void
+  onSelectAd: (ad: AdWithId) => void
 }) {
   const completionPct =
     account && account.ordersCreated > 0
@@ -142,7 +132,7 @@ export function AdCard({
             ) : (
               <button
                 type="button"
-                onClick={() => onMobileSelect(ad)}
+                onClick={() => onSelectAd(ad)}
                 className="inline-flex h-[38px] items-center justify-center rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] active:scale-95"
               >
                 {mode === 'buy' ? 'Buy' : 'Sell'}
@@ -152,12 +142,8 @@ export function AdCard({
         </div>
       </li>
 
-      {/* DESKTOP 5-COLUMN ROW + INLINE DRAWER (>= 768px) */}
-      <li
-        className={`hidden border-b border-[var(--p2p-border)] transition-colors last:border-b-0 md:block ${
-          expanded ? 'bg-[var(--p2p-row-hover)]' : 'bg-[var(--p2p-canvas)] hover:bg-[var(--p2p-row-hover)]'
-        }`}
-      >
+      {/* DESKTOP 5-COLUMN ROW (>= 768px) */}
+      <li className="hidden border-b border-[var(--p2p-border)] bg-[var(--p2p-canvas)] transition-colors last:border-b-0 hover:bg-[var(--p2p-row-hover)] md:block">
         <div className="grid gap-4 px-5 py-4 md:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.35fr)_minmax(0,1.15fr)_150px] md:items-center">
           {/* Column 1: Advertiser */}
           <div className="flex items-start gap-3">
@@ -274,42 +260,14 @@ export function AdCard({
             ) : (
               <button
                 type="button"
-                onClick={() => onToggleExpand(expanded ? null : ad)}
-                className={`inline-flex min-h-10 min-w-[136px] items-center justify-center rounded-lg px-4 text-xs font-bold transition-all ${
-                  expanded
-                    ? 'border border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                    : 'bg-[#FF5A00] text-[#FFFFFF] hover:opacity-90'
-                }`}
+                onClick={() => onSelectAd(ad)}
+                className="inline-flex min-h-10 min-w-[136px] items-center justify-center rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90"
               >
-                {expanded ? 'Close' : mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+                {mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
               </button>
             )}
           </div>
         </div>
-
-        {/* Inline Slide-Down Order Drawer */}
-        <AnimatePresence initial={false}>
-          {expanded && !own && !unmetRequirement && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden"
-            >
-              <div className="px-5 pb-5 pt-1">
-                <InlineOrderDrawer
-                  key={ad.id.toString()}
-                  ad={ad}
-                  makerAccount={account}
-                  initialUsdc={initialUsdc}
-                  onCancel={() => onToggleExpand(null)}
-                  onOpened={onOpened}
-                />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </li>
     </>
   )

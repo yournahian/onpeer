@@ -127,11 +127,15 @@ export default function P2PPage() {
           />
         )}
 
-        <main className="mx-auto w-full max-w-[1440px] space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10">
+        <main
+          className={`mx-auto w-full ${
+            orderId !== null ? 'max-w-[1120px]' : 'max-w-[1440px]'
+          } space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10`}
+        >
           {!needsOnboarding && blocked && (
             <div
               role="status"
-              className="flex items-start gap-2.5 rounded-xl border border-[#FF5A00] bg-[var(--p2p-tint)] px-4 py-3 text-xs font-medium text-[#FF5A00] backdrop-blur-md"
+              className="flex items-start gap-2.5 rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-surface-solid)] px-4 py-3 text-xs font-semibold text-[var(--p2p-warn-ink)] shadow-sm"
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <span>{blocked}</span>

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search } from 'lucide-react'
+import { Search, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { isAddress, type Address } from 'viem'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
-import { CHAIN_ID, ESCROW_ADDRESS, TIER_TABLE, formatOrderCap, formatUsdcAmount, shortAddr } from '@/lib/p2p'
+import { CHAIN_ID, ESCROW_ADDRESS, TIER_TABLE, formatDuration, formatOrderCap, formatUsdcAmount, shortAddr } from '@/lib/p2p'
 import {
   useAccounts,
+  useAds,
   useDebts,
   useDisputeWaived,
   useNow,
@@ -15,7 +16,7 @@ import {
   type KycInfo,
 } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
-import { Avatar, Button, Empty, inputClass } from '@/components/ui'
+import { Avatar, Button, CopyButton, Empty, inputClass } from '@/components/ui'
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -23,6 +24,110 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="text-[11px] font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>{label}</p>
       <p className="display mt-0.5 text-lg font-bold tabular-nums">{value}</p>
     </div>
+  )
+}
+
+function RestrictedRow({
+  address,
+  account,
+  canWrite,
+  onInspect,
+}: {
+  address: Address
+  account: Account
+  canWrite: boolean
+  onInspect: (addr: Address) => void
+}) {
+  const now = useNow()
+  const waived = useDisputeWaived(address)
+  const { run, writeContractAsync, pendingKey } = useTx()
+  const bannedLeft = Number(account.bannedUntil) - now
+
+  const liftAdminRestrict = () =>
+    run(`row-restrict-${address}`, 'Lift account restriction', () =>
+      writeContractAsync({
+        address: ESCROW_ADDRESS!,
+        abi: p2pEscrowAbi,
+        functionName: 'setRestricted',
+        args: [address, false],
+        chainId: CHAIN_ID,
+      }),
+    )
+
+  const waiveDisputeLimit = () =>
+    run(`row-waiver-${address}`, 'Turn off lost-dispute restriction', () =>
+      writeContractAsync({
+        address: ESCROW_ADDRESS!,
+        abi: p2pEscrowAbi,
+        functionName: 'setDisputeWaiver',
+        args: [address, true],
+        chainId: CHAIN_ID,
+      }),
+    )
+
+  return (
+    <li className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar address={address} size={38} />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mono text-sm font-semibold">{shortAddr(address)}</span>
+            <CopyButton text={address} label="Copy" />
+            {account.restricted && (
+              <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--danger)' }}>
+                Admin Restricted
+              </span>
+            )}
+            {account.disputeLimitReached && (
+              <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--danger)' }}>
+                Dispute Limit Restricted ({account.disputesLost} lost)
+              </span>
+            )}
+            {account.totalDebt > 0n && (
+              <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--warn)' }}>
+                Unpaid Bond Debt: {formatUsdcAmount(account.totalDebt)} USDC
+              </span>
+            )}
+            {bannedLeft > 0 && (
+              <span className="rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--warn)' }}>
+                Cancel Cooldown ({formatDuration(bannedLeft)})
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs" style={{ color: 'var(--subtle)' }}>
+            {account.disputeLimitReached || account.restricted
+              ? 'Blocked with: "This account is restricted from opening new trades."'
+              : account.totalDebt > 0n
+                ? 'Blocked until user repays their unpaid dispute bond on Account & Margin.'
+                : 'Temporarily in 24h cancellation cooldown.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {canWrite && account.disputeLimitReached && !waived && (
+          <Button
+            variant="buy"
+            loading={pendingKey === `row-waiver-${address}`}
+            onClick={() => void waiveDisputeLimit()}
+          >
+            <ShieldCheck className="size-4" /> Turn Off Dispute Restriction
+          </Button>
+        )}
+        {canWrite && account.restricted && (
+          <Button
+            variant="buy"
+            loading={pendingKey === `row-restrict-${address}`}
+            onClick={() => void liftAdminRestrict()}
+          >
+            <ShieldCheck className="size-4" /> Lift Admin Restriction
+          </Button>
+        )}
+        <Button variant="ghost" onClick={() => onInspect(address)}>
+          Details
+        </Button>
+      </div>
+    </li>
   )
 }
 
@@ -117,11 +222,11 @@ function AccountPanel({
           )}
           {canWrite && (account.disputeLimitReached || waived) && (
             <Button
-              variant="ghost"
+              variant={waived ? 'ghost' : 'buy'}
               loading={pendingKey === `waiver-${address}`}
               onClick={() => void flipWaiver()}
             >
-              {waived ? 'Reinstate dispute limit' : 'Waive dispute limit'}
+              {waived ? 'Reinstate dispute limit' : 'Turn Off Dispute Restriction (Waive)'}
             </Button>
           )}
           {canWrite && (
@@ -176,22 +281,35 @@ export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrit
   const [query, setQuery] = useState('')
   const target = isAddress(query.trim()) ? (query.trim() as Address) : undefined
   const { orders } = useOrders()
+  const { ads } = useAds()
   const now = useNow()
 
   const watch = useMemo(() => {
     const s = new Set<string>()
-    for (const o of orders.slice(0, 80)) {
+    for (const o of orders.slice(0, 100)) {
       s.add(o.buyer.toLowerCase())
       s.add(o.seller.toLowerCase())
     }
+    for (const a of ads.slice(0, 100)) {
+      s.add(a.maker.toLowerCase())
+    }
     return Array.from(s) as Address[]
-  }, [orders])
+  }, [orders, ads])
 
   const list = useMemo(() => (target ? [target, ...watch] : watch), [target, watch])
   const accounts = useAccounts(list)
   const verifications = useVerifications(list)
   const looked = target ? accounts.get(target.toLowerCase()) : undefined
   const lookedKyc = target ? verifications.get(target.toLowerCase()) : undefined
+
+  const blockedAccounts = watch.filter((a) => {
+    const acc = accounts.get(a)
+    return (
+      acc &&
+      (acc.restricted || acc.disputeLimitReached || acc.totalDebt > 0n || Number(acc.bannedUntil) > now)
+    )
+  })
+
   const flagged = watch.filter((a) => {
     const acc = accounts.get(a)
     return (
@@ -206,11 +324,41 @@ export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrit
   })
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            <ShieldAlert className="size-4" style={{ color: 'var(--danger)' }} />
+            Restricted &amp; Blocked Accounts ({blockedAccounts.length})
+          </h3>
+          <span className="text-xs" style={{ color: 'var(--subtle)' }}>
+            Admin can turn off dispute / manual restrictions directly from this list
+          </span>
+        </div>
+        {blockedAccounts.length === 0 ? (
+          <Empty
+            title="No restricted accounts"
+            body="Wallets blocked by lost-dispute limits, admin restrictions, unpaid dispute bonds, or cancel cooldowns appear here automatically."
+          />
+        ) : (
+          <ul className="space-y-2.5">
+            {blockedAccounts.map((a) => (
+              <RestrictedRow
+                key={`blocked-${a}`}
+                address={a}
+                account={accounts.get(a)!}
+                canWrite={canWrite}
+                onInspect={(addr) => setQuery(addr)}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
       <div className="glass rounded-3xl p-4 sm:p-5">
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
-            Look up an account
+            Look up any wallet address
           </span>
           <span className="relative block">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2" style={{ color: 'var(--subtle)' }} />
@@ -239,7 +387,7 @@ export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrit
       )}
 
       <section>
-        <h3 className="mb-3 text-sm font-semibold">Watchlist</h3>
+        <h3 className="mb-3 text-sm font-semibold">Full Reputation Watchlist</h3>
         {flagged.length === 0 ? (
           <Empty title="Nothing flagged" body="Accounts with lost disputes, concessions, unpaid bonds, restrictions or cooldowns appear here." />
         ) : (

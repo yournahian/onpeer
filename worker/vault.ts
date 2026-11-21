@@ -79,6 +79,7 @@ export interface BuyerPayerPayload {
   transferId: string
   senderName: string
   last4: string
+  paymentMethod?: string
 }
 
 export interface VaultBlobRow {
@@ -324,6 +325,7 @@ export async function handleVaultRoutes(
     const transferId = sanitizePlainLine(body.transferId ?? '', 80) ?? ''
     const senderName = sanitizePlainLine(body.senderName ?? '', 80) ?? ''
     const last4 = sanitizePlainLine(body.last4 ?? '', 4) ?? ''
+    const paymentMethod = sanitizePlainLine(body.paymentMethod ?? '', 40) ?? ''
     if (last4 && !/^\d{4}$/.test(last4)) {
       return json(400, { error: 'invalid_vault_payload' })
     }
@@ -342,6 +344,7 @@ export async function handleVaultRoutes(
       transferId,
       senderName,
       last4,
+      ...(paymentMethod ? { paymentMethod } : {}),
     }
     const plainBytes = new TextEncoder().encode(JSON.stringify(payerObj))
     const sealed = await sealBlob(env, plainBytes, vaultAad('payer', wallet))
@@ -452,6 +455,7 @@ export async function handleVaultRoutes(
       transferId: string
       senderName: string
       last4: string
+      paymentMethod: string
       kycNameMatch: NameMatchResult
     } | null = null
 
@@ -485,6 +489,7 @@ export async function handleVaultRoutes(
           transferId: parsed.transferId,
           senderName: parsed.senderName,
           last4: parsed.last4,
+          paymentMethod: parsed.paymentMethod ?? '',
           kycNameMatch,
         }
       }

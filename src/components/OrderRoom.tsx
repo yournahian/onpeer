@@ -163,8 +163,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const [senderName, setSenderName] = useState('')
   const [last4, setLast4] = useState('')
   const [transferId, setTransferId] = useState('')
+  const [chosenMethodBit, setChosenMethodBit] = useState<number | null>(null)
   const [sealingPayer, setSealingPayer] = useState(false)
-  const [confirmed, setConfirmed] = useState(false)
+  const [releaseModalMode, setReleaseModalMode] = useState<'paid' | 'early' | 'settle' | null>(null)
+  const [releaseConfirmed, setReleaseConfirmed] = useState(false)
   const [slash, setSlash] = useState(false)
   const [applyBond, setApplyBond] = useState(true)
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
@@ -211,18 +213,28 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const coolingOffLeft = Number(order.disputedAt) + COOLING_OFF_SECONDS - now
   const inCoolingOff = !inReview && coolingOffLeft >= 0
 
+  const methods = maskToMethods(order.paymentMask)
+  const effectiveMethod =
+    methods.length === 1
+      ? methods[0]!
+      : chosenMethodBit !== null
+        ? (methods.find((m) => m.bit === chosenMethodBit) ?? null)
+        : null
+  const methodSelected = methods.length === 0 || effectiveMethod !== null
+
   const senderNameReady = senderName.trim().length >= 2
   const senderFieldsReady = senderNameReady && /^\d{4}$/.test(last4)
   const transferIdReady = transferId.trim().length >= 2
-  const payerReady = pastDeadline
+  const payerInputsReady = pastDeadline
     ? transferIdReady && (!payerProofRequired || senderNameReady)
     : payerProofRequired
       ? senderNameReady && (transferIdReady || /^\d{4}$/.test(last4))
       : senderFieldsReady || transferIdReady
+  const payerReady = methodSelected && payerInputsReady
   const payerHash = payerReady
     ? keccak256(
         toBytes(
-          `${order.id.toString()}|tx:${transferId.trim()}|${senderName.trim().toLowerCase()}|${last4}`,
+          `${order.id.toString()}|m:${effectiveMethod?.name ?? ''}|tx:${transferId.trim()}|${senderName.trim().toLowerCase()}|${last4}`,
         ),
       )
     : ZERO_BYTES32
@@ -242,6 +254,22 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
       }),
     )
 
+  const openReleaseConfirm = (mode: 'paid' | 'early' | 'settle') => {
+    setReleaseConfirmed(false)
+    setReleaseModalMode(mode)
+  }
+
+  const confirmAndRelease = async () => {
+    const mode = releaseModalMode
+    if (!mode || !releaseConfirmed) return
+    setReleaseModalMode(null)
+    if (mode === 'settle') {
+      await callSimple('release', 'Settle & release to buyer', 'settleRelease')
+    } else {
+      await callSimple('release', 'Release USDC', 'release')
+    }
+  }
+
   const callMarkPaid = async () => {
     let proofArg: `0x${string}` = payerHash
     if (payerReady && (payerProofRequired || isSignedIn)) {
@@ -252,6 +280,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           transferId: transferId.trim(),
           senderName: senderName.trim(),
           last4,
+          paymentMethod: effectiveMethod?.name,
         })
         proofArg = res.contentHash
       } catch (err) {
@@ -291,7 +320,6 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
   const canBuyerDispute = status === STATUS.PAID && now >= Number(order.paidAt) + DISPUTE_WAIT
   const disputeWaitLeft = Number(order.paidAt) + DISPUTE_WAIT - now
-  const methods = maskToMethods(order.paymentMask)
   const fiatPlain = formatFiat(order.fiatAmountE6)
 
   const stepIndex =
@@ -678,16 +706,54 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 )}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {methods.map((m) => (
-                  <span
-                    key={m.bit}
-                    className="inline-flex items-center rounded bg-[var(--p2p-input-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--p2p-ink)] ring-1 ring-inset ring-[var(--p2p-border)]"
-                    style={{ borderLeft: '3px solid #FF5A00' }}
-                  >
-                    {m.name}
-                  </span>
-                ))}
+              <div className="mt-3">
+                {status === STATUS.PENDING && isBuyer && methods.length > 1 ? (
+                  <div className="space-y-1.5">
+                    <p className="text-[11px] font-semibold text-[var(--p2p-accent-ink)]">
+                      Select 1 payment method to use (single method only — do not split payment):
+                    </p>
+                    <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Select payment method">
+                      {methods.map((m) => {
+                        const selected = effectiveMethod?.bit === m.bit
+                        return (
+                          <button
+                            key={m.bit}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setChosenMethodBit(m.bit)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition-colors ${
+                              selected
+                                ? 'border-[#FF5A00] bg-[#FF5A00] text-[#FFFFFF]'
+                                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]'
+                            }`}
+                          >
+                            {selected && <Check className="size-3.5" />}
+                            {m.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {buyerVault?.paymentMethod ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-[#FF5A00] bg-[var(--p2p-input-bg)] px-2.5 py-1 text-xs font-bold text-[var(--p2p-accent-ink)]">
+                        <Check className="size-3.5" /> Buyer Selected Method: {buyerVault.paymentMethod}
+                      </span>
+                    ) : (
+                      methods.map((m) => (
+                        <span
+                          key={m.bit}
+                          className="inline-flex items-center rounded bg-[var(--p2p-input-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--p2p-ink)] ring-1 ring-inset ring-[var(--p2p-border)]"
+                          style={{ borderLeft: '3px solid #FF5A00' }}
+                        >
+                          {m.name}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mt-3 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
@@ -762,6 +828,20 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
 
               <div className="grid gap-3 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 sm:grid-cols-2">
+                {methods.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 py-2 text-xs sm:col-span-2">
+                    <span className="font-semibold text-[var(--p2p-muted)]">Payment Method Used (1 only):</span>
+                    {effectiveMethod ? (
+                      <span className="inline-flex items-center gap-1 font-bold text-[var(--p2p-accent-ink)]">
+                        <Check className="size-3.5" /> {effectiveMethod.name}
+                      </span>
+                    ) : (
+                      <span className="font-semibold text-[var(--p2p-warn-ink)]">
+                        Select 1 method under Seller&apos;s Payment Account above
+                      </span>
+                    )}
+                  </div>
+                )}
                 <label className="block sm:col-span-2">
                   <span
                     className={`mb-1 block text-[11px] font-semibold ${
@@ -863,8 +943,8 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void callSimple('release', 'Release USDC')}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-semibold text-[var(--p2p-ink)] transition-colors hover:border-[#FF5A00]"
+                    onClick={() => openReleaseConfirm('early')}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
                     {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
                     Release USDC Early
@@ -875,7 +955,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     type="button"
                     disabled={busy}
                     onClick={() => void callSimple('cancelOrder', 'Cancel expired order')}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-40"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 text-xs font-bold text-[var(--p2p-ink)] transition-opacity hover:border-[#FF5A00] disabled:opacity-40"
                   >
                     {pendingKey === 'cancelOrder' && <Loader2 className="size-4 animate-spin" />}
                     Cancel Expired Order
@@ -889,10 +969,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           {status === STATUS.PAID && isSeller && (
             <div className="p2p-card space-y-4 rounded-xl !border-[#FF5A00] p-4 sm:p-5">
               <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3.5">
-                <p className="text-xs font-bold text-[#FF5A00]">Buyer Marked Order Paid — Verify Receipt</p>
+                <p className="text-xs font-bold text-[var(--p2p-accent-ink)]">Buyer Marked Order Paid — Verify Receipt</p>
                 <p className="mt-1 text-xs text-[var(--p2p-ink)]">
                   Expected amount:{' '}
-                  <strong className="p2p-mono text-[#FF5A00]">
+                  <strong className="p2p-mono text-[var(--p2p-accent-ink)]">
                     {country?.symbol}
                     {fiatPlain} {currency}
                   </strong>
@@ -904,12 +984,17 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                       {buyerVault && <NameMatchBadge match={buyerVault.kycNameMatch} />}
                     </div>
                     {buyerVault ? (
-                      <div className="grid gap-1 text-[11px] sm:grid-cols-3">
+                      <div className="grid gap-1.5 text-[11px] sm:grid-cols-2">
+                        {buyerVault.paymentMethod && (
+                          <span>
+                            Method: <strong className="text-[var(--p2p-accent-ink)]">{buyerVault.paymentMethod}</strong>
+                          </span>
+                        )}
                         <span>
                           Sender: <strong className="text-[var(--p2p-ink)]">{buyerVault.senderName || '—'}</strong>
                         </span>
                         <span className="p2p-mono">
-                          Transfer ID: <strong className="text-[#FF5A00]">{buyerVault.transferId || '—'}</strong>
+                          Transfer ID: <strong className="text-[var(--p2p-accent-ink)]">{buyerVault.transferId || '—'}</strong>
                         </span>
                         <span className="p2p-mono">
                           Last 4: <strong className="text-[var(--p2p-ink)]">{buyerVault.last4 || '—'}</strong>
@@ -920,7 +1005,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         type="button"
                         disabled={signingIn}
                         onClick={() => void signIn().catch(() => undefined)}
-                        className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] underline"
+                        className="inline-flex items-center gap-1 font-semibold text-[var(--p2p-accent-ink)] underline"
                       >
                         <KeyRound className="size-3" /> Sign in with wallet to decrypt buyer sender details
                       </button>
@@ -933,24 +1018,12 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 )}
               </div>
 
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-ink)]">
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(e) => setConfirmed(e.target.checked)}
-                  className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
-                />
-                <span>
-                  I have logged into my banking/mobile app and verified that the exact amount arrived from an account in the buyer&apos;s own name (no third-party payment).
-                </span>
-              </label>
-
               <div className="hidden gap-2.5 md:flex">
                 <button
                   type="button"
-                  disabled={busy || !confirmed}
-                  onClick={() => void callSimple('release', 'Release USDC')}
-                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={busy}
+                  onClick={() => openReleaseConfirm('paid')}
+                  className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
                   Release USDC
@@ -959,7 +1032,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   type="button"
                   disabled={busy}
                   onClick={() => void callSimple('openDispute', 'Open dispute')}
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#FF5A00] bg-transparent px-4 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[var(--p2p-tint)] disabled:opacity-40"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-accent-ink)] transition-colors hover:bg-[var(--p2p-tint)] disabled:opacity-40"
                 >
                   {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
                   Open Dispute (Not Received)
@@ -1043,7 +1116,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void callSimple('release', 'Settle & release to buyer', 'settleRelease')}
+                        onClick={() => openReleaseConfirm('settle')}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-40"
                       >
                         {pendingKey === 'settleRelease' ? (
@@ -1177,6 +1250,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             seller={order.seller}
             canPost={canPostChat}
             orderStatus={status}
+            disputedAt={order.disputedAt}
             amountText={formatUsdcAmount(order.amount)}
           />
         </div>
@@ -1215,10 +1289,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <button
               type="button"
               disabled={busy}
-              onClick={() => void callSimple('release', 'Release USDC')}
-              className="h-12 flex-1 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-xs font-bold text-[var(--p2p-ink)]"
+              onClick={() => openReleaseConfirm('early')}
+              className="h-12 flex-1 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
-              Release Early
+              Release USDC Early
             </button>
           )}
           {hardExpired && (
@@ -1226,7 +1300,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               type="button"
               disabled={busy}
               onClick={() => void callSimple('cancelOrder', 'Cancel expired order')}
-              className="h-12 flex-1 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF]"
+              className="h-12 flex-1 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-xs font-bold text-[var(--p2p-ink)]"
             >
               Cancel Expired
             </button>
@@ -1240,14 +1314,14 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             type="button"
             disabled={busy}
             onClick={() => void callSimple('openDispute', 'Open dispute')}
-            className="h-12 rounded-xl border border-[#FF5A00] bg-transparent text-xs font-bold text-[#FF5A00] disabled:opacity-40"
+            className="h-12 rounded-xl border border-[#FF5A00] bg-[var(--p2p-input-bg)] text-xs font-bold text-[var(--p2p-accent-ink)] disabled:opacity-40"
           >
             Dispute
           </button>
           <button
             type="button"
-            disabled={busy || !confirmed}
-            onClick={() => void callSimple('release', 'Release USDC')}
+            disabled={busy}
+            onClick={() => openReleaseConfirm('paid')}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
           >
             {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
@@ -1262,7 +1336,11 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             type="button"
             disabled={!canBuyerDispute || busy}
             onClick={() => void callSimple('openDispute', 'Open dispute')}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-[#FF5A00] bg-[var(--p2p-tint)] text-xs font-bold text-[#FF5A00] disabled:opacity-40"
+            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border text-xs font-bold ${
+              canBuyerDispute
+                ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)]'
+                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+            }`}
           >
             {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
             {canBuyerDispute ? 'Open Dispute' : `Dispute Unlocks in ${formatDuration(disputeWaitLeft)}`}
@@ -1276,7 +1354,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <button
               type="button"
               disabled={busy}
-              onClick={() => void callSimple('release', 'Settle & release to buyer', 'settleRelease')}
+              onClick={() => openReleaseConfirm('settle')}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
               <Handshake className="size-4" /> Settle Dispute — Release USDC
@@ -1293,6 +1371,107 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           )}
         </div>
       )}
+
+      {/* =====================================================================
+          RELEASE USDC CONFIRMATION POPUP MODAL
+         ===================================================================== */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {releaseModalMode !== null && (
+              <motion.div
+                className="p2p-terminal fixed inset-0 z-[75] flex items-center justify-center bg-black/45 p-4 backdrop-blur-md"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setReleaseModalMode(null)}
+              >
+                <motion.div
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-labelledby="release-confirm-title"
+                  initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                  transition={{ duration: 0.18 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-md space-y-4 rounded-2xl border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] p-6 text-[var(--p2p-ink)] shadow-2xl"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF5A00]/15 text-[#FF5A00]">
+                      <ShieldAlert className="size-5" />
+                    </div>
+                    <div>
+                      <h3 id="release-confirm-title" className="text-base font-bold text-[var(--p2p-ink)]">
+                        Confirm USDC Release
+                      </h3>
+                      <p className="text-xs text-[var(--p2p-muted)]">
+                        Order #{order.id.toString()} • Buyer {shortAddr(order.buyer)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs">
+                    <div>
+                      <span className="block text-[var(--p2p-muted)]">Releasing Escrow</span>
+                      <span className="p2p-mono mt-0.5 block text-sm font-bold text-[var(--p2p-ink)]">
+                        {formatUsdcAmount(order.amount)} USDC
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-[var(--p2p-muted)]">Expected Fiat</span>
+                      <span className="p2p-mono mt-0.5 block text-sm font-bold text-[var(--p2p-accent-ink)]">
+                        {country?.symbol}
+                        {fiatPlain} {currency}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3.5 py-2.5 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]">
+                    Onchain USDC release is final and irreversible. Never rely on SMS alerts or chat screenshots — log
+                    into your actual banking/mobile app first.
+                  </div>
+
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs font-medium leading-relaxed text-[var(--p2p-ink)]">
+                    <input
+                      type="checkbox"
+                      checked={releaseConfirmed}
+                      onChange={(e) => setReleaseConfirmed(e.target.checked)}
+                      className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
+                    />
+                    <span>
+                      I have verified inside my banking/mobile wallet app that the exact fiat amount arrived from an
+                      account in the buyer&apos;s own name.
+                    </span>
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setReleaseModalMode(null)}
+                      className="h-11 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-xs font-bold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!releaseConfirmed || busy}
+                      onClick={() => void confirmAndRelease()}
+                      className={`inline-flex h-11 items-center justify-center gap-1.5 rounded-xl text-xs font-bold transition-colors ${
+                        releaseConfirmed
+                          ? 'bg-[#FF5A00] text-[#FFFFFF] hover:opacity-90'
+                          : 'cursor-not-allowed border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+                      }`}
+                    >
+                      Confirm &amp; Release
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
 
       {/* =====================================================================
           MOBILE FULL-SCREEN SLIDE-OVER CHAT & EVIDENCE DRAWER (< 768px)
@@ -1314,6 +1493,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   seller={order.seller}
                   canPost={canPostChat}
                   orderStatus={status}
+                  disputedAt={order.disputedAt}
                   amountText={formatUsdcAmount(order.amount)}
                   onBackToOrder={() => {
                     setSeenMessages(totalMessages)

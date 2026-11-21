@@ -19,7 +19,7 @@ import {
 import { parseUnitsExact } from '@/onchain-money'
 import { CountryFlag } from '@/components/logos'
 import { AdCard } from '@/components/AdCard'
-import { MobileOrderSheet } from '@/components/TradeSheet'
+import { TradePopupModal } from '@/components/TradeSheet'
 
 function parseFiatFilter(raw: string): bigint | null {
   if (!raw) return null
@@ -55,8 +55,7 @@ export function Market({
   const [amount, setAmount] = useState('')
   const [merchantsOnly, setMerchantsOnly] = useState(false)
   const [kycOnly, setKycOnly] = useState(false)
-  const [expandedId, setExpandedId] = useState<bigint | null>(null)
-  const [mobileSheetAd, setMobileSheetAd] = useState<AdWithId | null>(null)
+  const [selectedAd, setSelectedAd] = useState<AdWithId | null>(null)
 
   const [currencyOpen, setCurrencyOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
@@ -80,8 +79,7 @@ export function Market({
     : undefined
   const activeMode: 'buy' | 'sell' = deepAd ? (deepAd.side === SIDE_SELL ? 'buy' : 'sell') : mode
   const activeCountryCode = deepCountryCode ?? countryCode
-  const activeExpandedId = expandedId ?? deepAd?.id ?? null
-  const activeMobileAd = mobileSheetAd ?? deepAd ?? null
+  const activePopupAd = selectedAd ?? deepAd ?? null
 
   const country = COUNTRIES.find((c) => c.code === activeCountryCode) ?? COUNTRIES[0]
   const currencyCode = country.currency
@@ -141,17 +139,8 @@ export function Market({
     })
   }
 
-  const handleToggleExpand = (next: AdWithId | null) => {
-    if (!next) {
-      setExpandedId(null)
-      onClearDeepTrade()
-    } else {
-      setExpandedId(next.id)
-    }
-  }
-
-  const closeMobileSheet = () => {
-    setMobileSheetAd(null)
+  const closeTradePopup = () => {
+    setSelectedAd(null)
     onClearDeepTrade()
   }
 
@@ -394,7 +383,7 @@ export function Market({
                     onClick={() => {
                       onClearDeepTrade()
                       setMode(m)
-                      setExpandedId(null)
+                      setSelectedAd(null)
                     }}
                     className={`min-h-9 whitespace-nowrap rounded-md px-3.5 text-xs font-bold transition-colors xl:px-4 xl:text-sm ${
                       active
@@ -462,7 +451,7 @@ export function Market({
                             onClearDeepTrade()
                             setCountryCode(c.code)
                             setMethod(null)
-                            setExpandedId(null)
+                            setSelectedAd(null)
                             setCurrencyOpen(false)
                           }}
                           className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
@@ -673,10 +662,7 @@ export function Market({
                 makerKyc={verifications.get(ad.maker.toLowerCase())}
                 viewerAccount={viewerAccount}
                 own={sameAddr(ad.maker, address)}
-                expanded={false}
-                onToggleExpand={handleToggleExpand}
-                onMobileSelect={setMobileSheetAd}
-                onOpened={onOpenedOrder}
+                onSelectAd={setSelectedAd}
               />
             ))}
           </ul>
@@ -703,13 +689,10 @@ export function Market({
                   country={country}
                   mode={activeMode}
                   account={accounts.get(ad.maker.toLowerCase())}
+                  makerKyc={verifications.get(ad.maker.toLowerCase())}
                   viewerAccount={viewerAccount}
                   own={sameAddr(ad.maker, address)}
-                  expanded={activeExpandedId === ad.id}
-                  initialUsdc={deepAd?.id === ad.id ? deepAmount : undefined}
-                  onToggleExpand={handleToggleExpand}
-                  onMobileSelect={setMobileSheetAd}
-                  onOpened={onOpenedOrder}
+                  onSelectAd={setSelectedAd}
                 />
               ))}
             </ul>
@@ -717,13 +700,14 @@ export function Market({
         </>
       )}
 
-      {/* Mobile Slide-Up Bottom Sheet */}
-      <MobileOrderSheet
-        ad={activeMobileAd}
-        initialUsdc={deepAd?.id === activeMobileAd?.id ? deepAmount : undefined}
-        onClose={closeMobileSheet}
+      {/* Centered Trade Popup Modal (KYC Warning Step 1 if unverified -> Order Form Step 2) */}
+      <TradePopupModal
+        ad={activePopupAd}
+        makerAccount={activePopupAd ? accounts.get(activePopupAd.maker.toLowerCase()) : undefined}
+        initialUsdc={deepAd?.id === activePopupAd?.id ? deepAmount : undefined}
+        onClose={closeTradePopup}
         onOpened={(orderId) => {
-          setMobileSheetAd(null)
+          setSelectedAd(null)
           onOpenedOrder(orderId)
         }}
       />

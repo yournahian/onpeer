@@ -187,7 +187,15 @@ export function DisputeCard({
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
                 Evidence thread (public fallback)
               </h4>
-              <OrderChat orderId={order.id} buyer={order.buyer} seller={order.seller} canPost={canRule && !isParty && order.status === STATUS.DISPUTED} />
+              <OrderChat
+                orderId={order.id}
+                buyer={order.buyer}
+                seller={order.seller}
+                orderStatus={order.status}
+                disputedAt={order.disputedAt}
+                amountText={formatUsdcAmount(order.amount)}
+                canPost={canRule && !isParty && order.status === STATUS.DISPUTED}
+              />
             </div>
 
             {canRule && !isParty ? (
