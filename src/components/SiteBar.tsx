@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useMotionValueEvent, useScroll } from 'framer-motion'
-import { ArrowLeftRight, ArrowRight, Pause, Play, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, Orbit, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
 import { ConnectKitButton } from 'connectkit'
 import { isLandingDomain, useRoute, type Route } from '@/lib/router'
 import { shortAddr } from '@/lib/p2p'
@@ -66,18 +66,53 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
         <div className="flex items-center gap-2">
           <button
             type="button"
-            aria-pressed={helixMotion}
+            role="switch"
+            aria-checked={helixMotion}
+            aria-label={helixMotion ? 'Disable 3D background motion' : 'Enable 3D background motion'}
+            title={helixMotion ? '3D Motion: On (click to pause)' : '3D Motion: Off (click to resume)'}
             onClick={() => setHelixMotion(!helixMotion)}
-            title={helixMotion ? 'Pause Helix animation & right glow' : 'Resume Helix animation & glow'}
-            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors"
+            className="group hidden h-9 items-center gap-2 rounded-full pl-3 pr-1.5 text-xs font-semibold transition-colors hover:border-[var(--border-strong)] sm:inline-flex"
             style={{
-              background: helixMotion ? 'rgba(255, 90, 0, 0.14)' : 'var(--fill-2)',
-              border: `1px solid ${helixMotion ? 'rgba(255, 90, 0, 0.45)' : 'var(--border)'}`,
-              color: helixMotion ? '#FF5A00' : 'var(--muted)',
+              background: 'var(--fill-2)',
+              border: '1px solid var(--border)',
+              color: helixMotion ? 'var(--ink)' : 'var(--muted)',
             }}
           >
-            {helixMotion ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-            <span className="hidden md:inline">FX {helixMotion ? 'On' : 'Off'}</span>
+            <Orbit
+              className="size-3.5 transition-colors"
+              style={{ color: helixMotion ? 'var(--accent)' : 'var(--subtle)' }}
+            />
+            <span className="tracking-wide">FX</span>
+            <span
+              className="relative flex h-5 w-9 items-center rounded-full p-0.5 transition-colors duration-200"
+              style={{
+                background: helixMotion ? 'var(--accent-bg)' : 'var(--fill-3)',
+                boxShadow: helixMotion ? '0 2px 10px -2px var(--accent-glow)' : 'inset 0 1px 2px rgba(0,0,0,0.25)',
+              }}
+            >
+              <motion.span
+                layout
+                transition={{ type: 'spring', stiffness: 520, damping: 34 }}
+                className="size-4 rounded-full bg-white shadow-sm"
+                style={{ marginLeft: helixMotion ? 'auto' : 0 }}
+              />
+            </span>
+          </button>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={helixMotion}
+            aria-label={helixMotion ? 'Disable 3D background motion' : 'Enable 3D background motion'}
+            title={helixMotion ? '3D Motion: On' : '3D Motion: Off'}
+            onClick={() => setHelixMotion(!helixMotion)}
+            className="flex size-10 items-center justify-center rounded-full sm:hidden"
+            style={{
+              background: 'var(--fill-2)',
+              border: '1px solid var(--border)',
+              color: helixMotion ? 'var(--accent)' : 'var(--muted)',
+            }}
+          >
+            <Orbit className="size-4" />
           </button>
           <ThemeToggle className="hidden sm:inline-flex" />
           <ThemeToggle compact className="sm:hidden" />

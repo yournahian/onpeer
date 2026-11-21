@@ -8,15 +8,10 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 
 type Theme = 'dark' | 'light'
 
-/** The site's primary OnPeer Brandkit gradient, left to right. */
+/** The site's primary OnPeer Brandkit gradient, left to right (exact production colours). */
 const PRIMARY: Record<Theme, [string, string, string]> = {
   dark: ['#c94100', '#FF5A00', '#ff8c42'],
   light: ['#b83a00', '#e04e00', '#FF5A00'],
-}
-/** Same Helix palette without the bright peach right-edge hotspot when FX is off. */
-const PRIMARY_NO_RIGHT_GLOW: Record<Theme, [string, string, string]> = {
-  dark: ['#c94100', '#FF5A00', '#e85200'],
-  light: ['#b83a00', '#e04e00', '#e85200'],
 }
 /** Matches `--bg` in index.css so the canvas blends into the page. */
 const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xfaf9f7 }
@@ -40,6 +35,10 @@ export function RibbonBackdrop() {
     const host = hostRef.current
     if (!host) return
     const anim = animRef.current
+    if (anim.raf) {
+      cancelAnimationFrame(anim.raf)
+      anim.raf = 0
+    }
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
@@ -66,7 +65,7 @@ export function RibbonBackdrop() {
     scene.add(hemi)
 
     const key = new THREE.DirectionalLight(0xffffff, 2.2)
-    key.position.set(1.5, 7, 6)
+    key.position.set(0.5, 7, 6)
     key.castShadow = true
     key.shadow.mapSize.set(2048, 2048)
     key.shadow.camera.left = -14
@@ -82,8 +81,8 @@ export function RibbonBackdrop() {
     const rimL = new THREE.PointLight(0xff5a00, 45, 25, 1.7)
     rimL.position.set(-6, 3, 2)
     scene.add(rimL)
-    const rimR = new THREE.PointLight(0xff8c42, 45, 25, 1.7)
-    rimR.position.set(6, 3, 2)
+    const rimR = new THREE.PointLight(0xff5a00, 20, 25, 1.7)
+    rimR.position.set(6, 2.5, 2)
     scene.add(rimR)
     const under = new THREE.PointLight(0xe04e00, 20, 18, 1.8)
     under.position.set(0, -4, 3)
@@ -131,10 +130,10 @@ export function RibbonBackdrop() {
     })
     scene.add(new THREE.Points(dustGeo, dustMat))
 
-    // Bloom (dark theme only) for the soft glow around the band.
+    // Keep composer output pipeline for identical ACES tone-mapping, with 0 sky bloom halo.
     const composer = new EffectComposer(renderer)
     composer.addPass(new RenderPass(scene, camera))
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.4, 0.55, 0.7)
+    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0, 0.35, 1.0)
     composer.addPass(bloom)
     composer.addPass(new OutputPass())
 
@@ -146,13 +145,8 @@ export function RibbonBackdrop() {
     }
     const applyTheme = () => {
       state.theme = currentTheme()
-      const active = isHelixActive()
-      const palette = active ? PRIMARY[state.theme] : PRIMARY_NO_RIGHT_GLOW[state.theme]
-      state.stops = palette.map((c) => new THREE.Color(c))
-      // Keep the Helix's own bloom & starfield intact; only tame the right-side hotspot when FX is off.
-      rimR.color.set(active ? 0xff8c42 : 0xff5a00)
-      rimR.intensity = active ? 45 : 20
-      bloom.strength = 0.4
+      state.stops = PRIMARY[state.theme].map((c) => new THREE.Color(c))
+      bloom.strength = 0
       if (state.theme === 'dark') {
         // Opaque page colour so bloom works, identical to the page background.
         renderer.setClearColor(PAGE_BG.dark, 1)
@@ -251,13 +245,13 @@ export function RibbonBackdrop() {
 
     const syncMotion = () => {
       applyTheme()
+      layout(anim.simTime)
+      render()
       if (reducedMotion || !isHelixActive()) {
         if (anim.raf) {
           cancelAnimationFrame(anim.raf)
           anim.raf = 0
         }
-        layout(anim.simTime)
-        render()
       } else if (!anim.raf) {
         anim.lastNow = performance.now()
         anim.raf = requestAnimationFrame(stepFrame)
@@ -280,7 +274,10 @@ export function RibbonBackdrop() {
     syncMotion()
 
     return () => {
-      if (anim.raf) cancelAnimationFrame(anim.raf)
+      if (anim.raf) {
+        cancelAnimationFrame(anim.raf)
+        anim.raf = 0
+      }
       ro.disconnect()
       themeObs.disconnect()
       helixObserver.disconnect()
