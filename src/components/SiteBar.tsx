@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useMotionValueEvent, useScroll } from 'framer-motion'
-import { ArrowLeftRight, ArrowRight, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, Pause, Play, Repeat, ShieldCheck, Sparkles, Waypoints } from 'lucide-react'
 import { ConnectKitButton } from 'connectkit'
 import { isLandingDomain, useRoute, type Route } from '@/lib/router'
 import { shortAddr } from '@/lib/p2p'
@@ -8,6 +8,7 @@ import { AppLink } from '@/components/AppLink'
 import { Button } from '@/components/ui'
 import { Brand } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { useTheme } from '@/lib/theme'
 import { useAdminRoles } from '@/hooks/useAdmin'
 
 const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] = [
@@ -21,6 +22,7 @@ const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] 
 export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean; sticky?: boolean }) {
   const route = useRoute()
   const { isAdmin } = useAdminRoles()
+  const { helixMotion, setHelixMotion } = useTheme()
   const { scrollY } = useScroll()
   const [scrolled, setScrolled] = useState(false)
   useMotionValueEvent(scrollY, 'change', (y) => setScrolled(y > 32))
@@ -32,7 +34,7 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
       className={`${overlay ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
       style={floating ? { background: 'linear-gradient(180deg, rgba(6,3,13,0.7), transparent)' } : { background: 'var(--bar-bg)', backdropFilter: 'blur(20px)' }}
     >
-      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12">
+      <div className={`mx-auto flex w-full ${route === 'p2p' ? 'max-w-[1440px]' : 'max-w-7xl'} flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-8 lg:px-12`}>
         <Brand tagline="USDC for South Asia" />
 
         {!isLandingDomain() && (
@@ -62,6 +64,21 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
         )}
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-pressed={helixMotion}
+            onClick={() => setHelixMotion(!helixMotion)}
+            title={helixMotion ? 'Pause Helix animation & right glow' : 'Resume Helix animation & glow'}
+            className="inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors"
+            style={{
+              background: helixMotion ? 'rgba(255, 90, 0, 0.14)' : 'var(--fill-2)',
+              border: `1px solid ${helixMotion ? 'rgba(255, 90, 0, 0.45)' : 'var(--border)'}`,
+              color: helixMotion ? '#FF5A00' : 'var(--muted)',
+            }}
+          >
+            {helixMotion ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+            <span className="hidden md:inline">FX {helixMotion ? 'On' : 'Off'}</span>
+          </button>
           <ThemeToggle className="hidden sm:inline-flex" />
           <ThemeToggle compact className="sm:hidden" />
           {isLandingDomain() ? (

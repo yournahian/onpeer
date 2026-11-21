@@ -4,11 +4,14 @@ export type ThemePref = 'dark' | 'light' | 'system'
 export type ResolvedTheme = 'dark' | 'light'
 
 const KEY = 'onpeer-theme'
+const HELIX_KEY = 'onpeer-helix-motion'
 
 type ThemeCtx = {
   pref: ThemePref
   resolved: ResolvedTheme
   setPref: (p: ThemePref) => void
+  helixMotion: boolean
+  setHelixMotion: (v: boolean) => void
 }
 
 // Kept on globalThis so a hot-reloaded copy of this module still finds the provider that is already mounted.
@@ -28,9 +31,18 @@ const readPref = (): ThemePref => {
 const systemTheme = (): ResolvedTheme =>
   window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 
+const readHelix = (): boolean => {
+  try {
+    return localStorage.getItem(HELIX_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [pref, setPrefState] = useState<ThemePref>(readPref)
   const [system, setSystem] = useState<ResolvedTheme>(systemTheme)
+  const [helixMotion, setHelixState] = useState<boolean>(readHelix)
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
@@ -46,6 +58,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#000000' : '#faf9f7')
   }, [resolved])
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-helix', helixMotion ? 'on' : 'off')
+  }, [helixMotion])
+
   const setPref = useCallback((p: ThemePref) => {
     try {
       localStorage.setItem(KEY, p)
@@ -55,7 +71,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setPrefState(p)
   }, [])
 
-  const value = useMemo(() => ({ pref, resolved, setPref }), [pref, resolved, setPref])
+  const setHelixMotion = useCallback((v: boolean) => {
+    try {
+      localStorage.setItem(HELIX_KEY, v ? 'on' : 'off')
+    } catch {
+      /* storage unavailable */
+    }
+    setHelixState(v)
+  }, [])
+
+  const value = useMemo(
+    () => ({ pref, resolved, setPref, helixMotion, setHelixMotion }),
+    [pref, resolved, setPref, helixMotion, setHelixMotion],
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

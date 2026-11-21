@@ -251,8 +251,8 @@ function StackingStepCard({
           background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
           border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
           boxShadow: active
-            ? '0 24px 60px -18px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 90, 0, 0.16)'
-            : '0 16px 40px -16px rgba(0, 0, 0, 0.5)',
+            ? 'var(--glass-shadow), 0 0 0 1px rgba(255, 90, 0, 0.16)'
+            : 'var(--glass-shadow)',
         }}
       >
         <div className="min-w-0 flex-1">
@@ -316,7 +316,7 @@ export function HowItWorks() {
 
         <div className="mt-8 grid items-start gap-10 lg:grid-cols-[1.15fr_0.85fr]">
           {/* Stacking card deck */}
-          <ol className="relative h-[540px] overflow-hidden">
+          <ol className="relative -mx-8 -mt-6 h-[580px] overflow-hidden px-8 pt-6">
             {STEPS.map((s, i) => (
               <StackingStepCard key={s.title} step={s} index={i} active={active === i} progress={scrollYProgress} />
             ))}
@@ -327,7 +327,7 @@ export function HowItWorks() {
             <div
               className="glass relative flex min-h-[380px] flex-col items-center justify-between overflow-hidden rounded-[2rem] p-8"
               style={{
-                boxShadow: '0 28px 70px -22px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border)',
+                boxShadow: 'var(--glass-shadow), 0 0 0 1px var(--border)',
               }}
             >
               <div

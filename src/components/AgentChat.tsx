@@ -7,7 +7,7 @@ import { ChatThread } from '@/components/chat/ChatThread'
 /** Floating assistant: always on screen except on the dedicated assistant page. */
 export function AgentChat({ route }: { route: string }) {
   const [open, setOpen] = useState(false)
-  const { items, health, provider, setProvider, reset } = useAgentContext()
+  const { items, reset } = useAgentContext()
   const onPage = route === 'assistant'
 
   useEffect(() => {
@@ -55,21 +55,6 @@ export function AgentChat({ route }: { route: string }) {
             <h2 className="display text-base font-semibold">Assistant</h2>
           </div>
           <div className="flex items-center gap-1">
-            {health.state === 'ready' && health.providers.length > 1 && (
-              <select
-                aria-label="AI provider"
-                value={provider ?? health.active ?? ''}
-                onChange={(e) => setProvider(e.target.value)}
-                className="rounded-lg bg-transparent px-2 py-1 text-xs font-semibold outline-none"
-                style={{ border: '1px solid var(--border)' }}
-              >
-                {health.providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            )}
             {items.length > 0 && (
               <button onClick={reset} aria-label="Clear chat" className="flex size-9 items-center justify-center rounded-full hover:bg-[var(--fill-3)]">
                 <RotateCcw className="size-4" />

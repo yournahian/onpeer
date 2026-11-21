@@ -5,7 +5,7 @@ import { useAccount, usePublicClient } from 'wagmi'
 import { keccak256, toBytes } from 'viem'
 import { ConnectKitButton } from 'connectkit'
 import { toast } from 'sonner'
-import { AlertTriangle, Loader2, Lock, ShieldCheck, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, Lock, ShieldCheck, X } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
@@ -137,6 +137,7 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
   const [publicTerms, setPublicTerms] = useState('')
   const [minTaker, setMinTaker] = useState(0)
   const [sealing, setSealing] = useState(false)
+  const [step, setStep] = useState<1 | 2 | 3>(1)
 
   const country = COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0]
   const methods = methodsForCountry(country.code)
@@ -179,17 +180,24 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
     ? holderName.trim().length >= 2 && details.trim().length >= 2
     : details.trim().length > 0
 
-  const ready =
-    !switchesLoading &&
+  const step1Ready =
+    !blocked &&
+    !buyAdBlocked &&
     priceE6 > 0n &&
     totalRaw > 0n &&
     minRaw > 0n &&
     maxRaw > 0n &&
-    bits.length > 0 &&
-    ttlHours >= 1 &&
-    ttlHours <= 168 &&
+    minRaw <= maxRaw &&
+    maxRaw <= totalRaw &&
+    (balance === undefined || requiredUsdc <= balance)
+
+  const step2Ready = bits.length > 0 && ttlHours >= 1 && ttlHours <= 168
+
+  const ready =
+    !switchesLoading &&
+    step1Ready &&
+    step2Ready &&
     !problem &&
-    !blocked &&
     (!isSell || sellDetailsReady)
 
   const toggle = (bit: number) =>
@@ -276,356 +284,466 @@ function PostAdForm({ onDone }: { onDone: () => void }) {
     }
   }
 
+  const stepTitles = [
+    { n: 1 as const, label: 'Market & Price' },
+    { n: 2 as const, label: 'Payment & Rules' },
+    { n: 3 as const, label: 'Details & Confirm' },
+  ]
+
   return (
     <div className="space-y-4">
-      <div role="tablist" className="grid grid-cols-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-1">
-        {[
-          { v: SIDE_SELL, label: 'Sell USDC (Lock Escrow)' },
-          { v: SIDE_BUY, label: 'Buy USDC' },
-        ].map((o) => {
-          const active = side === o.v
+      {/* 3-Step Wizard Progress Indicator */}
+      <div className="grid grid-cols-3 gap-2">
+        {stepTitles.map((s) => {
+          const active = step === s.n
+          const done = step > s.n
           return (
             <button
-              key={o.v}
+              key={s.n}
               type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setSide(o.v)}
-              className={`min-h-10 rounded-md text-xs font-bold transition-colors sm:text-sm ${
-                active ? 'bg-[#FF5A00] text-[#FFFFFF]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+              onClick={() => {
+                if (s.n === 1) setStep(1)
+                else if (s.n === 2 && step1Ready) setStep(2)
+                else if (s.n === 3 && step1Ready && step2Ready) setStep(3)
+              }}
+              className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                active
+                  ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                  : done
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
               }`}
             >
-              {o.label}
+              <span
+                className={`p2p-mono flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                  active
+                    ? 'bg-[#FF5A00] text-white'
+                    : done
+                      ? 'bg-emerald-500 text-white'
+                      : 'border border-[var(--p2p-border)] text-[var(--p2p-muted)]'
+                }`}
+              >
+                {done ? <Check className="size-3" /> : s.n}
+              </span>
+              <span className="truncate">{s.label}</span>
             </button>
           )
         })}
       </div>
 
-      <div>
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-          Fiat Market
-        </span>
-        <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Currency">
-          {COUNTRIES.map((c) => {
-            const active = c.code === countryCode
-            return (
-              <button
-                key={c.code}
-                type="button"
-                onClick={() => {
-                  setCountryCode(c.code)
-                  setBits([])
-                }}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  active
-                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-                }`}
-              >
-                <CountryFlag code={c.code} size={14} />
-                {c.currency}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Price per 1 USDC ({country.currency})
-          </span>
-          <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
-            <input
-              inputMode="decimal"
-              value={price}
-              onChange={decimalInput(setPrice, 4)}
-              placeholder="0.00"
-              className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
-            />
-            <span className="text-xs font-bold text-[var(--p2p-muted)]">{country.currency}</span>
+      {/* ================= STEP 1: MARKET & PRICING ================= */}
+      {step === 1 && (
+        <div className="space-y-4">
+          <div role="tablist" className="grid grid-cols-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-1">
+            {[
+              { v: SIDE_SELL, label: 'Sell USDC (Lock Escrow)' },
+              { v: SIDE_BUY, label: 'Buy USDC' },
+            ].map((o) => {
+              const active = side === o.v
+              return (
+                <button
+                  key={o.v}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setSide(o.v)}
+                  className={`min-h-10 rounded-md text-xs font-bold transition-colors sm:text-sm ${
+                    active ? 'bg-[#FF5A00] text-[#FFFFFF]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                  }`}
+                >
+                  {o.label}
+                </button>
+              )
+            })}
           </div>
-        </label>
 
-        <label className="block">
-          <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            <span>{isSell ? 'USDC to Lock' : 'Total Buy Target'}</span>
-            {balance !== undefined && (
-              <span className="p2p-mono normal-case text-[#FF5A00]">Bal: {formatUsdcAmount(balance)}</span>
-            )}
-          </span>
-          <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
-            <input
-              inputMode="decimal"
-              value={total}
-              onChange={decimalInput(setTotal, 6)}
-              placeholder="100.00"
-              className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
-            />
-            <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
-              <TokenUSDC variant="branded" size={14} /> USDC
+          <div>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              Fiat Market
             </span>
+            <div className="flex gap-1.5 overflow-x-auto pb-1" role="group" aria-label="Currency">
+              {COUNTRIES.map((c) => {
+                const active = c.code === countryCode
+                return (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => {
+                      setCountryCode(c.code)
+                      setBits([])
+                    }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    <CountryFlag code={c.code} size={14} />
+                    {c.currency}
+                  </button>
+                )
+              })}
+            </div>
           </div>
-        </label>
-      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Min Order (USDC)
-          </span>
-          <input
-            inputMode="decimal"
-            value={min}
-            onChange={decimalInput(setMin, 6)}
-            placeholder="10"
-            className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Max Order (USDC)
-          </span>
-          <input
-            inputMode="decimal"
-            value={max}
-            onChange={decimalInput(setMax, 6)}
-            placeholder="500"
-            className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
-          />
-        </label>
-      </div>
-
-      <div>
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-          Accepted Payment Methods
-        </span>
-        <div className="flex flex-wrap gap-2">
-          {methods.map((m) => {
-            const active = bits.includes(m.bit)
-            return (
-              <button
-                key={m.bit}
-                type="button"
-                aria-pressed={active}
-                onClick={() => toggle(m.bit)}
-                className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  active
-                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
-                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-                }`}
-                style={{ borderLeft: '3px solid #FF5A00' }}
-              >
-                {m.name}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Payment Window
-          </span>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[15, 30, 45, 60].map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setWindowMin(m)}
-                className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                  windowMin === m
-                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-                }`}
-              >
-                {m}m
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Ad Expiry (TTL)
-          </span>
-          <div className="grid grid-cols-4 gap-1.5">
-            {TTL_OPTIONS.map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => setTtlHours(h)}
-                className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
-                  ttlHours === h
-                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-                }`}
-              >
-                {ttlLabel(h).split(' ')[0]}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-          Counterparty Requirement
-        </span>
-        <div className="flex flex-wrap gap-1.5">
-          {MIN_TAKER_OPTIONS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              onClick={() => setMinTaker(n)}
-              className={`p2p-mono rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                minTaker === n
-                  ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-              }`}
-            >
-              {n === 0 ? 'Anyone' : `${n}+ trades`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {useSealedVault ? (
-        <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A00]">
-              <Lock className="size-3.5" /> Encrypted Vault Details (Mode 2 Auto-Reveal)
-            </span>
-            <AppLink to="/privacy" className="text-[11px] font-semibold text-[#FF5A00] underline">
-              Operator encryption notice
-            </AppLink>
-          </div>
-          <p className="text-[11px] text-[var(--p2p-muted)]">
-            Your account number is encrypted offchain (AES-256-GCM) and revealed only to an active order&apos;s buyer
-            and arbiter. Only the ciphertext hash goes onchain.
-          </p>
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-              Account Holder Full Name (Matched Against KYC)
-            </span>
-            <input
-              value={holderName}
-              onChange={(e) => setHolderName(e.target.value.slice(0, 80))}
-              placeholder="Full name on your bank / mobile wallet"
-              className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-              <span>Receiving Account / UPI / Wallet Number</span>
-              <span className="p2p-mono normal-case">{details.length}/400</span>
-            </span>
-            <textarea
-              value={details}
-              onChange={(e) => setDetails(e.target.value.slice(0, 400))}
-              rows={2}
-              placeholder="e.g. bKash Personal 01XXXXXXXXX or name@okaxis"
-              className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-              <span>Public Maker Terms (Optional — Never Put Account Numbers Here)</span>
-              <span className="p2p-mono normal-case">
-                {detailBytes}/{DETAILS_MAX_BYTES}B
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Price per 1 USDC ({country.currency})
               </span>
-            </span>
-            <input
-              value={publicTerms}
-              onChange={(e) => setPublicTerms(e.target.value)}
-              placeholder="e.g. Send from verified personal account only; no remarks"
-              className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
-            />
-          </label>
-        </div>
-      ) : (
-        <label className="block">
-          <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            <span>{isSell ? 'Receiving Account Details' : 'Terms / Note for Sellers (Optional)'}</span>
-            <span className="p2p-mono normal-case">
-              {detailBytes}/{DETAILS_MAX_BYTES}B
-            </span>
-          </span>
-          <textarea
-            value={details}
-            onChange={(e) => setDetails(e.target.value)}
-            rows={2}
-            placeholder={
-              isSell
-                ? 'e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi'
-                : 'e.g. Instant payment from verified account'
-            }
-            className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
-          />
-        </label>
-      )}
+              <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+                <input
+                  inputMode="decimal"
+                  value={price}
+                  onChange={decimalInput(setPrice, 4)}
+                  placeholder="0.00"
+                  className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
+                />
+                <span className="text-xs font-bold text-[var(--p2p-muted)]">{country.currency}</span>
+              </div>
+            </label>
 
-      <div className="space-y-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-[var(--p2p-muted)]">Listing fee (per ad, non-refundable)</span>
-          <span className="p2p-mono font-bold text-[#FF5A00]">
-            Listing fee {formatUsdcAmount(listingFee)} USDC
-          </span>
-        </div>
-        <div className="flex items-start gap-2.5 border-t border-[var(--p2p-border)] pt-2 text-[var(--p2p-muted)]">
-          {account?.merchant ? (
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
-          ) : (
-            <Lock className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+            <label className="block">
+              <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                <span>{isSell ? 'USDC to Lock' : 'Total Buy Target'}</span>
+                {balance !== undefined && (
+                  <span className="p2p-mono normal-case text-[#FF5A00]">Bal: {formatUsdcAmount(balance)}</span>
+                )}
+              </span>
+              <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+                <input
+                  inputMode="decimal"
+                  value={total}
+                  onChange={decimalInput(setTotal, 6)}
+                  placeholder="100.00"
+                  className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
+                />
+                <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
+                  <TokenUSDC variant="branded" size={14} /> USDC
+                </span>
+              </div>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Min Order (USDC)
+              </span>
+              <input
+                inputMode="decimal"
+                value={min}
+                onChange={decimalInput(setMin, 6)}
+                placeholder="10"
+                className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Max Order (USDC)
+              </span>
+              <input
+                inputMode="decimal"
+                value={max}
+                onChange={decimalInput(setMax, 6)}
+                placeholder="500"
+                className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
+              />
+            </label>
+          </div>
+
+          {(problem || blocked) && (
+            <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{blocked ?? problem}</span>
+            </div>
           )}
-          <span>
-            {isSell
-              ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc)} USDC (${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC escrow + ${formatUsdcAmount(listingFee)} USDC listing fee). Refreshing ads & trading are free.`
-              : account?.merchant
-                ? `Verified Merchant active — ${formatUsdcAmount(listingFee)} USDC listing fee pulled on creation; refreshing & trades are free.`
-                : `Buy Ads require Merchant Margin >= 100 USDC or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee)} USDC listing fee.`}
-          </span>
-        </div>
-      </div>
 
-      {(problem || blocked) && (
-        <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <span>{blocked ?? problem}</span>
+          <button
+            type="button"
+            disabled={!step1Ready}
+            onClick={() => setStep(2)}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next: Payment &amp; Rules <ArrowRight className="size-4" />
+          </button>
         </div>
       )}
 
-      {isConnected ? (
-        <button
-          type="button"
-          disabled={!ready || busy || sealing}
-          onClick={() => void submit()}
-          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {(busy || sealing) && <Loader2 className="size-4 animate-spin" />}
-          {sealing
-            ? 'Encrypting Details in Vault...'
-            : pendingKey === 'approve'
-              ? 'Approve USDC in Wallet...'
-              : busy
-                ? 'Confirming in Wallet...'
-                : isSell
-                  ? `Lock ${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC (+${formatUsdcAmount(listingFee)} Fee) & Post`
-                  : `Post Buy Ad (${formatUsdcAmount(listingFee)} USDC Fee)`}
-        </button>
-      ) : (
-        <ConnectKitButton.Custom>
-          {({ show }) => (
+      {/* ================= STEP 2: PAYMENT & RULES ================= */}
+      {step === 2 && (
+        <div className="space-y-4">
+          <div>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              Accepted Payment Methods ({country.name})
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {methods.map((m) => {
+                const active = bits.includes(m.bit)
+                return (
+                  <button
+                    key={m.bit}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => toggle(m.bit)}
+                    className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                    style={{ borderLeft: '3px solid #FF5A00' }}
+                  >
+                    {m.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Payment Window
+              </span>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[15, 30, 45, 60].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setWindowMin(m)}
+                    className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                      windowMin === m
+                        ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    {m}m
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Ad Expiry (TTL)
+              </span>
+              <div className="grid grid-cols-4 gap-1.5">
+                {TTL_OPTIONS.map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => setTtlHours(h)}
+                    className={`p2p-mono rounded-lg border py-2 text-xs font-semibold transition-colors ${
+                      ttlHours === h
+                        ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    {ttlLabel(h).split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+              Counterparty Requirement
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {MIN_TAKER_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setMinTaker(n)}
+                  className={`p2p-mono rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    minTaker === n
+                      ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                      : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                  }`}
+                >
+                  {n === 0 ? 'Anyone' : `${n}+ trades`}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 pt-1">
             <button
               type="button"
-              onClick={show}
-              className="min-h-11 w-full rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] hover:opacity-90"
+              onClick={() => setStep(1)}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
             >
-              Connect Wallet
+              <ArrowLeft className="size-4" /> Back
             </button>
+            <button
+              type="button"
+              disabled={!step2Ready}
+              onClick={() => setStep(3)}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next: Details &amp; Confirm <ArrowRight className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ================= STEP 3: DETAILS & CONFIRM ================= */}
+      {step === 3 && (
+        <div className="space-y-4">
+          {useSealedVault ? (
+            <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A00]">
+                  <Lock className="size-3.5" /> Encrypted Vault Details (Mode 2 Auto-Reveal)
+                </span>
+                <AppLink to="/privacy" className="text-[11px] font-semibold text-[#FF5A00] underline">
+                  Operator encryption notice
+                </AppLink>
+              </div>
+              <p className="text-[11px] text-[var(--p2p-muted)]">
+                Your account number is encrypted offchain (AES-256-GCM) and revealed only to an active order&apos;s buyer
+                and arbiter. Only the ciphertext hash goes onchain.
+              </p>
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Account Holder Full Name (Matched Against KYC)
+                </span>
+                <input
+                  value={holderName}
+                  onChange={(e) => setHolderName(e.target.value.slice(0, 80))}
+                  placeholder="Full name on your bank / mobile wallet"
+                  className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  <span>Receiving Account / UPI / Wallet Number</span>
+                  <span className="p2p-mono normal-case">{details.length}/400</span>
+                </span>
+                <textarea
+                  value={details}
+                  onChange={(e) => setDetails(e.target.value.slice(0, 400))}
+                  rows={2}
+                  placeholder="e.g. bKash Personal 01XXXXXXXXX or name@okaxis"
+                  className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  <span>Public Maker Terms (Optional — Never Put Account Numbers Here)</span>
+                  <span className="p2p-mono normal-case">
+                    {detailBytes}/{DETAILS_MAX_BYTES}B
+                  </span>
+                </span>
+                <input
+                  value={publicTerms}
+                  onChange={(e) => setPublicTerms(e.target.value)}
+                  placeholder="e.g. Send from verified personal account only; no remarks"
+                  className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
+                />
+              </label>
+            </div>
+          ) : (
+            <label className="block">
+              <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                <span>{isSell ? 'Receiving Account Details' : 'Terms / Note for Sellers (Optional)'}</span>
+                <span className="p2p-mono normal-case">
+                  {detailBytes}/{DETAILS_MAX_BYTES}B
+                </span>
+              </span>
+              <textarea
+                value={details}
+                onChange={(e) => setDetails(e.target.value)}
+                rows={2}
+                placeholder={
+                  isSell
+                    ? 'e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi'
+                    : 'e.g. Instant payment from verified account'
+                }
+                className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
+              />
+            </label>
           )}
-        </ConnectKitButton.Custom>
+
+          <div className="space-y-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--p2p-muted)]">Ad Summary</span>
+              <span className="p2p-mono font-bold text-[var(--p2p-ink)]">
+                {isSell ? 'SELL' : 'BUY'} {total || '0'} USDC @ {price || '0'} {country.currency}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--p2p-muted)]">Listing fee (per ad, non-refundable)</span>
+              <span className="p2p-mono font-bold text-[#FF5A00]">
+                Listing fee {formatUsdcAmount(listingFee)} USDC
+              </span>
+            </div>
+            <div className="flex items-start gap-2.5 border-t border-[var(--p2p-border)] pt-2 text-[var(--p2p-muted)]">
+              {account?.merchant ? (
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+              ) : (
+                <Lock className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+              )}
+              <span>
+                {isSell
+                  ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc)} USDC (${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC escrow + ${formatUsdcAmount(listingFee)} USDC listing fee). Refreshing ads & trading are free.`
+                  : account?.merchant
+                    ? `Verified Merchant active — ${formatUsdcAmount(listingFee)} USDC listing fee pulled on creation; refreshing & trades are free.`
+                    : `Buy Ads require Merchant Margin >= 100 USDC or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee)} USDC listing fee.`}
+              </span>
+            </div>
+          </div>
+
+          {(problem || blocked) && (
+            <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>{blocked ?? problem}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-[auto_1fr] gap-2.5">
+            <button
+              type="button"
+              disabled={busy || sealing}
+              onClick={() => setStep(2)}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] hover:border-[#FF5A00] disabled:opacity-40"
+            >
+              <ArrowLeft className="size-4" /> Back
+            </button>
+            {isConnected ? (
+              <button
+                type="button"
+                disabled={!ready || busy || sealing}
+                onClick={() => void submit()}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
+              >
+                {(busy || sealing) && <Loader2 className="size-4 animate-spin" />}
+                {sealing
+                  ? 'Encrypting Details in Vault...'
+                  : pendingKey === 'approve'
+                    ? 'Approve USDC in Wallet...'
+                    : busy
+                      ? 'Confirming in Wallet...'
+                      : isSell
+                        ? `Lock ${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} USDC (+${formatUsdcAmount(listingFee)} Fee) & Post`
+                        : `Post Buy Ad (${formatUsdcAmount(listingFee)} USDC Fee)`}
+              </button>
+            ) : (
+              <ConnectKitButton.Custom>
+                {({ show }) => (
+                  <button
+                    type="button"
+                    onClick={show}
+                    className="min-h-11 w-full rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] hover:opacity-90"
+                  >
+                    Connect Wallet
+                  </button>
+                )}
+              </ConnectKitButton.Custom>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

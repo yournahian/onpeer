@@ -310,6 +310,13 @@ body {
   max-height: 900px;
   background: radial-gradient(circle, var(--aurora-a), transparent 68%);
   animation: drift-a 26s ease-in-out infinite alternate;
+  transition: opacity 0.35s ease;
+}
+:root[data-helix='off'] .aurora-a,
+:root[data-helix='off'] .aurora-b,
+:root[data-helix='off'] .aurora-c {
+  opacity: 0;
+  animation: none;
 }
 .aurora-b {
   bottom: -24%;

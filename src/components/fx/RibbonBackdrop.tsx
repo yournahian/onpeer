@@ -17,6 +17,7 @@ const PRIMARY: Record<Theme, [string, string, string]> = {
 const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xfaf9f7 }
 
 const currentTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+const isHelixActive = (): boolean => document.documentElement.dataset.helix !== 'off'
 
 /**
  * Real 3D background for Swap and Bridge: a tight row of thick, rounded blocks in
@@ -28,10 +29,12 @@ const currentTheme = (): Theme => (document.documentElement.dataset.theme === 'l
  */
 export function RibbonBackdrop() {
   const hostRef = useRef<HTMLDivElement>(null)
+  const animRef = useRef({ raf: 0, simTime: 0, lastNow: 0 })
 
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
+    const anim = animRef.current
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
@@ -40,7 +43,7 @@ export function RibbonBackdrop() {
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.0
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.type = THREE.PCFShadowMap
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
     renderer.domElement.style.display = 'block'
@@ -138,26 +141,27 @@ export function RibbonBackdrop() {
     }
     const applyTheme = () => {
       state.theme = currentTheme()
+      const active = isHelixActive()
       state.stops = PRIMARY[state.theme].map((c) => new THREE.Color(c))
+      rimR.intensity = active ? 45 : 0
+      bloom.strength = active ? 0.4 : 0
       if (state.theme === 'dark') {
         // Opaque page colour so bloom works, identical to the page background.
         renderer.setClearColor(PAGE_BG.dark, 1)
         ambient.intensity = 0.12
         hemi.intensity = 0.4
         dustMat.color.set(0xffb380)
-        dustMat.opacity = 0.55
+        dustMat.opacity = active ? 0.55 : 0.15
       } else {
         // Transparent: the page's own light background shows through.
         renderer.setClearColor(PAGE_BG.light, 0)
         ambient.intensity = 0.35
         hemi.intensity = 0.7
         dustMat.color.set(0xff5a00)
-        dustMat.opacity = 0.35
+        dustMat.opacity = active ? 0.35 : 0.1
       }
     }
     applyTheme()
-    const themeObserver = new MutationObserver(applyTheme)
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 
     const dummy = new THREE.Object3D()
     const tmp = new THREE.Color()
@@ -207,15 +211,23 @@ export function RibbonBackdrop() {
       camera.updateProjectionMatrix()
       state.halfView = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.position.z * camera.aspect
     }
-    const ro = new ResizeObserver(resize)
+    const ro = new ResizeObserver(() => {
+      resize()
+      if (reducedMotion || !isHelixActive()) {
+        layout(anim.simTime)
+        render()
+      }
+    })
     ro.observe(host)
     resize()
 
-    const clock = new THREE.Clock()
-    let raf = 0
-    const frame = () => {
-      const time = clock.getElapsedTime()
-      layout(time)
+    const stepFrame = () => {
+      anim.raf = 0
+      const now = performance.now()
+      const dt = Math.min(0.1, (now - anim.lastNow) / 1000)
+      anim.lastNow = now
+      anim.simTime += dt
+      layout(anim.simTime)
       const p = dustGeo.attributes.position as THREE.BufferAttribute
       for (let i = 0; i < DUST; i++) {
         let x = p.getX(i) - 0.002
@@ -224,20 +236,46 @@ export function RibbonBackdrop() {
       }
       p.needsUpdate = true
       render()
-      raf = requestAnimationFrame(frame)
+      if (!reducedMotion && isHelixActive()) {
+        anim.raf = requestAnimationFrame(stepFrame)
+      }
     }
 
-    if (reducedMotion) {
-      layout(0)
-      render()
-    } else {
-      frame()
+    const syncMotion = () => {
+      applyTheme()
+      if (reducedMotion || !isHelixActive()) {
+        if (anim.raf) {
+          cancelAnimationFrame(anim.raf)
+          anim.raf = 0
+        }
+        layout(anim.simTime)
+        render()
+      } else if (!anim.raf) {
+        anim.lastNow = performance.now()
+        anim.raf = requestAnimationFrame(stepFrame)
+      }
     }
+
+    const onThemeChange = () => {
+      applyTheme()
+      if (reducedMotion || !isHelixActive()) {
+        layout(anim.simTime)
+        render()
+      }
+    }
+    const themeObs = new MutationObserver(onThemeChange)
+    themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+
+    const helixObserver = new MutationObserver(syncMotion)
+    helixObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-helix'] })
+
+    syncMotion()
 
     return () => {
-      cancelAnimationFrame(raf)
+      if (anim.raf) cancelAnimationFrame(anim.raf)
       ro.disconnect()
-      themeObserver.disconnect()
+      themeObs.disconnect()
+      helixObserver.disconnect()
       geometry.dispose()
       material.dispose()
       dustGeo.dispose()

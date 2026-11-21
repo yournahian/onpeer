@@ -14,7 +14,7 @@ export function Countries() {
         </h2>
       </Reveal>
       <div
-        className="marquee-wrap relative mt-10 overflow-hidden py-2"
+        className="marquee-wrap relative -my-10 mt-10 overflow-x-clip py-12"
         style={{
           WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',
           maskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)',

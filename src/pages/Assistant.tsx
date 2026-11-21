@@ -18,10 +18,8 @@ const CAPABILITIES = [
 
 export default function AssistantPage() {
   const { address, isConnected } = useAccount()
-  const { items, health, provider, setProvider, reset } = useAgentContext()
+  const { items, health, reset } = useAgentContext()
   const ready = health.state === 'ready' && health.configured
-  const activeLabel =
-    health.state === 'ready' ? (health.providers.find((p) => p.id === (provider ?? health.active))?.label ?? null) : null
 
   return (
     <div className="min-h-dvh">
@@ -70,27 +68,12 @@ export default function AssistantPage() {
                       : health.state === 'offline'
                         ? 'Backend offline'
                         : ready
-                          ? `Online${activeLabel ? ` · ${activeLabel}` : ''}`
+                          ? 'Online'
                           : 'Needs setup'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {health.state === 'ready' && health.providers.length > 1 && (
-                  <select
-                    aria-label="AI provider"
-                    value={provider ?? health.active ?? ''}
-                    onChange={(e) => setProvider(e.target.value)}
-                    className="rounded-lg bg-transparent px-2 py-1.5 text-xs font-semibold outline-none"
-                    style={{ border: '1px solid var(--border)' }}
-                  >
-                    {health.providers.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
                 {items.length > 0 && (
                   <button
                     onClick={reset}

@@ -66,7 +66,7 @@ export function Header({
     <>
       {/* Desktop Sub-Header (>= 768px) */}
       <div className="hidden border-b border-[var(--p2p-border)] bg-[var(--p2p-bar)] backdrop-blur-xl md:block">
-        <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center justify-between gap-2 px-4 sm:px-8 lg:px-12">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2 px-4 sm:px-8 lg:px-10">
           <nav className="flex items-center gap-1 overflow-x-auto" aria-label="P2P sections">
             {tabs.map((t) => {
               const active = tab === t.id

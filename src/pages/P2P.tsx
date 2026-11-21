@@ -127,7 +127,7 @@ export default function P2PPage() {
           />
         )}
 
-        <main className="mx-auto w-full max-w-7xl space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-12">
+        <main className="mx-auto w-full max-w-[1440px] space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10">
           {!needsOnboarding && blocked && (
             <div
               role="status"

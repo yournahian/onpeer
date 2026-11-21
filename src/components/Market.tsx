@@ -415,8 +415,8 @@ export function Market({
           </div>
 
           {/* Center Group: Combined Amount + Fiat Dropdown & Payment Method Dropdown */}
-          <div className="flex min-w-0 flex-1 items-center gap-2 lg:justify-center">
-            <div ref={currencyRef} className="relative flex min-w-[175px] flex-1 max-w-[270px]">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 lg:justify-center">
+            <div ref={currencyRef} className="relative flex min-w-[235px] flex-1 max-w-[360px]">
               <div className="p2p-input flex min-h-11 w-full items-center rounded-lg">
                 <input
                   inputMode="decimal"
@@ -488,7 +488,7 @@ export function Market({
               )}
             </div>
 
-            <div ref={paymentRef} className="relative min-w-[140px] flex-1 max-w-[190px]">
+            <div ref={paymentRef} className="relative min-w-[165px] flex-1 max-w-[225px]">
               <button
                 type="button"
                 onClick={() => {
