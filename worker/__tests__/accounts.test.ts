@@ -266,6 +266,35 @@ describe('Step 5: P2P Accounts, Consent Gate, Email Double Opt-In & PII Deletion
     const afterVerify = (await getRes!.json()) as { emailVerified: boolean; emailOptIn: boolean }
     expect(afterVerify).toEqual(expect.objectContaining({ emailVerified: true, emailOptIn: true }))
 
+    // 3b. Once verified, changing or removing email is blocked with 403 email_locked
+    const changeVerifiedRes = await handleAccountRoutes(
+      new Request('https://app.onpeer.xyz/api/account', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ email: 'other@example.com', consent: true }),
+      }),
+      env,
+      db,
+      '/account',
+      { nowMs: db.nowMs + 12_000 },
+    )
+    expect(changeVerifiedRes?.status).toBe(403)
+    expect(await changeVerifiedRes!.json()).toEqual({ error: 'email_locked' })
+
+    const clearVerifiedRes = await handleAccountRoutes(
+      new Request('https://app.onpeer.xyz/api/account', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({ email: '', consent: true }),
+      }),
+      env,
+      db,
+      '/account',
+      { nowMs: db.nowMs + 13_000 },
+    )
+    expect(clearVerifiedRes?.status).toBe(403)
+    expect(await clearVerifiedRes!.json()).toEqual({ error: 'email_locked' })
+
     // 4. One-click unsubscribe disables opt-in and skips pending outbox rows
     db.outbox.push({ wallet: TEST_WALLET, status: 'pending' })
     const unsubTok = decodeURIComponent(capturedUnsubUrl.split('#unsubscribe=')[1])

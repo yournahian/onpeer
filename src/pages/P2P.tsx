@@ -22,7 +22,7 @@ const parseId = (raw: string | null): bigint | null => (raw && /^\d+$/.test(raw)
 
 export default function P2PPage() {
   const { address, isConnected } = useAccount()
-  const { isSignedIn, profile, isLoading: accountLoading } = useP2pAccount()
+  const { isSignedIn, profile, isLoading: accountLoading, refetch: refetchAccount } = useP2pAccount()
   const arbiter = useArbiter()
   const backupArbiter = useBackupArbiter()
   const { blocked } = useEligibility()
@@ -86,18 +86,24 @@ export default function P2PPage() {
 
     if (verifyTok) {
       verifyEmailToken(verifyTok)
-        .then(() => toast.success('Email verified — P2P notifications are now active.'))
+        .then(() => {
+          toast.success('Email verified — P2P access and notifications are now active.')
+          void refetchAccount()
+        })
         .catch(() => toast.error('This email verification link is invalid or has expired.'))
     } else if (unsubTok) {
       unsubscribeEmailToken(unsubTok)
-        .then(() => toast.success('Unsubscribed from P2P email alerts.'))
+        .then(() => {
+          toast.success('Unsubscribed from P2P email alerts.')
+          void refetchAccount()
+        })
         .catch(() => toast.error('This unsubscribe link is invalid or has expired.'))
     } else if (kycReturn) {
       toast.info('Returned from Didit — syncing your verification status.')
     }
-  }, [])
+  }, [refetchAccount])
 
-  const accountReady = isConnected && isSignedIn && !!profile?.exists
+  const accountReady = isConnected && isSignedIn && !!profile?.exists && !!profile?.emailVerified
   const needsOnboarding = !accountReady && !(isArbiter && orderId !== null)
 
   return (
@@ -168,10 +174,15 @@ export default function P2PPage() {
               ) : (
                 <>
                   <div className="p2p-card rounded-xl px-5 py-4">
-                    <h1 className="text-base font-bold text-[var(--p2p-ink)]">Complete P2P Account Setup to Continue</h1>
+                    <h1 className="text-base font-bold text-[var(--p2p-ink)]">
+                      {profile?.exists && !profile?.emailVerified
+                        ? 'Verify Your Email to Unlock P2P'
+                        : 'Complete P2P Account Setup to Continue'}
+                    </h1>
                     <p className="mt-1 text-xs text-[var(--p2p-muted)]">
-                      Sign in with your wallet and save your P2P profile below to unlock the P2P Trade marketplace,
-                      My Ads, My Orders, and encrypted order chat.
+                      {profile?.exists && !profile?.emailVerified
+                        ? 'Confirm the verification link sent to your email (check Spam/All Mail if missing) to unlock the P2P Trade marketplace, My Ads, My Orders, and encrypted order chat. If you entered the wrong email, you can edit and save it below before verifying.'
+                        : 'Sign in with your wallet, save your P2P profile, and verify your email below to unlock the P2P Trade marketplace, My Ads, My Orders, and encrypted order chat.'}
                     </p>
                   </div>
                   <AccountSetup />

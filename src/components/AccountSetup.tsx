@@ -266,30 +266,38 @@ function AccountSetupForm({
                   </button>
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => void handleClearEmail()}
-                className="text-[var(--p2p-muted)] underline hover:text-[var(--p2p-ink)]"
-              >
-                Remove
-              </button>
+              {!profile.emailVerified && (
+                <button
+                  type="button"
+                  onClick={() => void handleClearEmail()}
+                  className="text-[var(--p2p-muted)] underline hover:text-[var(--p2p-ink)]"
+                >
+                  Remove
+                </button>
+              )}
             </div>
           )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            maxLength={254}
-            placeholder={
-              profile?.hasEmail
-                ? `Replace ${profile.emailMasked ?? 'saved email'}...`
-                : 'you@example.com (encrypted at rest)'
-            }
-            className="p2p-input h-10 w-full rounded-lg px-3 text-xs text-[var(--p2p-ink)]"
-          />
+          {profile?.emailVerified ? (
+            <div className="flex h-10 items-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs text-[var(--p2p-muted)]">
+              Verified email is locked. To change your email, please contact support.
+            </div>
+          ) : (
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              maxLength={254}
+              placeholder={
+                profile?.hasEmail
+                  ? `Fix / replace ${profile.emailMasked ?? 'saved email'}...`
+                  : 'you@example.com (required to unlock P2P)'
+              }
+              className="p2p-input h-10 w-full rounded-lg px-3 text-xs text-[var(--p2p-ink)]"
+            />
+          )}
           <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--p2p-ink)]">
             <input
               type="checkbox"

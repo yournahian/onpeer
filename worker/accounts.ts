@@ -371,6 +371,9 @@ export async function handleAccountRoutes(
 
     if (body.email !== undefined) {
       if (body.email === null || body.email === '') {
+        if (keepVerified) {
+          return json(403, { error: 'email_locked' })
+        }
         nextEmailEnc = null
         keepVerified = false
         emailOptIn = false
@@ -380,6 +383,9 @@ export async function handleAccountRoutes(
           return json(400, { error: 'invalid_email' })
         }
         if (normEmail !== currentPlainEmail) {
+          if (keepVerified) {
+            return json(403, { error: 'email_locked' })
+          }
           nextEmailEnc = await sealText(env, normEmail, emailAad(wallet))
           keepVerified = false
           emailToVerify = normEmail

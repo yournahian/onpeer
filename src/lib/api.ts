@@ -16,6 +16,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_display_name: 'Display name must be 1–48 plain characters.',
   invalid_country: 'Choose a valid country code.',
   invalid_email: 'Enter a valid email address.',
+  email_locked: 'Your verified email cannot be changed here. To change your email, please contact support.',
   invalid_or_expired_token: 'This verification link is invalid or has expired.',
   no_email_set: 'Save an email address first.',
   nonce_expired: 'Sign-in challenge expired. Please try again.',

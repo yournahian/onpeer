@@ -65,7 +65,15 @@ export function AccountPanel() {
   }
 
   if (!account || !ESCROW_ADDRESS) {
-    return <div className="p2p-card h-56 animate-pulse rounded-xl" />
+    return (
+      <div className="space-y-5">
+        <AccountSetup />
+        <KycPanel />
+        <div className="p2p-card rounded-xl px-5 py-6 text-xs text-[var(--p2p-muted)]">
+          Loading onchain trust tier and merchant margin from Arc Testnet...
+        </div>
+      </div>
+    )
   }
 
   const escrow = ESCROW_ADDRESS
