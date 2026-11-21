@@ -6,13 +6,21 @@ export const CHAIN_ID = arcTestnet.id
 
 const DEFAULT_ESCROW_ADDRESS = '0xf719ebbc5080aee09e38909764b897e0bf01a9b0' as Address
 const DEFAULT_DEPLOY_BLOCK = 72902228n
+const DEPRECATED_ESCROWS = new Set([
+  '0x271b519275380f60fa100d0cff101800893a8fa0', // v1 (deprecated)
+  '0x22f28c481f2842c5a68028944a4f3fa7ebdf58de', // v2.0 (deprecated)
+  '0xb257939153215ae7eb5a02057877b1ae5f5b04e5', // earlier draft (deprecated)
+])
 
 const rawAddress = (import.meta.env.VITE_P2P_ESCROW_ADDRESS as string | undefined)?.trim()
 export const ESCROW_ADDRESS: Address | undefined =
-  rawAddress && /^0x[0-9a-fA-F]{40}$/.test(rawAddress) ? (rawAddress as Address) : DEFAULT_ESCROW_ADDRESS
+  rawAddress && /^0x[0-9a-fA-F]{40}$/.test(rawAddress) && !DEPRECATED_ESCROWS.has(rawAddress.toLowerCase())
+    ? (rawAddress as Address)
+    : DEFAULT_ESCROW_ADDRESS
 
 const rawBlock = (import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined)?.trim()
-export const DEPLOY_BLOCK = rawBlock && /^\d+$/.test(rawBlock) ? BigInt(rawBlock) : DEFAULT_DEPLOY_BLOCK
+const parsedBlock = rawBlock && /^\d+$/.test(rawBlock) ? BigInt(rawBlock) : 0n
+export const DEPLOY_BLOCK = parsedBlock >= DEFAULT_DEPLOY_BLOCK ? parsedBlock : DEFAULT_DEPLOY_BLOCK
 
 export const MAX_OPEN_ORDERS = 5
 export const GRACE_SECONDS = 5 * 60

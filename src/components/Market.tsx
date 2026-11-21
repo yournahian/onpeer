@@ -375,9 +375,9 @@ export function Market({
           DESKTOP CONTROL & FILTER BAR (>= 768px)
          ===================================================================== */}
       <section className="p2p-card relative z-20 hidden rounded-xl p-4 md:block">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 lg:flex-nowrap">
           {/* Left Group: Buy / Sell Segmented Toggle + Asset Chip */}
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex shrink-0 items-center gap-2">
             <div
               role="tablist"
               aria-label="Trade direction"
@@ -396,7 +396,7 @@ export function Market({
                       setMode(m)
                       setExpandedId(null)
                     }}
-                    className={`min-h-9 rounded-md px-5 text-sm font-bold transition-colors ${
+                    className={`min-h-9 whitespace-nowrap rounded-md px-3.5 text-xs font-bold transition-colors xl:px-4 xl:text-sm ${
                       active
                         ? 'bg-[#FF5A00] text-[#FFFFFF]'
                         : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
@@ -408,15 +408,15 @@ export function Market({
               })}
             </div>
 
-            <span className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-bold text-[var(--p2p-ink)]">
+            <span className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3 text-xs font-bold text-[var(--p2p-ink)]">
               <TokenUSDC variant="branded" size={16} />
               USDC
             </span>
           </div>
 
           {/* Center Group: Combined Amount + Fiat Dropdown & Payment Method Dropdown */}
-          <div className="flex flex-1 flex-wrap items-center gap-2.5 lg:justify-center">
-            <div ref={currencyRef} className="relative flex min-w-[230px] flex-1 sm:max-w-xs">
+          <div className="flex min-w-0 flex-1 items-center gap-2 lg:justify-center">
+            <div ref={currencyRef} className="relative flex min-w-[175px] flex-1 max-w-[270px]">
               <div className="p2p-input flex min-h-11 w-full items-center rounded-lg">
                 <input
                   inputMode="decimal"
@@ -488,7 +488,7 @@ export function Market({
               )}
             </div>
 
-            <div ref={paymentRef} className="relative min-w-[180px] flex-1 sm:max-w-[210px]">
+            <div ref={paymentRef} className="relative min-w-[140px] flex-1 max-w-[190px]">
               <button
                 type="button"
                 onClick={() => {
@@ -555,15 +555,15 @@ export function Market({
           </div>
 
           {/* Right Action Group */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button
               type="button"
               onClick={triggerRefresh}
               title="Live auto-refresh active (click to refresh now)"
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-xs font-medium text-[var(--p2p-muted)] transition-colors hover:border-[var(--p2p-border-active)] hover:text-[var(--p2p-ink)]"
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2.5 text-xs font-medium text-[var(--p2p-muted)] transition-colors hover:border-[var(--p2p-border-active)] hover:text-[var(--p2p-ink)]"
             >
               <RefreshCw className={`size-3.5 text-[#FF5A00] ${refreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden xl:inline">Auto-refresh</span>
+              <span className="hidden 2xl:inline">Auto-refresh</span>
             </button>
 
             <button
@@ -571,7 +571,7 @@ export function Market({
               aria-pressed={kycOnly}
               onClick={() => setKycOnly((v) => !v)}
               title="Show KYC Verified Advertisers Only"
-              className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+              className={`inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 kycOnly
                   ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
                   : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
@@ -586,7 +586,7 @@ export function Market({
               aria-pressed={merchantsOnly}
               onClick={() => setMerchantsOnly((v) => !v)}
               title="Show Verified Merchants Only (100+ USDC staked)"
-              className={`inline-flex min-h-11 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+              className={`inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
                 merchantsOnly
                   ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
                   : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
@@ -599,7 +599,7 @@ export function Market({
             <button
               type="button"
               onClick={onPostAd}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[#FF5A00] bg-transparent px-3.5 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[var(--p2p-tint)]"
+              className="inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border border-[#FF5A00] bg-transparent px-3 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[var(--p2p-tint)]"
             >
               <Plus className="size-4" /> Post Ad
             </button>
