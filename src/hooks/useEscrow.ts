@@ -14,7 +14,7 @@ export type AdWithId = Ad & { id: bigint }
 export type OrderWithId = Order & { id: bigint }
 
 const PAGE = 200n
-const POLL = 8_000
+const POLL = 15_000
 
 const base = { address: ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
 const enabled = !!ESCROW_ADDRESS
@@ -43,14 +43,14 @@ export function useAds() {
     ...base,
     functionName: 'getAds',
     args: [offset, PAGE],
-    query: { enabled: enabled && total > 0n, refetchInterval: POLL },
+    query: { enabled: enabled && total > 0n, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const ads = useMemo<AdWithId[]>(() => {
     const data = list.data
     if (!data) return []
     return data.map((ad, i) => ({ ...ad, id: offset + BigInt(i) + 1n })).reverse()
   }, [list.data, offset])
-  return { ads, isLoading: enabled && (count.isLoading || list.isLoading), total }
+  return { ads, isLoading: enabled && ads.length === 0 && (count.isLoading || list.isLoading), total }
 }
 
 export function useOrders() {
@@ -65,14 +65,14 @@ export function useOrders() {
     ...base,
     functionName: 'getOrders',
     args: [offset, PAGE],
-    query: { enabled: enabled && total > 0n, refetchInterval: POLL },
+    query: { enabled: enabled && total > 0n, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   const orders = useMemo<OrderWithId[]>(() => {
     const data = list.data
     if (!data) return []
     return data.map((o, i) => ({ ...o, id: offset + BigInt(i) + 1n })).reverse()
   }, [list.data, offset])
-  return { orders, isLoading: enabled && (count.isLoading || list.isLoading) }
+  return { orders, isLoading: enabled && orders.length === 0 && (count.isLoading || list.isLoading) }
 }
 
 export function useOrder(id: bigint | undefined) {
@@ -114,7 +114,7 @@ export function useMyAccount() {
     ...base,
     functionName: 'getAccount',
     args: [address as Address],
-    query: { enabled: enabled && !!address, refetchInterval: POLL },
+    query: { enabled: enabled && !!address, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
   return res.data
 }

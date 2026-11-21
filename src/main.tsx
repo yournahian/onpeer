@@ -25,7 +25,15 @@ import { installShareSync } from './lib/share'
 import { ThemeProvider, useTheme } from './lib/theme'
 import './index.css'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 2,
+      staleTime: 10_000,
+    },
+  },
+})
 
 function Themed() {
   const { resolved } = useTheme()

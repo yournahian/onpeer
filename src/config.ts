@@ -35,13 +35,13 @@ export const config = createConfig({
   chains: [...supportedChains, mainnet], // mainnet needed for ENS resolution
   connectors: [injected()],
   transports: {
-    [arcTestnet.id]: http(),
-    [sepolia.id]: http(),
-    [baseSepolia.id]: http(),
-    [arbitrumSepolia.id]: http(),
-    [optimismSepolia.id]: http(),
-    [avalancheFuji.id]: http(),
-    [polygonAmoy.id]: http(),
+    [arcTestnet.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2, timeout: 15_000 }),
+    [sepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
+    [baseSepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
+    [arbitrumSepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
+    [optimismSepolia.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
+    [avalancheFuji.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
+    [polygonAmoy.id]: http(undefined, { batch: { wait: 50 }, retryCount: 2 }),
     [mainnet.id]: http(), // ENS resolution uses mainnet
   },
 })
