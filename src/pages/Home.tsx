@@ -14,6 +14,7 @@ import { Features } from '@/components/home/Features'
 import { Countries } from '@/components/home/Countries'
 import { Faq } from '@/components/home/Faq'
 import { FinalCta } from '@/components/home/FinalCta'
+import { useLenis } from '@/hooks/useLenis'
 
 const PRODUCTS = [
   {
@@ -43,6 +44,7 @@ const PRODUCTS = [
 ] as const
 
 export default function Home() {
+  useLenis()
   return (
     <div className="min-h-dvh">
       <SiteBar overlay />
