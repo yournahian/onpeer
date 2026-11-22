@@ -223,7 +223,7 @@ function StackingStepCard({
   // Every unstacked card moves up together at the same rate until it hits its stackedY,
   // so there is never an empty gap between the active card and the next card below it.
   const restY = index * 188
-  const stackedY = index * 12
+  const stackedY = index * 6
   const totalTravel = 3 * 176
 
   const y = useTransform(progress, (v) => {
@@ -251,8 +251,8 @@ function StackingStepCard({
           background: 'var(--panel-solid)',
           border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
           boxShadow: active
-            ? 'var(--glass-shadow), 0 0 0 1px rgba(255, 90, 0, 0.16)'
-            : 'var(--glass-shadow)',
+            ? '0 0 0 1px rgba(255, 90, 0, 0.16)'
+            : 'none',
         }}
       >
         <div className="min-w-0 flex-1">
