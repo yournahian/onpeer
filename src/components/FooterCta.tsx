@@ -1,16 +1,9 @@
-import { motion } from 'framer-motion'
-import { ArrowLeftRight, ArrowRight, Play, Repeat, ShieldCheck, Waypoints } from 'lucide-react'
+import { ArrowRight, Bot, ShieldCheck } from 'lucide-react'
 import { COUNTRIES } from '@/lib/p2p'
 import { AppLink } from '@/components/AppLink'
 import { CountryFlag } from '@/components/logos'
 import { Reveal } from '@/components/fx/Reveal'
 import { BackgroundSlot } from '@/components/fx/BackgroundSlot'
-
-const PILLS = [
-  { to: '/p2p', label: 'P2P market', icon: ArrowLeftRight },
-  { to: '/swap', label: 'Swap', icon: Repeat },
-  { to: '/bridge', label: 'Bridge', icon: Waypoints },
-] as const
 
 const outline = {
   WebkitTextStroke: '12px #0a0712',
@@ -92,27 +85,14 @@ export function FooterCta() {
           </p>
         </Reveal>
 
-        {/* white pills, like the reference's feature list */}
-        <div className="relative z-20 mt-10 flex flex-wrap justify-center gap-3 lg:absolute lg:bottom-16 lg:right-10 lg:mt-0 lg:flex-col lg:items-stretch">
-          {PILLS.map((p, i) => (
-            <motion.div key={p.to} initial={{ opacity: 0, x: 24 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: 0.15 + i * 0.1 }}>
-              <AppLink to={p.to} className="stage-pill group flex min-w-[176px] items-center gap-3 rounded-xl px-4 py-3 text-xs font-extrabold uppercase tracking-wide transition-transform hover:-translate-y-0.5">
-                <p.icon className="size-4" style={{ color: '#12081f' }} /> {p.label}
-              </AppLink>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* assistant teaser, like the video card */}
+        {/* assistant teaser */}
         <Reveal className="absolute right-5 top-6 z-20 hidden w-[330px] sm:right-10 lg:block" delay={0.2}>
           <AppLink to="/assistant" className="glass lift flex items-center gap-4 rounded-2xl p-3 pr-5">
             <span
               className="relative flex size-[76px] shrink-0 items-center justify-center overflow-hidden rounded-xl"
               style={{ background: 'linear-gradient(135deg, #e04e00, #FF5A00)' }}
             >
-              <span className="flex size-10 items-center justify-center rounded-full bg-white/95 text-[#FF5A00]">
-                <Play className="size-5 translate-x-px fill-current" />
-              </span>
+              <Bot className="size-9 text-white" />
             </span>
             <span className="text-sm font-medium leading-snug text-white">
               Be the first to try the AI assistant
