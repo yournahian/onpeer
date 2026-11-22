@@ -47,7 +47,7 @@ export default function Home() {
   useLenis()
   return (
     <div className="min-h-dvh">
-      <SiteBar sticky={false} />
+      <SiteBar sticky={false} transparent />
       <PlanetHero />
       <main className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-8 sm:pt-14 lg:px-12">
         <LiveStats />

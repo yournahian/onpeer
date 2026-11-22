@@ -47,9 +47,8 @@ function FxSwitch({
       aria-label={active ? 'Disable 3D background motion' : 'Enable 3D background motion'}
       title={active ? '3D Motion: On (click to pause)' : '3D Motion: Off (click to resume)'}
       onClick={onToggle}
-      className={`group inline-flex items-center rounded-full font-semibold transition-colors hover:border-[var(--border-strong)] ${
-        compact ? 'h-8 gap-1.5 pl-2.5 pr-1 text-[11px]' : 'h-9 gap-2 pl-3 pr-1.5 text-xs'
-      }`}
+      className={`group inline-flex items-center rounded-full font-semibold transition-colors hover:border-[var(--border-strong)] ${compact ? 'h-8 gap-1.5 pl-2.5 pr-1 text-[11px]' : 'h-9 gap-2 pl-3 pr-1.5 text-xs'
+        }`}
       style={{
         background: 'var(--fill-2)',
         border: '1px solid var(--border)',
@@ -62,9 +61,8 @@ function FxSwitch({
       />
       <span className="tracking-wide">FX</span>
       <span
-        className={`relative flex items-center rounded-full p-0.5 transition-colors duration-200 ${
-          compact ? 'h-4 w-7' : 'h-5 w-9'
-        }`}
+        className={`relative flex items-center rounded-full p-0.5 transition-colors duration-200 ${compact ? 'h-4 w-7' : 'h-5 w-9'
+          }`}
         style={{
           background: active ? 'var(--accent-bg)' : 'var(--fill-3)',
           boxShadow: active ? '0 2px 10px -2px var(--accent-glow)' : 'inset 0 1px 2px rgba(0,0,0,0.25)',
@@ -82,7 +80,7 @@ function FxSwitch({
 }
 
 /** Top bar across all pages: desktop single-row nav, mobile 2-row header with hamburger menu. */
-export function SiteBar({ overlay = false, sticky = true, fixed = false }: { overlay?: boolean; sticky?: boolean; fixed?: boolean }) {
+export function SiteBar({ overlay = false, sticky = true, transparent = false }: { overlay?: boolean; sticky?: boolean; transparent?: boolean }) {
   const route = useRoute()
   const { isAdmin } = useAdminRoles()
   const { helixMotion, setHelixMotion } = useTheme()
@@ -115,18 +113,14 @@ export function SiteBar({ overlay = false, sticky = true, fixed = false }: { ove
   // Landing / Home uses PlanetHero rather than RibbonBackdrop, so FX switch is omitted there.
   const showFx = !landing && route !== 'home'
   // Over the full-bleed hero the bar is transparent and always dark-styled; it turns solid once you scroll or open the menu.
-  const floating = overlay && !scrolled && !menuOpen
+  const floating = (overlay || transparent) && !scrolled && !menuOpen
   const links = isAdmin ? [...LINKS, { to: '/admin', route: 'admin' as Route, label: 'Admin', icon: ShieldCheck }] : LINKS
   const maxW = route === 'p2p' ? 'max-w-[1440px]' : 'max-w-7xl'
 
   return (
-    <>
-      {(overlay || fixed) && (
-        <div className="h-[60px] shrink-0 md:h-[60px]" aria-hidden />
-      )}
-      <header
+    <header
       ref={headerRef}
-      className={`${overlay || fixed ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
+      className={`${overlay ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
       style={
         floating
           ? { background: 'linear-gradient(180deg, rgba(6,3,13,0.7), transparent)' }
@@ -295,6 +289,5 @@ export function SiteBar({ overlay = false, sticky = true, fixed = false }: { ove
 
       <div className="h-px transition-opacity duration-300" style={{ background: 'var(--border)', opacity: floating ? 0 : 1 }} />
     </header>
-    </>
   )
 }
