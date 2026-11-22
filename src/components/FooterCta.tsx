@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, ShieldCheck } from 'lucide-react'
+import { ArrowRight, Bot, Repeat, ShieldCheck, Waypoints } from 'lucide-react'
 import { COUNTRIES } from '@/lib/p2p'
 import { AppLink } from '@/components/AppLink'
 import { CountryFlag } from '@/components/logos'
