@@ -31,9 +31,14 @@ import { parseUnitsExact } from '@/onchain-money'
 import { useListingFee, usePrivacySwitches, useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 import { AppLink } from '@/components/AppLink'
-import { CountryFlag } from '@/components/logos'
+import { CountryFlag, MethodLogo } from '@/components/logos'
 import { useEligibility } from '@/hooks/useEligibility'
 import { BackendApiError } from '@/lib/api'
+import {
+  formatSavedMethodsBlock,
+  useSavedPaymentMethods,
+  type SavedPaymentMethod,
+} from '@/hooks/useAccount'
 import { useVaultActions } from '@/hooks/useVault'
 
 const safe = (v: string): bigint => {
@@ -140,6 +145,7 @@ function PostAdForm({
   const { sealDetails, bindAdDetails } = useVaultActions()
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
   const { blocked, account } = useEligibility()
+  const { methods: savedMethods } = useSavedPaymentMethods()
 
   const [side, setSide] = useState<number>(initialSide ?? SIDE_SELL)
   const [countryCode, setCountryCode] = useState(
@@ -220,8 +226,39 @@ function PostAdForm({
     !problem &&
     (!isSell || sellDetailsReady)
 
-  const toggle = (bit: number) =>
-    setBits((b) => (b.includes(bit) ? b.filter((x) => x !== bit) : [...b, bit]))
+  const toggle = (bit: number) => {
+    const nextBits = bits.includes(bit) ? bits.filter((x) => x !== bit) : [...bits, bit]
+    setBits(nextBits)
+
+    if (isSell) {
+      // Pick the first saved payment method for each selected bit (Binance-style auto-fill)
+      const picked: SavedPaymentMethod[] = []
+      for (const b of nextBits) {
+        const match = savedMethods.find((sm) => sm.methodBit === b)
+        if (match) picked.push(match)
+      }
+      if (picked.length > 0) {
+        setHolderName(picked[0]!.holderName)
+        const block = formatSavedMethodsBlock(picked, !useSealedVault)
+        setDetails(useSealedVault ? block.slice(0, 400) : block.slice(0, DETAILS_MAX_BYTES))
+        const firstNotes = picked.find((p) => p.notes)?.notes
+        if (firstNotes && useSealedVault && !publicTerms.trim()) {
+          setPublicTerms(firstNotes.slice(0, DETAILS_MAX_BYTES))
+        }
+      }
+    }
+  }
+
+  const applySavedMethod = (item: SavedPaymentMethod) => {
+    setHolderName(item.holderName)
+    const matchingForOtherBits = bits
+      .filter((b) => b !== item.methodBit)
+      .map((b) => savedMethods.find((sm) => sm.methodBit === b))
+      .filter((x): x is SavedPaymentMethod => !!x)
+    const combined = [item, ...matchingForOtherBits]
+    const block = formatSavedMethodsBlock(combined, !useSealedVault)
+    setDetails(useSealedVault ? block.slice(0, 400) : block.slice(0, DETAILS_MAX_BYTES))
+  }
 
   const submit = async () => {
     const escrow = ESCROW_ADDRESS
@@ -500,20 +537,27 @@ function PostAdForm({
             <div className="flex flex-wrap gap-2">
               {methods.map((m) => {
                 const active = bits.includes(m.bit)
+                const savedForBit = savedMethods.find((sm) => sm.methodBit === m.bit)
                 return (
                   <button
                     key={m.bit}
                     type="button"
                     aria-pressed={active}
                     onClick={() => toggle(m.bit)}
-                    className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
                       active
                         ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
                         : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                     }`}
                     style={{ borderLeft: '3px solid #FF5A00' }}
                   >
-                    {m.name}
+                    <MethodLogo name={m.name} size={14} />
+                    <span>{m.name}</span>
+                    {savedForBit && (
+                      <span className="p2p-mono rounded bg-[#FF5A00]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#FF5A00]">
+                        ••{savedForBit.accountNumber.slice(-4)}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -611,6 +655,41 @@ function PostAdForm({
       {/* ================= STEP 3: DETAILS & CONFIRM ================= */}
       {step === 3 && (
         <div className="space-y-4">
+          {isSell && savedMethods.some((sm) => bits.includes(sm.methodBit)) && (
+            <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-bold uppercase tracking-wider text-[#FF5A00]">
+                  Auto-Filled from Saved Payment Methods
+                </span>
+                <span className="text-[var(--p2p-muted)]">Tap to switch account</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {savedMethods
+                  .filter((sm) => bits.includes(sm.methodBit))
+                  .map((sm) => {
+                    const included = details.includes(sm.accountNumber)
+                    return (
+                      <button
+                        key={sm.id}
+                        type="button"
+                        onClick={() => applySavedMethod(sm)}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                          included
+                            ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
+                            : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
+                        }`}
+                      >
+                        <MethodLogo name={sm.methodName} size={14} />
+                        <span>{sm.methodName}</span>
+                        <span className="p2p-mono text-[11px] opacity-90">••{sm.accountNumber.slice(-4)}</span>
+                        {included && <Check className="size-3" />}
+                      </button>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
+
           {useSealedVault ? (
             <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3.5">
               <div className="flex flex-wrap items-center justify-between gap-2">

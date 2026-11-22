@@ -54,7 +54,7 @@ export function Header({
     { id: 'market', label: 'P2P Trade' },
     { id: 'ads', label: 'My Ads' },
     { id: 'orders', label: 'My Orders', badge: activeOrderCount },
-    { id: 'account', label: 'Account & Margin' },
+    { id: 'account', label: 'Account' },
     ...(showArbiter ? [{ id: 'arbiter' as const, label: 'Disputes', badge: disputeCount }] : []),
   ]
 

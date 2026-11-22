@@ -75,13 +75,26 @@ export default function AdminPage() {
     () => orders.filter((o) => o.status === STATUS.PAID).sort((a, b) => Number(a.paidAt - b.paidAt)),
     [orders],
   )
+  const resolvedAll = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          o.status === STATUS.RESOLVED_BUYER ||
+          o.status === STATUS.RESOLVED_SELLER ||
+          o.status === STATUS.SETTLED,
+      ),
+    [orders],
+  )
+  const resolved = useMemo(() => resolvedAll.slice(0, 6), [resolvedAll])
+
   const parties = useMemo(
     () => [
       ...disputed.flatMap((o) => [o.buyer, o.seller]),
       ...paidCases.flatMap((o) => [o.buyer, o.seller]),
+      ...resolvedAll.flatMap((o) => [o.buyer, o.seller]),
       ...(lookedOrder ? [lookedOrder.buyer, lookedOrder.seller] : []),
     ],
-    [disputed, paidCases, lookedOrder],
+    [disputed, paidCases, resolvedAll, lookedOrder],
   )
   const accounts = useAccounts(parties)
 
@@ -101,19 +114,6 @@ export default function AdminPage() {
     for (const a of ads) if (a.side === 0 && !a.closed) held += a.available
     return { active, completed, settled, held }
   }, [orders, ads])
-
-  const resolved = useMemo(
-    () =>
-      orders
-        .filter(
-          (o) =>
-            o.status === STATUS.RESOLVED_BUYER ||
-            o.status === STATUS.RESOLVED_SELLER ||
-            o.status === STATUS.SETTLED,
-        )
-        .slice(0, 6),
-    [orders],
-  )
 
   if (!ESCROW_ADDRESS) return (<><SiteBar /><Gate title="Contract not connected" body="The escrow contract address is not configured for this app." /></>)
   if (!roles.isConnected) return (<><SiteBar /><Gate title="Admin panel" body="Connect the owner or arbiter wallet to review disputes and manage the marketplace." connect /></>)
@@ -331,7 +331,16 @@ export default function AdminPage() {
           )}
 
           {tab === 'accounts' && <AccountsTab canWrite={roles.isOwner || roles.isArbiter} canRevokeKyc={roles.isOwner} />}
-          {tab === 'filings' && <FilingsTab />}
+          {tab === 'filings' && (
+            <FilingsTab
+              orders={orders}
+              ordersLoading={isLoading}
+              accounts={accounts}
+              isPrimaryArbiter={roles.isArbiter}
+              isBackupArbiter={roles.isBackupArbiter}
+              viewer={roles.address}
+            />
+          )}
           {tab === 'controls' && <ControlsTab isOwner={roles.isOwner} />}
           {tab === 'ai' && <AiProviderTab />}
         </div>

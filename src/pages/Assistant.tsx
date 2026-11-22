@@ -56,7 +56,7 @@ export default function AssistantPage() {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <SiteBar fixed />
+      <SiteBar />
 
       <div className="relative z-10 flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
 

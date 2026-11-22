@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { apiFetch, BackendApiError } from '@/lib/api'
 
 export interface DisputeFiling {
@@ -94,30 +95,27 @@ export function useFileDispute(orderId: bigint | undefined) {
 }
 
 // ---- useAdminDisputeQueue: GET /api/admin/disputes ----
-export function useAdminDisputeQueue(statusFilter: 'open' | 'taken' | 'resolved' = 'open') {
-  const [filings, setFilings] = useState<DisputeFiling[]>([])
-  const [hasMore, setHasMore] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+export function useAdminDisputeQueue(
+  statusFilter: 'open' | 'taken' | 'resolved' = 'open',
+  enabled = true,
+) {
+  const query = useQuery({
+    queryKey: ['admin-dispute-queue', statusFilter],
+    queryFn: () => apiFetch<AdminQueueResult>(`/admin/disputes?status=${statusFilter}&limit=50`),
+    enabled,
+    staleTime: 10_000,
+  })
 
-  const load = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    try {
-      const res = await apiFetch<AdminQueueResult>(`/admin/disputes?status=${statusFilter}&limit=50`)
-      setFilings(res.filings)
-      setHasMore(res.hasMore)
-    } catch (err) {
-      setError(err instanceof BackendApiError ? err.message : 'Failed to load dispute queue.')
-    } finally {
-      setIsLoading(false)
-    }
-  }, [statusFilter])
-
-  useEffect(() => {
-    // eslint-disable-next-line react/set-state-in-effect
-    void load()
-  }, [load])
-
-  return { filings, hasMore, isLoading, error, reload: load }
+  return {
+    filings: query.data?.filings ?? [],
+    hasMore: query.data?.hasMore ?? false,
+    isLoading: enabled && query.isLoading,
+    error:
+      query.error instanceof BackendApiError
+        ? query.error.message
+        : query.error
+          ? 'Failed to load dispute queue.'
+          : null,
+    reload: query.refetch,
+  }
 }

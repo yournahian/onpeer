@@ -356,14 +356,16 @@ export function OrderChat({
         </div>
       )}
 
-      {/* Anti-Scam Pinned Banner */}
+      {/* Anti-Scam & Name-Mismatch Liability Pinned Banner */}
       <div
-        className="mx-3 mt-2.5 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2 text-xs text-[var(--p2p-ink)]"
+        className="mx-3 mt-2.5 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3 py-2 text-xs text-[var(--p2p-ink)]"
         style={{ borderLeft: '3px solid #FF5A00' }}
       >
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[var(--p2p-accent-ink)]" />
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#FF5A00]" />
         <p className="text-[11px] leading-relaxed">
-          <strong className="text-[var(--p2p-accent-ink)]">Security Notice:</strong> Never trust SMS payment alerts. Always verify inside your actual banking or mobile payment app before releasing USDC.
+          <strong className="text-[#FF5A00]">Name Mismatch Warning:</strong> Do <strong>NOT</strong> transfer fiat or
+          release USDC if the sender/recipient account name mismatches (no third-party payments). If you still proceed,{' '}
+          <strong>OnPeer is not responsible or liable</strong>.
         </p>
       </div>
 
@@ -373,6 +375,30 @@ export function OrderChat({
           <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-1 text-[11px] text-[var(--p2p-muted)]">
             Order #{orderId.toString()} created{amountText ? ` • ${amountText} USDC locked in Arc escrow` : ''}
           </span>
+        </div>
+
+        {/* Automatic Official Anti-Triangulation & Name-Mismatch System Message */}
+        <div className="rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
+          <div className="flex items-center gap-1.5 font-bold text-[#FF5A00]">
+            <ShieldAlert className="size-4 shrink-0" />
+            <span>OnPeer System • Mandatory Name-Match &amp; Anti-Scam Policy</span>
+          </div>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] text-[var(--p2p-ink)]">
+            <li>
+              <strong>Buyers:</strong> Send payment strictly from your own personal account. If the seller&apos;s
+              account name mismatches, <strong>do NOT transfer</strong>.
+            </li>
+            <li>
+              <strong>Sellers:</strong> Always verify inside your actual banking/mobile app (never trust SMS or chat
+              screenshots). If money arrives from a third-party or <strong>mismatched name</strong>,{' '}
+              <strong>do NOT release USDC</strong> — open a dispute immediately.
+            </li>
+            <li className="font-semibold text-[#FF5A00]">
+              Liability Notice: If you transfer funds or release USDC despite a name mismatch or third-party payment,
+              you act entirely at your own risk and OnPeer will not be responsible or liable for any loss, chargeback,
+              or bank freeze.
+            </li>
+          </ul>
         </div>
 
         {/* Automatic Official Dispute System Message (2-hour deadline + 2-Phone Raw Video Proof Rule) */}

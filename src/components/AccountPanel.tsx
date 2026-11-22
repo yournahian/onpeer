@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useAccount } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
-import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, CreditCard, Loader2, ShieldCheck, UserCheck } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
@@ -18,9 +18,13 @@ import {
 import { formatUnitsFixed, parseUnitsExact } from '@/onchain-money'
 import { useDebts, useNow, useUsdcAllowance, useUsdcBalance } from '@/hooks/useEscrow'
 import { useEligibility } from '@/hooks/useEligibility'
+import { useSavedPaymentMethods } from '@/hooks/useAccount'
 import { useTx } from '@/hooks/useTx'
 import { AccountSetup } from '@/components/AccountSetup'
 import { KycPanel } from '@/components/KycPanel'
+import { PaymentMethodsPanel } from '@/components/PaymentMethodsPanel'
+
+type AccountSubTab = 'payments' | 'profile' | 'margin'
 
 const parse = (v: string): bigint => {
   try {
@@ -33,14 +37,31 @@ const parse = (v: string): bigint => {
 export function AccountPanel() {
   const { address, isConnected } = useAccount()
   const { account, blocked, kyc, kycRequired } = useEligibility()
+  const { methods: savedMethods } = useSavedPaymentMethods()
   const debts = useDebts(address)
   const balance = useUsdcBalance()
   const allowance = useUsdcAllowance()
   const now = useNow()
   const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
+  const [subTab, setSubTab] = useState<AccountSubTab>(() => {
+    if (typeof window !== 'undefined') {
+      const hp = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      const sp = new URLSearchParams(window.location.search)
+      if (hp.has('verify_email') || hp.has('unsubscribe') || hp.has('kyc_return') || sp.has('kyc_return')) {
+        return 'profile'
+      }
+    }
+    return 'payments'
+  })
   const [deposit, setDeposit] = useState('')
   const [withdraw, setWithdraw] = useState('')
   const [repay, setRepay] = useState('')
+
+  const subTabs: { id: AccountSubTab; label: string; icon: typeof CreditCard; badge?: number }[] = [
+    { id: 'payments', label: 'Payment Methods', icon: CreditCard, badge: savedMethods.length },
+    { id: 'profile', label: 'Profile & KYC', icon: UserCheck },
+    { id: 'margin', label: 'Margin & Tier', icon: ShieldCheck },
+  ]
 
   if (!isConnected) {
     return (
@@ -67,6 +88,7 @@ export function AccountPanel() {
   if (!account || !ESCROW_ADDRESS) {
     return (
       <div className="space-y-5">
+        <PaymentMethodsPanel />
         <AccountSetup />
         <KycPanel />
         <div className="p2p-card rounded-xl px-5 py-6 text-xs text-[var(--p2p-muted)]">
@@ -119,8 +141,43 @@ export function AccountPanel() {
 
   return (
     <div className="space-y-5">
-      <AccountSetup />
-      <KycPanel />
+      {/* Sub-navigation: Payment Methods | Profile & KYC | Margin & Tier */}
+      <div
+        role="tablist"
+        aria-label="Account sections"
+        className="flex gap-1.5 overflow-x-auto rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-1.5"
+      >
+        {subTabs.map((t) => {
+          const active = subTab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSubTab(t.id)}
+              className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 text-xs font-bold transition-colors sm:text-sm ${
+                active
+                  ? 'bg-[#FF5A00] text-[#FFFFFF]'
+                  : 'text-[var(--p2p-muted)] hover:bg-[var(--p2p-input-bg)] hover:text-[var(--p2p-ink)]'
+              }`}
+            >
+              <t.icon className="size-4 shrink-0" />
+              <span>{t.label}</span>
+              {!!t.badge && (
+                <span
+                  className={`p2p-mono rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none ${
+                    active ? 'bg-white/25 text-white' : 'bg-[#FF5A00] text-white'
+                  }`}
+                >
+                  {t.badge}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
       {account.totalDebt > 0n && (
         <section className="p2p-card rounded-xl !border-[#FF5A00] p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -177,6 +234,17 @@ export function AccountPanel() {
         </section>
       )}
 
+      {subTab === 'payments' && <PaymentMethodsPanel />}
+
+      {subTab === 'profile' && (
+        <div className="space-y-5">
+          <AccountSetup />
+          <KycPanel />
+        </div>
+      )}
+
+      {subTab === 'margin' && (
+        <div className="space-y-5">
       {/* Merchant Security Margin Card */}
       <section className="p2p-card rounded-xl p-5">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--p2p-border)] pb-4">
@@ -393,6 +461,8 @@ export function AccountPanel() {
           {account.strikes > 0 && ` • Cancellation strikes (24h): ${account.strikes}/3`}
         </p>
       </section>
+        </div>
+      )}
     </div>
   )
 }

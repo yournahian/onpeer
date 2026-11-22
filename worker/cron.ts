@@ -327,12 +327,28 @@ export async function scanChainEvents(
           break
         }
         case 'OrderReleased': {
+          await db
+            .query(
+              `UPDATE public.dispute_filings
+                  SET status = 'settled', closed_at = COALESCE(closed_at, now())
+                WHERE order_id = $1 AND status IN ('open', 'taken')`,
+              [orderId.toString()],
+            )
+            .catch(() => undefined)
           await queueNotification(db, order.buyer, 'order_completed', orderId)
           await queueNotification(db, order.seller, 'order_completed', orderId)
           queued += 2
           break
         }
         case 'OrderCancelled': {
+          await db
+            .query(
+              `UPDATE public.dispute_filings
+                  SET status = 'settled', closed_at = COALESCE(closed_at, now())
+                WHERE order_id = $1 AND status IN ('open', 'taken')`,
+              [orderId.toString()],
+            )
+            .catch(() => undefined)
           await queueNotification(db, order.buyer, 'order_cancelled', orderId)
           await queueNotification(db, order.seller, 'order_cancelled', orderId)
           queued += 2
@@ -348,12 +364,28 @@ export async function scanChainEvents(
           break
         }
         case 'CaseTaken': {
+          await db
+            .query(
+              `UPDATE public.dispute_filings
+                  SET status = 'taken'
+                WHERE order_id = $1 AND status = 'open'`,
+              [orderId.toString()],
+            )
+            .catch(() => undefined)
           await queueNotification(db, order.buyer, 'case_taken', orderId)
           await queueNotification(db, order.seller, 'case_taken', orderId)
           queued += 2
           break
         }
         case 'DisputeResolved': {
+          await db
+            .query(
+              `UPDATE public.dispute_filings
+                  SET status = 'resolved', closed_at = COALESCE(closed_at, now())
+                WHERE order_id = $1 AND status IN ('open', 'taken')`,
+              [orderId.toString()],
+            )
+            .catch(() => undefined)
           await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
           await queueNotification(db, order.seller, 'dispute_resolved', orderId)
           queued += 2

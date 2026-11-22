@@ -35,6 +35,69 @@ export interface UpsertAccountInput {
   consent?: boolean
 }
 
+export interface SavedPaymentMethod {
+  id: string
+  methodBit: number
+  methodName: string
+  holderName: string
+  accountNumber: string
+  bankOrBranch: string
+  notes: string
+  updatedAt: string
+}
+
+export function formatSavedMethodLine(m: SavedPaymentMethod, includeHolder: boolean): string {
+  const bankTag = m.bankOrBranch ? ` (${m.bankOrBranch})` : ''
+  const holderTag = includeHolder && m.holderName ? ` — ${m.holderName}` : ''
+  return `${m.methodName}${bankTag}: ${m.accountNumber}${holderTag}`
+}
+
+export function formatSavedMethodsBlock(methods: SavedPaymentMethod[], includeHolder: boolean): string {
+  return methods.map((m) => formatSavedMethodLine(m, includeHolder)).join('\n')
+}
+
+export function useSavedPaymentMethods() {
+  const { address, isConnected } = useAccount()
+  const session = useBackendSession()
+  const queryClient = useQueryClient()
+
+  const normalizedWallet = address?.toLowerCase() ?? null
+  const isSignedIn = !!(isConnected && normalizedWallet && session && session.wallet === normalizedWallet)
+  const queryKey = ['p2p-payment-methods', normalizedWallet, session?.token ?? null] as const
+
+  const query = useQuery({
+    queryKey,
+    queryFn: async () => {
+      const res = await apiFetch<{ paymentMethods: SavedPaymentMethod[] }>('/account/payment-methods')
+      return res.paymentMethods ?? []
+    },
+    enabled: isSignedIn,
+    staleTime: 30_000,
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: async (next: SavedPaymentMethod[]) => {
+      const res = await apiFetch<{ paymentMethods: SavedPaymentMethod[] }>('/account/payment-methods', {
+        method: 'PUT',
+        body: { paymentMethods: next },
+      })
+      return res.paymentMethods
+    },
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKey, saved)
+    },
+  })
+
+  return {
+    isSignedIn,
+    methods: query.data ?? [],
+    isLoading: query.isLoading,
+    saveMethods: saveMutation.mutateAsync,
+    saving: saveMutation.isPending,
+    refetch: query.refetch,
+  }
+}
+
 export function useP2pAccount() {
   const { address, isConnected } = useAccount()
   const { signMessageAsync } = useSignMessage()

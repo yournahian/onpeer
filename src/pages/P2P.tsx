@@ -121,7 +121,7 @@ export default function P2PPage() {
 
   return (
     <div className="relative min-h-dvh overflow-x-clip">
-      <SiteBar fixed />
+      <SiteBar />
 
       {/* RibbonBackdrop is rendered globally from App.tsx (persistent across routes) */}
 
@@ -138,9 +138,8 @@ export default function P2PPage() {
         )}
 
         <main
-          className={`mx-auto w-full ${
-            orderId !== null ? 'max-w-[1120px]' : 'max-w-[1440px]'
-          } space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10`}
+          className={`mx-auto w-full ${orderId !== null ? 'max-w-[1120px]' : 'max-w-[1440px]'
+            } space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10`}
         >
           {!needsOnboarding && blocked && (
             <div

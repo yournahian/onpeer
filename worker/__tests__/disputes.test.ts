@@ -194,7 +194,7 @@ class DisputeMemoryDb implements Queryable {
         reason_code: String(values[2]),
         text_enc: String(values[3]),
         evidence_blob_ids: values[4] ? (values[4] as string[]) : null,
-        status: 'open',
+        status: typeof values[5] === 'string' ? values[5] : 'open',
         filed_at: new Date().toISOString(),
         closed_at: null,
         delete_after: null,
@@ -202,11 +202,47 @@ class DisputeMemoryDb implements Queryable {
       return { rows: [{ id } as unknown as R], rowCount: 1 }
     }
 
+    // Reconcile distinct open/taken filings
+    if (n.startsWith('SELECT DISTINCT order_id, status FROM public.dispute_filings')) {
+      const seen = new Set<string>()
+      const out: Array<{ order_id: string; status: string }> = []
+      for (const f of this.filings) {
+        if (f.status === 'open' || f.status === 'taken') {
+          const k = `${f.order_id}:${f.status}`
+          if (!seen.has(k)) {
+            seen.add(k)
+            out.push({ order_id: f.order_id, status: f.status })
+          }
+        }
+      }
+      return { rows: out as unknown as R[], rowCount: out.length }
+    }
+
+    // Update dispute filing status onchain sync
+    if (n.startsWith('UPDATE public.dispute_filings SET status = $1')) {
+      const [nextStatus, orderIdStr, prevStatus] = values as [string, string, string]
+      let updated = 0
+      for (const f of this.filings) {
+        if (f.order_id === orderIdStr && f.status === prevStatus) {
+          f.status = nextStatus
+          if (nextStatus === 'resolved' || nextStatus === 'settled') {
+            f.closed_at = f.closed_at ?? new Date().toISOString()
+          }
+          updated++
+        }
+      }
+      return { rows: [], rowCount: updated }
+    }
+
     // Select dispute filings
     if (n.startsWith('SELECT id, order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, filed_at, closed_at FROM public.dispute_filings')) {
       let results = [...this.filings]
       if (n.includes('order_id = $1')) {
         results = results.filter((f) => f.order_id === String(values[0]))
+      } else if (n.includes("status IN ('resolved', 'settled', 'closed')")) {
+        results = results.filter((f) => f.status === 'resolved' || f.status === 'settled' || f.status === 'closed')
+        const limit = Number(values[0])
+        results = results.slice(0, limit)
       } else if (n.includes('status = $1')) {
         results = results.filter((f) => f.status === String(values[0]))
         const limit = Number(values[1])
@@ -450,5 +486,43 @@ describe('disputes — GET /api/admin/disputes', () => {
 
     const res = await handleDisputeRoutes(req, env, db, chain, '/admin/disputes')
     expect(res!.status).toBe(403)
+  })
+
+  it('reconciles open filings into taken and resolved tabs from live onchain order state', async () => {
+    const db = new DisputeMemoryDb()
+    const env = makeEnv()
+    await db.seedFiling(env, '1', BUYER_ACCOUNT.address.toLowerCase(), 'Case taken then resolved.')
+    const auth = await authHeader(ARBITER_ACCOUNT.address, db)
+
+    // 1. Arbiter took case onchain (reviewStartedAt > 0n) -> appears under status=taken
+    const takenChain = makeChain({ order: makeOrder({ reviewStartedAt: 1_795_002_500n }) })
+    const takenRes = await handleDisputeRoutes(
+      new Request('http://localhost/admin/disputes?status=taken', { headers: { Authorization: auth } }),
+      env,
+      db,
+      takenChain,
+      '/admin/disputes',
+    )
+    expect(takenRes!.status).toBe(200)
+    const takenBody = (await takenRes!.json()) as { filings: Array<{ status: string }> }
+    expect(takenBody.filings).toHaveLength(1)
+    expect(takenBody.filings[0]?.status).toBe('taken')
+
+    // 2. Arbiter resolved dispute onchain -> appears under status=resolved
+    await db.seedSession(ARBITER_ACCOUNT.address.slice(2).toLowerCase().padEnd(64, '0'), ARBITER_ACCOUNT.address.toLowerCase())
+    const resolvedChain = makeChain({
+      order: makeOrder({ status: ORDER_STATUS.RESOLVED_BUYER, reviewStartedAt: 1_795_002_500n }),
+    })
+    const resolvedRes = await handleDisputeRoutes(
+      new Request('http://localhost/admin/disputes?status=resolved', { headers: { Authorization: auth } }),
+      env,
+      db,
+      resolvedChain,
+      '/admin/disputes',
+    )
+    expect(resolvedRes!.status).toBe(200)
+    const resolvedBody = (await resolvedRes!.json()) as { filings: Array<{ status: string }> }
+    expect(resolvedBody.filings).toHaveLength(1)
+    expect(resolvedBody.filings[0]?.status).toBe('resolved')
   })
 })

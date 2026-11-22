@@ -55,8 +55,10 @@ import {
 import { useTx } from '@/hooks/useTx'
 import { useEligibility } from '@/hooks/useEligibility'
 import { Sheet } from '@/components/ui'
+import { MethodLogo } from '@/components/logos'
 import { toast } from 'sonner'
 import { BackendApiError } from '@/lib/api'
+import { formatSavedMethodLine, useSavedPaymentMethods, type SavedPaymentMethod } from '@/hooks/useAccount'
 import { useVaultActions } from '@/hooks/useVault'
 
 const safeParse = (v: string, d: number): bigint => {
@@ -78,19 +80,59 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const { blocked, account, kycRequired } = useEligibility()
   const makerKyc = useVerification(ad.maker)
   const { sealDetails } = useVaultActions()
+  const { methods: savedMethods } = useSavedPaymentMethods()
 
   const currency = hexToCurrency(ad.currency)
   const country = countryByCurrency(currency)
   const userBuys = ad.side === SIDE_SELL
   const isSealedBuyAd = !userBuys && ad.detailsMode !== DETAILS_MODE.PLAIN
 
+  const matchingSaved = useMemo(
+    () => savedMethods.filter((m) => (ad.paymentMask & (1 << m.methodBit)) !== 0),
+    [savedMethods, ad.paymentMask],
+  )
+
   const validInitial = initialUsdc && /^\d+(\.\d{1,6})?$/.test(initialUsdc) ? initialUsdc : ''
   const [fiat, setFiat] = useState('')
   const [usdc, setUsdc] = useState(validInitial)
   const [edited, setEdited] = useState<'fiat' | 'usdc'>(validInitial ? 'usdc' : 'fiat')
-  const [holderName, setHolderName] = useState('')
-  const [details, setDetails] = useState('')
+  const [selectedSavedId, setSelectedSavedId] = useState<string | 'manual' | null>(null)
+  const [manualHolderName, setManualHolderName] = useState('')
+  const [manualDetails, setManualDetails] = useState('')
   const [sealing, setSealing] = useState(false)
+
+  const activeSaved: SavedPaymentMethod | null = useMemo(() => {
+    if (userBuys || selectedSavedId === 'manual') return null
+    if (selectedSavedId !== null) {
+      return matchingSaved.find((m) => m.id === selectedSavedId) ?? null
+    }
+    return matchingSaved[0] ?? null
+  }, [userBuys, selectedSavedId, matchingSaved])
+
+  const holderName = activeSaved ? activeSaved.holderName : manualHolderName
+  const details = activeSaved
+    ? formatSavedMethodLine(activeSaved, !isSealedBuyAd).slice(0, isSealedBuyAd ? 400 : DETAILS_MAX_BYTES)
+    : manualDetails
+
+  const setHolderName = (v: string) => {
+    if (activeSaved) {
+      setManualDetails(details)
+      setSelectedSavedId('manual')
+    }
+    setManualHolderName(v)
+  }
+
+  const setDetails = (v: string) => {
+    if (activeSaved) {
+      setManualHolderName(holderName)
+      setSelectedSavedId('manual')
+    }
+    setManualDetails(v)
+  }
+
+  const selectSavedMethod = (item: SavedPaymentMethod) => {
+    setSelectedSavedId(item.id)
+  }
 
   const usdcRaw = useMemo(
     () => (edited === 'fiat' ? usdcFor(safeParse(fiat, 6), ad.priceE6) : safeParse(usdc, 6)),
@@ -224,6 +266,9 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     setHolderName,
     details,
     setDetails,
+    matchingSaved,
+    activeSaved,
+    selectSavedMethod,
     detailBytes,
     usdcRaw,
     fiatRaw,
@@ -622,6 +667,36 @@ export function InlineOrderDrawer({
               </div>
 
               <div className="space-y-2.5">
+                {s.matchingSaved.length > 0 && (
+                  <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-[#FF5A00]">Saved Payment Methods (Auto-Fill)</span>
+                      <span className="text-[var(--p2p-muted)]">Select account</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {s.matchingSaved.map((sm) => {
+                        const selected = s.activeSaved?.id === sm.id
+                        return (
+                          <button
+                            key={sm.id}
+                            type="button"
+                            onClick={() => s.selectSavedMethod(sm)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
+                              selected
+                                ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
+                                : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
+                            }`}
+                          >
+                            <MethodLogo name={sm.methodName} size={13} />
+                            <span>{sm.methodName}</span>
+                            <span className="p2p-mono text-[11px] opacity-90">••{sm.accountNumber.slice(-4)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {s.isSealedBuyAd && (
                   <div>
                     <div className="mb-1 flex items-center justify-between text-xs">

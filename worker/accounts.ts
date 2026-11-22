@@ -65,8 +65,66 @@ function toIsoOrNull(val: string | Date | null | undefined): string | null {
   return val instanceof Date ? val.toISOString() : new Date(val).toISOString()
 }
 
+export interface SavedPaymentMethodItem {
+  id: string
+  methodBit: number
+  methodName: string
+  holderName: string
+  accountNumber: string
+  bankOrBranch: string
+  notes: string
+  updatedAt: string
+}
+
+const MAX_SAVED_PAYMENT_METHODS = 20
+const PM_ID_RE = /^[A-Za-z0-9_-]{1,64}$/
+const CTRL_CHAR_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F<>]/
+
 function emailAad(wallet: `0x${string}`): string {
   return `account:email:${wallet}`
+}
+
+function paymentMethodsAad(wallet: `0x${string}`): string {
+  return `account:pm:${wallet}`
+}
+
+function sanitizeSavedPaymentMethods(raw: unknown, nowIso: string): SavedPaymentMethodItem[] | null {
+  if (!Array.isArray(raw) || raw.length > MAX_SAVED_PAYMENT_METHODS) return null
+  const seenIds = new Set<string>()
+  const out: SavedPaymentMethodItem[] = []
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') return null
+    const e = entry as Record<string, unknown>
+    const id = typeof e.id === 'string' ? e.id.trim() : ''
+    const methodBit = typeof e.methodBit === 'number' && Number.isInteger(e.methodBit) ? e.methodBit : -1
+    const methodName = typeof e.methodName === 'string' ? e.methodName.trim() : ''
+    const holderName = typeof e.holderName === 'string' ? e.holderName.trim() : ''
+    const accountNumber = typeof e.accountNumber === 'string' ? e.accountNumber.trim() : ''
+    const bankOrBranch = typeof e.bankOrBranch === 'string' ? e.bankOrBranch.trim() : ''
+    const notes = typeof e.notes === 'string' ? e.notes.trim() : ''
+
+    if (!PM_ID_RE.test(id) || seenIds.has(id)) return null
+    if (methodBit < 0 || methodBit > 31) return null
+    if (methodName.length < 1 || methodName.length > 48 || CTRL_CHAR_RE.test(methodName)) return null
+    if (holderName.length < 2 || holderName.length > 80 || CTRL_CHAR_RE.test(holderName)) return null
+    if (accountNumber.length < 2 || accountNumber.length > 160 || CTRL_CHAR_RE.test(accountNumber)) return null
+    if (bankOrBranch.length > 120 || CTRL_CHAR_RE.test(bankOrBranch)) return null
+    if (notes.length > 160 || CTRL_CHAR_RE.test(notes)) return null
+
+    seenIds.add(id)
+    out.push({
+      id,
+      methodBit,
+      methodName,
+      holderName,
+      accountNumber,
+      bankOrBranch,
+      notes,
+      updatedAt: nowIso,
+    })
+  }
+  return out
 }
 
 export async function mintEmailVerifyUrl(
@@ -438,6 +496,56 @@ export async function handleAccountRoutes(
     })
   }
 
+  if (req.method === 'GET' && subpath === '/account/payment-methods') {
+    if (!(await checkRateLimit(db, `rl:acct:pm:get:${wallet}`, 60, 60))) {
+      return json(429, { error: 'rate_limited' })
+    }
+    const res = await db.query<{ payment_methods_enc: string | null; deleted_at: string | Date | null }>(
+      `SELECT payment_methods_enc, deleted_at FROM public.accounts WHERE wallet = $1 LIMIT 1`,
+      [wallet],
+    )
+    const row = res.rows[0]
+    if (!row || row.deleted_at || !row.payment_methods_enc) {
+      return json(200, { paymentMethods: [] })
+    }
+    try {
+      const plain = await openText(env, row.payment_methods_enc, paymentMethodsAad(wallet))
+      const parsed = JSON.parse(plain) as unknown
+      return json(200, { paymentMethods: Array.isArray(parsed) ? parsed : [] })
+    } catch {
+      return json(200, { paymentMethods: [] })
+    }
+  }
+
+  if (req.method === 'PUT' && subpath === '/account/payment-methods') {
+    if (!(await checkRateLimit(db, `rl:acct:pm:put:${wallet}`, 20, 60))) {
+      return json(429, { error: 'rate_limited' })
+    }
+    const body = await readJsonBody(req, 32_768)
+    if (!body) return json(400, { error: 'bad_request' })
+
+    const nowIso = new Date(nowMs).toISOString()
+    const sanitized = sanitizeSavedPaymentMethods(body.paymentMethods, nowIso)
+    if (!sanitized) {
+      return json(400, { error: 'invalid_payment_methods' })
+    }
+
+    const enc =
+      sanitized.length > 0 ? await sealText(env, JSON.stringify(sanitized), paymentMethodsAad(wallet)) : null
+
+    await db.query(
+      `INSERT INTO public.accounts (wallet, payment_methods_enc, consent_at, deleted_at)
+       VALUES ($1, $2, now(), NULL)
+       ON CONFLICT (wallet) DO UPDATE
+         SET payment_methods_enc = EXCLUDED.payment_methods_enc,
+             consent_at = COALESCE(public.accounts.consent_at, now()),
+             deleted_at = NULL`,
+      [wallet, enc],
+    )
+    await writeAudit(db, wallet, 'account.payment_methods_saved', `count:${sanitized.length}`)
+    return json(200, { paymentMethods: sanitized })
+  }
+
   if (req.method === 'POST' && subpath === '/account/email/resend') {
     if (!(await checkRateLimit(db, `rl:acct:resend:${wallet}`, 3, 300))) {
       return json(429, { error: 'rate_limited' })
@@ -490,6 +598,7 @@ export async function handleAccountRoutes(
                 email_enc = NULL,
                 email_verified_at = NULL,
                 email_opt_in = false,
+                payment_methods_enc = NULL,
                 kyc_status = CASE WHEN kyc_status = 'approved' THEN 'revoked' ELSE 'none' END,
                 kyc_level = 0,
                 kyc_expires_at = NULL,

@@ -11,6 +11,7 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  FileText,
   Gavel,
   Handshake,
   KeyRound,
@@ -52,8 +53,10 @@ import {
 } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 import { OrderChat } from '@/components/OrderChat'
+import { DisputeFileSheet } from '@/components/DisputeFileSheet'
+import { MethodLogo } from '@/components/logos'
 import { BackendApiError } from '@/lib/api'
-import { useP2pAccount } from '@/hooks/useAccount'
+import { useP2pAccount, useSavedPaymentMethods } from '@/hooks/useAccount'
 import { useOrderVault, useVaultActions, type NameMatchBadgeData } from '@/hooks/useVault'
 
 const DISPUTE_WAIT = 15 * 60
@@ -155,6 +158,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const backupArbiter = useBackupArbiter()
   const { payerProofRequired } = usePrivacySwitches()
   const { isSignedIn, signIn, signingIn } = useP2pAccount()
+  const { methods: savedMethods } = useSavedPaymentMethods()
   const { sealPayerProof } = useVaultActions()
   const { data: messages } = useOrderMessages(order.id)
   const now = useNow()
@@ -170,6 +174,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const [slash, setSlash] = useState(false)
   const [applyBond, setApplyBond] = useState(true)
   const [mobileChatOpen, setMobileChatOpen] = useState(false)
+  const [disputeSheetOpen, setDisputeSheetOpen] = useState(false)
   const [seenMessages, setSeenMessages] = useState(0)
 
   const busy = txBusy || sealingPayer
@@ -842,6 +847,31 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     )}
                   </div>
                 )}
+                {effectiveMethod && savedMethods.some((sm) => sm.methodBit === effectiveMethod.bit) && (
+                  <div className="flex flex-wrap items-center gap-1.5 sm:col-span-2">
+                    <span className="text-[11px] font-semibold text-[var(--p2p-muted)]">Quick-fill saved payer:</span>
+                    {savedMethods
+                      .filter((sm) => sm.methodBit === effectiveMethod.bit)
+                      .map((sm) => {
+                        const digits = sm.accountNumber.replace(/\D/g, '').slice(-4)
+                        return (
+                          <button
+                            key={sm.id}
+                            type="button"
+                            onClick={() => {
+                              setSenderName(sm.holderName.slice(0, 60))
+                              if (digits.length === 4) setLast4(digits)
+                            }}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-1 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                          >
+                            <MethodLogo name={sm.methodName} size={13} />
+                            <span>{sm.holderName}</span>
+                            {digits && <span className="p2p-mono text-[#FF5A00]">••{digits}</span>}
+                          </button>
+                        )
+                      })}
+                  </div>
+                )}
                 <label className="block sm:col-span-2">
                   <span
                     className={`mb-1 block text-[11px] font-semibold ${
@@ -1037,6 +1067,14 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
                   Open Dispute (Not Received)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setDisputeSheetOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                >
+                  <FileText className="size-3.5 text-[#FF5A00]" />
+                  File Statement
+                </button>
               </div>
 
               <p className="text-[11px] text-[var(--p2p-muted)]">
@@ -1066,21 +1104,31 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 <strong className="text-[var(--p2p-ink)]">Dispute Bond Rule ({formatUsdcAmount(order.bond)} USDC):</strong> You need <strong className="text-[var(--p2p-ink)]">0 USDC</strong> in your wallet to open a dispute. When an arbiter rules, your full {formatUsdcAmount(order.amount)} USDC is never reduced — the losing party owes the {formatUsdcAmount(order.bond)} USDC bond from margin or deferred unban debt.
               </div>
 
-              <button
-                type="button"
-                disabled={!canBuyerDispute || busy}
-                onClick={() => void callSimple('openDispute', 'Open dispute')}
-                className={`hidden min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-4 text-xs font-bold transition-colors md:inline-flex ${
-                  canBuyerDispute
-                    ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)] hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:opacity-50'
-                    : 'cursor-not-allowed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-                }`}
-              >
-                {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
-                {canBuyerDispute
-                  ? 'Seller Not Responding — Open Dispute'
-                  : `Open Dispute Cooldown (${formatDuration(disputeWaitLeft)})`}
-              </button>
+              <div className="flex flex-col gap-2 md:flex-row">
+                <button
+                  type="button"
+                  disabled={!canBuyerDispute || busy}
+                  onClick={() => void callSimple('openDispute', 'Open dispute')}
+                  className={`hidden min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border px-4 text-xs font-bold transition-colors md:inline-flex ${
+                    canBuyerDispute
+                      ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)] hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:opacity-50'
+                      : 'cursor-not-allowed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+                  }`}
+                >
+                  {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
+                  {canBuyerDispute
+                    ? 'Seller Not Responding — Open Dispute'
+                    : `Open Dispute Cooldown (${formatDuration(disputeWaitLeft)})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisputeSheetOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                >
+                  <FileText className="size-3.5 text-[#FF5A00]" />
+                  File Encrypted Dispute Statement
+                </button>
+              </div>
             </div>
           )}
 
@@ -1104,13 +1152,22 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
               {(isSeller || isBuyer) && (
                 <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3.5">
-                  <p className="text-xs font-semibold text-[var(--p2p-ink)]">
-                    {inReview
-                      ? 'Arbiter has taken the case — settling now records 1 lost dispute (0 bond owed • no completion credit).'
-                      : inCoolingOff
-                        ? `30m Cooling-off (${formatDuration(coolingOffLeft)} left) — settle cleanly with 0 bond, 0 strike, and 0 concession.`
-                        : 'Cooling-off ended — settling now counts as 1 concession (2 concessions = 1 lost dispute • 0 bond owed).'}
-                  </p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-[var(--p2p-ink)]">
+                      {inReview
+                        ? 'Arbiter has taken the case — settling now records 1 lost dispute (0 bond owed • no completion credit).'
+                        : inCoolingOff
+                          ? `30m Cooling-off (${formatDuration(coolingOffLeft)} left) — settle cleanly with 0 bond, 0 strike, and 0 concession.`
+                          : 'Cooling-off ended — settling now counts as 1 concession (2 concessions = 1 lost dispute • 0 bond owed).'}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setDisputeSheetOpen(true)}
+                      className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] px-3 text-xs font-bold text-[#FF5A00] hover:bg-[#FF5A00] hover:text-white"
+                    >
+                      <FileText className="size-3.5" /> File Dispute Statement
+                    </button>
+                  </div>
                   <div className="hidden md:block">
                     {isSeller && (
                       <button
@@ -1428,8 +1485,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   </div>
 
                   <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3.5 py-2.5 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]">
-                    Onchain USDC release is final and irreversible. Never rely on SMS alerts or chat screenshots — log
-                    into your actual banking/mobile app first.
+                    Onchain USDC release is final and irreversible. Do <strong>NOT</strong> release if the sender name
+                    mismatches (third-party payment) — open a dispute instead. If you still release despite a name
+                    mismatch, <strong>OnPeer is not responsible or liable</strong>.
                   </div>
 
                   <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs font-medium leading-relaxed text-[var(--p2p-ink)]">
@@ -1441,7 +1499,8 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     />
                     <span>
                       I have verified inside my banking/mobile wallet app that the exact fiat amount arrived from an
-                      account in the buyer&apos;s own name.
+                      account matching the buyer&apos;s name, and I understand OnPeer is not liable if I release on a
+                      name mismatch.
                     </span>
                   </label>
 
@@ -1505,6 +1564,11 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           </AnimatePresence>,
           document.body,
         )}
+      <DisputeFileSheet
+        orderId={order.id}
+        open={disputeSheetOpen}
+        onClose={() => setDisputeSheetOpen(false)}
+      />
     </div>
   )
 }

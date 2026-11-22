@@ -95,7 +95,7 @@ export async function handleDisputeRoutes(
   }
 
   if (req.method === 'GET') {
-    return handleGetDisputeFilings(env, db, orderId, wallet, access.role, access.order.reviewStartedAt)
+    return handleGetDisputeFilings(env, db, orderId, wallet, access.role, access.order)
   }
 
   return json(405, { error: 'method_not_allowed' })
@@ -164,12 +164,13 @@ async function handleFileDispute(
   }
 
   const textEnc = await sealText(env, rawStatement, disputeAad(orderIdStr, wallet))
+  const initialStatus = order.reviewStartedAt > 0n ? 'taken' : 'open'
 
   try {
     const ins = await db.query<{ id: string }>(
       `INSERT INTO public.dispute_filings
          (order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, delete_after)
-       VALUES ($1, $2, $3, $4, $5, 'open', now() + make_interval(secs => $6))
+       VALUES ($1, $2, $3, $4, $5, $6, now() + make_interval(secs => $7))
        RETURNING id`,
       [
         orderIdStr,
@@ -177,6 +178,7 @@ async function handleFileDispute(
         reasonCode,
         textEnc,
         evidenceBlobIds.length > 0 ? evidenceBlobIds : '{}',
+        initialStatus,
         DISPUTE_RETENTION_SECONDS,
       ],
     )
@@ -196,7 +198,7 @@ async function handleFileDispute(
       ).catch(() => undefined)
     }
 
-    return json(201, { id: filingId, status: 'open' })
+    return json(201, { id: filingId, status: initialStatus })
   } catch (err) {
     const msg = (err as { message?: string }).message ?? ''
     if (msg.includes('unique') || msg.includes('duplicate') || msg.includes('23505')) {
@@ -206,6 +208,24 @@ async function handleFileDispute(
   }
 }
 
+function deriveFilingStatus(currentStatus: string, order: ChainOrder | null): string {
+  if (!order) return currentStatus
+  if (order.status === ORDER_STATUS.RESOLVED_BUYER || order.status === ORDER_STATUS.RESOLVED_SELLER) {
+    return 'resolved'
+  }
+  if (
+    order.status === ORDER_STATUS.SETTLED ||
+    order.status === ORDER_STATUS.COMPLETED ||
+    order.status === ORDER_STATUS.CANCELLED
+  ) {
+    return 'settled'
+  }
+  if (order.reviewStartedAt > 0n && currentStatus === 'open') {
+    return 'taken'
+  }
+  return currentStatus
+}
+
 // ---- GET: read filings for order parties/arbiter ----
 async function handleGetDisputeFilings(
   env: Env,
@@ -213,7 +233,7 @@ async function handleGetDisputeFilings(
   orderId: bigint,
   wallet: `0x${string}`,
   role: string,
-  reviewStartedAt: bigint,
+  order: ChainOrder,
 ): Promise<Response> {
   const orderIdStr = orderId.toString()
   const rows = await db.query<DisputeFilingRow>(
@@ -228,7 +248,7 @@ async function handleGetDisputeFilings(
   if (isArbiter) {
     await writeAudit(db, wallet, 'dispute.arbiter_read', `order:${orderIdStr}`)
   }
-  const reviewTaken = reviewStartedAt > 0n
+  const reviewTaken = order.reviewStartedAt > 0n
   const out: DisputeFilingOut[] = []
 
   for (const row of rows.rows) {
@@ -252,7 +272,7 @@ async function handleGetDisputeFilings(
       reasonCode: row.reason_code,
       statement,
       evidenceBlobIds: row.evidence_blob_ids ?? [],
-      status: row.status,
+      status: deriveFilingStatus(row.status, order),
       filedAt: row.filed_at,
     })
   }
@@ -279,17 +299,50 @@ async function handleAdminDisputes(
   const limit = Math.min(Math.max(1, isNaN(limitRaw) ? 20 : limitRaw), 100)
   const afterId = url.searchParams.get('after') ?? null
 
-  const rows = await db.query<DisputeFilingRow>(
-    `SELECT id, order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, filed_at, closed_at
-       FROM public.dispute_filings
-      WHERE status = $1
-        ${afterId && /^\d+$/.test(afterId) ? 'AND id > $3' : ''}
-      ORDER BY filed_at ASC
-      LIMIT $2`,
-    afterId && /^\d+$/.test(afterId)
-      ? [statusFilter, limit, afterId]
-      : [statusFilter, limit],
+  // Reconcile any open/taken filings against live onchain order state so status tabs stay accurate
+  const activeRows = await db.query<{ order_id: string; status: string }>(
+    `SELECT DISTINCT order_id, status FROM public.dispute_filings WHERE status IN ('open', 'taken') LIMIT 100`,
   )
+  const orderCache = new Map<string, ChainOrder | null>()
+  for (const r of activeRows.rows) {
+    const oid = r.order_id.toString()
+    if (!orderCache.has(oid)) {
+      orderCache.set(oid, await chain.getOrder(BigInt(oid)).catch(() => null))
+    }
+    const nextStatus = deriveFilingStatus(r.status, orderCache.get(oid) ?? null)
+    if (nextStatus !== r.status) {
+      await db
+        .query(
+          `UPDATE public.dispute_filings
+              SET status = $1,
+                  closed_at = CASE WHEN $1 IN ('resolved', 'settled') THEN COALESCE(closed_at, now()) ELSE closed_at END
+            WHERE order_id = $2 AND status = $3`,
+          [nextStatus, oid, r.status],
+        )
+        .catch(() => undefined)
+    }
+  }
+
+  const isResolvedFilter = statusFilter === 'resolved'
+  const rows = isResolvedFilter
+    ? await db.query<DisputeFilingRow>(
+        `SELECT id, order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, filed_at, closed_at
+           FROM public.dispute_filings
+          WHERE status IN ('resolved', 'settled', 'closed')
+            ${afterId && /^\d+$/.test(afterId) ? 'AND id > $2' : ''}
+          ORDER BY filed_at DESC
+          LIMIT $1`,
+        afterId && /^\d+$/.test(afterId) ? [limit, afterId] : [limit],
+      )
+    : await db.query<DisputeFilingRow>(
+        `SELECT id, order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, filed_at, closed_at
+           FROM public.dispute_filings
+          WHERE status = $1
+            ${afterId && /^\d+$/.test(afterId) ? 'AND id > $3' : ''}
+          ORDER BY filed_at ASC
+          LIMIT $2`,
+        afterId && /^\d+$/.test(afterId) ? [statusFilter, limit, afterId] : [statusFilter, limit],
+      )
 
   const isBackupOnly = adminAccess.role === 'backup_arbiter'
   const nowSec = Math.floor(Date.now() / 1000)
@@ -298,7 +351,8 @@ async function handleAdminDisputes(
   for (const row of rows.rows) {
     // M4: Apply the 7-day rule per row for backup_arbiter before decrypting
     if (isBackupOnly) {
-      const order = await chain.getOrder(BigInt(row.order_id))
+      const oid = row.order_id.toString()
+      const order = orderCache.has(oid) ? orderCache.get(oid)! : await chain.getOrder(BigInt(oid))
       if (!order || !isBackupArbiterEligible(order, nowSec)) {
         continue
       }

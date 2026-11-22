@@ -13,7 +13,7 @@ const VAULT_MASTER_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef012345
 class AccountMemoryDb implements Queryable {
   nowMs = 1_795_000_000_000
   sessions = new Map<string, { wallet: string; expiresAtMs: number; revokedAtMs: number | null }>()
-  accounts = new Map<string, AccountRow & { kyc_name_enc: string | null }>()
+  accounts = new Map<string, AccountRow & { kyc_name_enc: string | null; payment_methods_enc?: string | null }>()
   outbox: Array<{ wallet: string; status: string }> = []
   jobs: Array<{ kind: string; payload: unknown }> = []
   rateLimits = new Map<string, { count: number; resetAtMs: number }>()
@@ -55,6 +55,37 @@ class AccountMemoryDb implements Queryable {
     if (n.startsWith('SELECT wallet, display_name')) {
       const acc = this.accounts.get(String(values[0]))
       return acc ? { rows: [acc as unknown as R], rowCount: 1 } : { rows: [], rowCount: 0 }
+    }
+
+    if (n.startsWith('SELECT payment_methods_enc, deleted_at FROM public.accounts')) {
+      const acc = this.accounts.get(String(values[0]))
+      return acc
+        ? { rows: [{ payment_methods_enc: acc.payment_methods_enc ?? null, deleted_at: acc.deleted_at } as unknown as R], rowCount: 1 }
+        : { rows: [], rowCount: 0 }
+    }
+
+    if (n.startsWith('INSERT INTO public.accounts (wallet, payment_methods_enc')) {
+      const [wallet, pmEnc] = values as [string, string | null]
+      const prev = this.accounts.get(wallet)
+      const nowIso = new Date(this.nowMs).toISOString()
+      const row = {
+        wallet,
+        display_name: prev && !prev.deleted_at ? prev.display_name : null,
+        country: prev && !prev.deleted_at ? prev.country : null,
+        email_enc: prev && !prev.deleted_at ? prev.email_enc : null,
+        email_verified_at: prev && !prev.deleted_at ? prev.email_verified_at : null,
+        email_opt_in: prev && !prev.deleted_at ? prev.email_opt_in : false,
+        kyc_status: prev && !prev.deleted_at ? prev.kyc_status : 'none',
+        kyc_level: prev && !prev.deleted_at ? prev.kyc_level : 0,
+        kyc_expires_at: prev && !prev.deleted_at ? prev.kyc_expires_at : null,
+        kyc_name_enc: prev && !prev.deleted_at ? prev.kyc_name_enc : null,
+        payment_methods_enc: pmEnc,
+        consent_at: prev?.consent_at ?? nowIso,
+        created_at: prev?.created_at ?? nowIso,
+        deleted_at: null,
+      }
+      this.accounts.set(wallet, row)
+      return { rows: [], rowCount: 1 }
     }
 
     if (n.startsWith('INSERT INTO public.accounts')) {
@@ -118,6 +149,7 @@ class AccountMemoryDb implements Queryable {
         acc.email_enc = null
         acc.email_verified_at = null
         acc.email_opt_in = false
+        acc.payment_methods_enc = null
         acc.kyc_status = acc.kyc_status === 'approved' ? 'revoked' : 'none'
         acc.kyc_level = 0
         acc.kyc_expires_at = null
@@ -416,5 +448,55 @@ describe('Step 5: P2P Accounts, Consent Gate, Email Double Opt-In & PII Deletion
     )
     expect(delRes?.status).toBe(409)
     expect(await delRes!.json()).toEqual({ error: 'active_ads_remain' })
+  })
+
+  it('saves, encrypts at rest, retrieves, and scrubs saved P2P payment methods', async () => {
+    const db = new AccountMemoryDb()
+    await db.seedSession(TEST_TOKEN, TEST_WALLET)
+    const env = makeEnv('sandbox')
+
+    const putRes = await handleAccountRoutes(
+      new Request('https://app.onpeer.xyz/api/account/payment-methods', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TEST_TOKEN}` },
+        body: JSON.stringify({
+          paymentMethods: [
+            {
+              id: 'pm_bkash_1',
+              methodBit: 7,
+              methodName: 'bKash',
+              holderName: 'Rahim Uddin',
+              accountNumber: '01711223344',
+              bankOrBranch: 'Personal',
+              notes: 'Send money only',
+            },
+          ],
+        }),
+      }),
+      env,
+      db,
+      '/account/payment-methods',
+      { nowMs: db.nowMs },
+    )
+    expect(putRes?.status).toBe(200)
+    const rawEnc = db.accounts.get(TEST_WALLET)?.payment_methods_enc ?? ''
+    expect(rawEnc).toBeTruthy()
+    expect(rawEnc).not.toContain('01711223344')
+    expect(rawEnc).not.toContain('Rahim Uddin')
+
+    const getRes = await handleAccountRoutes(
+      new Request('https://app.onpeer.xyz/api/account/payment-methods', {
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      }),
+      env,
+      db,
+      '/account/payment-methods',
+      { nowMs: db.nowMs + 1_000 },
+    )
+    expect(getRes?.status).toBe(200)
+    const loaded = (await getRes!.json()) as { paymentMethods: Array<{ methodName: string; accountNumber: string }> }
+    expect(loaded.paymentMethods).toHaveLength(1)
+    expect(loaded.paymentMethods[0]?.methodName).toBe('bKash')
+    expect(loaded.paymentMethods[0]?.accountNumber).toBe('01711223344')
   })
 })
