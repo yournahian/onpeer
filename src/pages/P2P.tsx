@@ -15,7 +15,6 @@ import { PostAdSheet } from '@/components/PostAdSheet'
 import { OrderRoom } from '@/components/OrderRoom'
 import { AccountPanel } from '@/components/AccountPanel'
 import { AccountSetup } from '@/components/AccountSetup'
-import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 import { useEligibility } from '@/hooks/useEligibility'
 
 const parseId = (raw: string | null): bigint | null => (raw && /^\d+$/.test(raw) ? BigInt(raw) : null)
@@ -124,10 +123,7 @@ export default function P2PPage() {
     <div className="relative min-h-dvh overflow-x-clip">
       <SiteBar />
 
-      {/* Exact same box below SiteBar (calc(100dvh - 104px) / md:calc(100dvh - 65px)) as Swap & Bridge */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 top-[104px] z-0 md:top-[65px]">
-        <RibbonBackdrop />
-      </div>
+      {/* RibbonBackdrop is rendered globally from App.tsx (persistent across routes) */}
 
       <div className="p2p-terminal relative z-10 pb-24 md:pb-20">
         {!needsOnboarding && (

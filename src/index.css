@@ -120,10 +120,12 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   background-image: var(--bg-gradient);
-  background-attachment: fixed;
+  background-attachment: scroll;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 768px), (hover: none) {
@@ -131,7 +133,6 @@ body {
     background-attachment: scroll;
   }
 }
-
 ::selection {
   background: rgba(217, 70, 239, 0.35);
 }

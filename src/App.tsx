@@ -5,6 +5,7 @@ import { AgentChat } from '@/components/AgentChat'
 import { AgentProvider } from '@/agent/AgentContext'
 import { Backdrop } from '@/components/fx/Backdrop'
 import { ScrollProgress } from '@/components/fx/ScrollProgress'
+import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { Footer } from '@/components/Footer'
 import Home from '@/pages/Home'
@@ -16,6 +17,9 @@ import AdminPage from '@/pages/Admin'
 import AssistantPage from '@/pages/Assistant'
 import BrandKitPage from '@/pages/BrandKit'
 import PrivacyPage from '@/pages/Privacy'
+
+// Routes that show the 3D RibbonBackdrop full-screen behind the page content.
+const RIBBON_ROUTES = new Set(['swap', 'bridge', 'buy', 'assistant', 'p2p'])
 
 export default function App() {
   const route = useRoute()
@@ -61,7 +65,21 @@ export default function App() {
       <AgentProvider route={route}>
       <Backdrop />
       <ScrollProgress />
-      {/* Plain keyed div + CSS fade: a route change swaps the page at once, with nothing that can hold it back. */}
+      {/*
+        RibbonBackdrop lives OUTSIDE the keyed page-in div so it is never torn down on route
+        change — the WebGL context persists and the transition is seamless with no flash.
+        Visibility is controlled by CSS (opacity 0 on routes that don't need it).
+      */}
+      {RIBBON_ROUTES.has(route) && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-0"
+          style={{ top: route === 'p2p' ? '104px' : '0' }}
+        >
+          <RibbonBackdrop />
+        </div>
+      )}
+      {/* Plain keyed div + CSS fade: a route change swaps the page at once. */}
       <div key={route} className="page-in">
         <ErrorBoundary key={route} label={route}>
           {page}

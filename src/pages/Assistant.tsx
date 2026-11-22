@@ -12,7 +12,6 @@ import {
 import { useAgentContext } from '@/agent/AgentContext'
 import { SiteBar } from '@/components/SiteBar'
 import { ChatThread } from '@/components/chat/ChatThread'
-import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 
 const CAPABILITIES = [
   {
@@ -59,8 +58,7 @@ export default function AssistantPage() {
     <div className="flex h-dvh flex-col overflow-hidden">
       <SiteBar />
 
-      <div className="relative flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
-        <RibbonBackdrop />
+      <div className="relative z-10 flex min-h-0 flex-1 w-full items-center justify-center overflow-hidden px-3 py-3 sm:px-6 sm:py-4">
 
         <motion.main
           aria-label="OnPeer Assistant Workspace"

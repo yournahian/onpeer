@@ -20,7 +20,6 @@ import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
 import { SiteBar } from '@/components/SiteBar'
 import { Button } from '@/components/ui'
 import { ChainLogo, CoinLogo } from '@/components/logos'
-import { RibbonBackdrop } from '@/components/fx/RibbonBackdrop'
 
 const PCT_PRESETS = [
   { label: '25%', num: 25n },
@@ -216,8 +215,7 @@ export default function BridgePage() {
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip">
       <SiteBar />
-      <div className="relative flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
-        <RibbonBackdrop />
+      <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
 
         <motion.section
           className="relative z-20 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
