@@ -10,7 +10,15 @@ const OPTIONS: { id: ThemePref; label: string; Icon: typeof Sun }[] = [
 ]
 
 /** Three-way theme switch: light, system, dark. */
-export function ThemeToggle({ className = '', compact = false }: { className?: string; compact?: boolean }) {
+export function ThemeToggle({
+  className = '',
+  compact = false,
+  size = 'md',
+}: {
+  className?: string
+  compact?: boolean
+  size?: 'sm' | 'md'
+}) {
   const { pref, setPref } = useTheme()
   const pillId = useId()
   if (compact) {
@@ -31,6 +39,8 @@ export function ThemeToggle({ className = '', compact = false }: { className?: s
       </button>
     )
   }
+  const btnSize = size === 'sm' ? 'size-7' : 'size-8'
+  const iconSize = size === 'sm' ? 'size-3.5' : 'size-4'
   return (
     <div
       role="radiogroup"
@@ -48,7 +58,7 @@ export function ThemeToggle({ className = '', compact = false }: { className?: s
             aria-label={label}
             title={label}
             onClick={() => setPref(id)}
-            className="relative flex size-8 items-center justify-center rounded-full transition-colors"
+            className={`relative flex ${btnSize} items-center justify-center rounded-full transition-colors`}
             style={{ color: active ? 'var(--on-accent)' : 'var(--muted)' }}
           >
             {active && (
@@ -59,7 +69,7 @@ export function ThemeToggle({ className = '', compact = false }: { className?: s
                 transition={{ type: 'spring', stiffness: 420, damping: 32 }}
               />
             )}
-            <Icon className="relative size-4" />
+            <Icon className={`relative ${iconSize}`} />
           </button>
         )
       })}

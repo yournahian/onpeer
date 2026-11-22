@@ -606,18 +606,16 @@ select option {
   animation: cue 1.8s ease-in-out infinite;
 }
 
-/* page entrance: pure CSS so a route change can never be left half-faded */
+/* page entrance: pure opacity fade (no transform, which would trap position:fixed children) */
 .page-in {
-  animation: page-in 0.35s var(--ease-out) both;
+  animation: page-in 0.3s var(--ease-out) both;
 }
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(8px);
   }
   to {
     opacity: 1;
-    transform: none;
   }
 }
 

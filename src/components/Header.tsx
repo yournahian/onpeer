@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
 import { ArrowLeftRight, Gavel, Lock, Megaphone, ReceiptText, ShieldCheck } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
@@ -225,10 +226,10 @@ export function MobileBottomNav({
     ...(showArbiter ? [{ id: 'arbiter' as const, label: 'Disputes', icon: Gavel, badge: disputeCount }] : []),
   ]
 
-  return (
+  const nav = (
     <nav
       aria-label="Mobile P2P navigation"
-      className="fixed inset-x-0 bottom-0 z-40 flex h-[60px] items-center justify-around border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-2 backdrop-blur-2xl md:hidden"
+      className="p2p-terminal fixed inset-x-0 bottom-0 z-40 flex h-[60px] items-center justify-around border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden"
     >
       {items.map((item) => {
         const active = tab === item.id
@@ -256,4 +257,6 @@ export function MobileBottomNav({
       })}
     </nav>
   )
+
+  return typeof document !== 'undefined' ? createPortal(nav, document.body) : nav
 }

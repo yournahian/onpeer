@@ -124,8 +124,8 @@ export default function P2PPage() {
     <div className="relative min-h-dvh overflow-x-clip">
       <SiteBar />
 
-      {/* Exact same box below SiteBar (calc(100dvh - 108px) / sm:calc(100dvh - 64px)) as Swap & Bridge */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 top-[108px] z-0 sm:top-[64px]">
+      {/* Exact same box below SiteBar (calc(100dvh - 104px) / md:calc(100dvh - 65px)) as Swap & Bridge */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 top-[104px] z-0 md:top-[65px]">
         <RibbonBackdrop />
       </div>
 
