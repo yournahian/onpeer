@@ -82,7 +82,7 @@ function FxSwitch({
 }
 
 /** Top bar across all pages: desktop single-row nav, mobile 2-row header with hamburger menu. */
-export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean; sticky?: boolean }) {
+export function SiteBar({ overlay = false, sticky = true, fixed = false }: { overlay?: boolean; sticky?: boolean; fixed?: boolean }) {
   const route = useRoute()
   const { isAdmin } = useAdminRoles()
   const { helixMotion, setHelixMotion } = useTheme()
@@ -120,9 +120,13 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
   const maxW = route === 'p2p' ? 'max-w-[1440px]' : 'max-w-7xl'
 
   return (
-    <header
+    <>
+      {(overlay || fixed) && (
+        <div className="h-[60px] shrink-0 md:h-[60px]" aria-hidden />
+      )}
+      <header
       ref={headerRef}
-      className={`${overlay ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
+      className={`${overlay || fixed ? 'fixed inset-x-0 top-0' : sticky ? 'sticky top-0' : 'relative'} z-40 transition-colors duration-300 ${floating ? 'stage' : ''}`}
       style={
         floating
           ? { background: 'linear-gradient(180deg, rgba(6,3,13,0.7), transparent)' }
@@ -291,5 +295,6 @@ export function SiteBar({ overlay = false, sticky = true }: { overlay?: boolean;
 
       <div className="h-px transition-opacity duration-300" style={{ background: 'var(--border)', opacity: floating ? 0 : 1 }} />
     </header>
+    </>
   )
 }

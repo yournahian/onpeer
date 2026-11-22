@@ -121,7 +121,7 @@ export default function P2PPage() {
 
   return (
     <div className="relative min-h-dvh overflow-x-clip">
-      <SiteBar />
+      <SiteBar fixed />
 
       {/* RibbonBackdrop is rendered globally from App.tsx (persistent across routes) */}
 
