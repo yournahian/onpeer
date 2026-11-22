@@ -246,7 +246,7 @@ function StackingStepCard({
       }}
     >
       <div
-        className="flex min-h-[168px] items-center justify-between gap-5 rounded-3xl p-6 backdrop-blur-2xl transition-colors duration-300 sm:p-7"
+        className="flex min-h-[168px] items-center justify-between gap-5 rounded-3xl p-6 transition-colors duration-300 sm:p-7"
         style={{
           background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
           border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
