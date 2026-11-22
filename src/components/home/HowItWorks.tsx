@@ -248,7 +248,7 @@ function StackingStepCard({
       <div
         className="flex min-h-[168px] items-center justify-between gap-5 rounded-3xl p-6 transition-colors duration-300 sm:p-7"
         style={{
-          background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
+          background: 'var(--panel-solid)',
           border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border)'}`,
           boxShadow: active
             ? 'var(--glass-shadow), 0 0 0 1px rgba(255, 90, 0, 0.16)'
@@ -391,7 +391,7 @@ export function HowItWorks() {
         </Reveal>
         <ol className="mt-6 space-y-4">
           {STEPS.map((s, i) => (
-            <li key={s.title} className="glass flex items-center justify-between gap-4 rounded-2xl p-5">
+            <li key={s.title} className="flex items-center justify-between gap-4 rounded-2xl p-5" style={{ background: 'var(--panel-solid)', border: '1px solid var(--border)' }}>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--accent)' }}>
                   STEP 0{i + 1}
