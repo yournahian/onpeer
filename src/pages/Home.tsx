@@ -47,8 +47,13 @@ export default function Home() {
   useLenis()
   return (
     <div className="min-h-dvh">
-      <SiteBar sticky={false} transparent />
-      <PlanetHero />
+      {/* Navbar absolute over hero — no space taken, scrolls away with page */}
+      <div className="relative">
+        <div className="absolute inset-x-0 top-0 z-40">
+          <SiteBar sticky={false} transparent />
+        </div>
+        <PlanetHero />
+      </div>
       <main className="mx-auto w-full max-w-7xl px-4 pt-10 sm:px-8 sm:pt-14 lg:px-12">
         <LiveStats />
         <Marquee />
