@@ -660,9 +660,7 @@ function MobileOrderScreen({
             type="button"
             disabled={!s.ready || s.busy}
             onClick={() => void s.submit(onOpened)}
-            className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-extrabold text-white transition-opacity disabled:opacity-40 ${
-              s.userBuys ? 'bg-emerald-500' : 'bg-[#FF5A00]'
-            }`}
+            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-sm font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {s.busy && <Loader2 className="size-4 animate-spin" />}
             {s.pendingKey === 'approve'
@@ -1066,9 +1064,7 @@ export function InlineOrderDrawer({
                 type="button"
                 disabled={!s.ready || s.busy}
                 onClick={() => void s.submit(onOpened)}
-                className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${
-                  s.userBuys ? 'bg-emerald-500' : 'bg-[#FF5A00]'
-                }`}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {s.busy && <Loader2 className="size-4 animate-spin" />}
                 {s.pendingKey === 'approve'

@@ -1,11 +1,23 @@
 import { useMemo, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
-import { ChevronRight, Loader2, Plus, RotateCw, Share2 } from 'lucide-react'
+import {
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Loader2,
+  MessageSquare,
+  Plus,
+  RotateCw,
+  Search,
+  Share2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
+import { buildAddressExplorerUrl, buildTxExplorerUrl } from '@/onchain-facts'
 import {
   CHAIN_ID,
+  COUNTRIES,
   DEFAULT_TTL_HOURS,
   ESCROW_ADDRESS,
   SIDE_SELL,
@@ -24,10 +36,32 @@ import {
 } from '@/lib/p2p'
 import { buildShareLink } from '@/lib/share'
 import { parseUnitsExact } from '@/onchain-money'
-import { useAds, useNow, useOrders, type OrderWithId } from '@/hooks/useEscrow'
+import {
+  useAds,
+  useNow,
+  useOrderTxHashes,
+  useOrders,
+  type OrderWithId,
+} from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 import { AppLink } from '@/components/AppLink'
 import { traderLabel, useTraderProfiles, type PublicTraderSummary } from '@/hooks/useSocial'
+
+function formatOrderTimestamp(sec: bigint): string {
+  const ms = Number(sec) * 1000
+  if (!Number.isFinite(ms) || ms <= 0) return '—'
+  const d = new Date(ms)
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${min}`
+}
+
+function shortTxHash(hash: string): string {
+  return `${hash.slice(0, 6)}...${hash.slice(-4)}`
+}
 
 function EmptyCard({ title, body, cta }: { title: string; body: string; cta?: React.ReactNode }) {
   return (
@@ -61,26 +95,588 @@ function ConnectPrompt({ body }: { body: string }) {
   )
 }
 
-function OrderRow({
+function compactOrderStatusLabel(status: number): string {
+  switch (status) {
+    case STATUS.PENDING:
+      return 'Unpaid'
+    case STATUS.PAID:
+      return 'Paid'
+    case STATUS.COMPLETED:
+    case STATUS.RESOLVED_BUYER:
+      return 'Completed'
+    case STATUS.CANCELLED:
+    case STATUS.RESOLVED_SELLER:
+      return 'Canceled'
+    case STATUS.DISPUTED:
+      return 'Disputed'
+    case STATUS.SETTLED:
+      return 'Settled'
+    default:
+      return STATUS_META[status]?.label ?? 'Unknown'
+  }
+}
+
+export function MyOrders({
+  onOpen,
+  onOpenChat,
+  onOpenTrader,
+}: {
+  onOpen: (id: bigint) => void
+  onOpenChat?: (id: bigint) => void
+  onOpenTrader?: (wallet: string) => void
+}) {
+  const { address, isConnected } = useAccount()
+  const { orders, isLoading } = useOrders()
+  const txHashes = useOrderTxHashes()
+
+  const [topTab, setTopTab] = useState<'processing' | 'all' | 'pnl'>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'canceled' | 'unpaid' | 'paid' | 'disputed'>('all')
+  const [currencyFilter, setCurrencyFilter] = useState<string>('ALL')
+  const [sideFilter, setSideFilter] = useState<'all' | 'buy' | 'sell'>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [searchId, setSearchId] = useState('')
+
+  const mine = useMemo(
+    () => orders.filter((o) => sameAddr(o.buyer, address) || sameAddr(o.seller, address)),
+    [orders, address],
+  )
+  const peerWallets = useMemo(() => mine.flatMap((o) => [o.buyer, o.seller]), [mine])
+  const profilesMap = useTraderProfiles(peerWallets)
+
+  const filteredOrders = useMemo(() => {
+    const fromSec = dateFrom ? Math.floor(new Date(`${dateFrom}T00:00:00`).getTime() / 1000) : null
+    const toSec = dateTo ? Math.floor(new Date(`${dateTo}T23:59:59`).getTime() / 1000) : null
+    const q = searchId.trim().replace(/^#/, '')
+
+    return mine.filter((o) => {
+      if (topTab === 'processing') {
+        if (!isActiveStatus(o.status)) return false
+        if (statusFilter === 'unpaid' && o.status !== STATUS.PENDING) return false
+        if (statusFilter === 'paid' && o.status !== STATUS.PAID) return false
+        if (statusFilter === 'disputed' && o.status !== STATUS.DISPUTED) return false
+      } else if (topTab === 'all') {
+        if (
+          statusFilter === 'completed' &&
+          o.status !== STATUS.COMPLETED &&
+          o.status !== STATUS.RESOLVED_BUYER &&
+          o.status !== STATUS.SETTLED
+        ) {
+          return false
+        }
+        if (
+          statusFilter === 'canceled' &&
+          o.status !== STATUS.CANCELLED &&
+          o.status !== STATUS.RESOLVED_SELLER
+        ) {
+          return false
+        }
+      }
+
+      if (currencyFilter !== 'ALL' && hexToCurrency(o.currency) !== currencyFilter) {
+        return false
+      }
+
+      const isBuyer = sameAddr(address, o.buyer)
+      if (sideFilter === 'buy' && !isBuyer) return false
+      if (sideFilter === 'sell' && isBuyer) return false
+
+      const created = Number(o.createdAt)
+      if (fromSec !== null && Number.isFinite(fromSec) && created < fromSec) return false
+      if (toSec !== null && Number.isFinite(toSec) && created > toSec) return false
+
+      if (q && !o.id.toString().includes(q)) return false
+
+      return true
+    })
+  }, [mine, topTab, statusFilter, currencyFilter, sideFilter, dateFrom, dateTo, searchId, address])
+
+  const pnlByCurrency = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        currency: string
+        buyCount: number
+        buyUsdc: bigint
+        buyFiat: bigint
+        sellCount: number
+        sellUsdc: bigint
+        sellFiat: bigint
+      }
+    >()
+
+    for (const o of mine) {
+      if (o.status !== STATUS.COMPLETED && o.status !== STATUS.RESOLVED_BUYER) continue
+      const cur = hexToCurrency(o.currency)
+      const entry = map.get(cur) ?? {
+        currency: cur,
+        buyCount: 0,
+        buyUsdc: 0n,
+        buyFiat: 0n,
+        sellCount: 0,
+        sellUsdc: 0n,
+        sellFiat: 0n,
+      }
+      if (sameAddr(address, o.buyer)) {
+        entry.buyCount++
+        entry.buyUsdc += o.amount
+        entry.buyFiat += o.fiatAmountE6
+      } else {
+        entry.sellCount++
+        entry.sellUsdc += o.amount
+        entry.sellFiat += o.fiatAmountE6
+      }
+      map.set(cur, entry)
+    }
+
+    return Array.from(map.values())
+  }, [mine, address])
+
+  if (!isConnected) return <ConnectPrompt body="Connect your wallet to inspect active escrow trades and order history." />
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <div className="p2p-card h-20 animate-pulse rounded-xl" />
+        <div className="p2p-card h-20 animate-pulse rounded-xl" />
+      </div>
+    )
+  }
+
+  const resetFilters = () => {
+    setStatusFilter('all')
+    setCurrencyFilter('ALL')
+    setSideFilter('all')
+    setDateFrom('')
+    setDateTo('')
+    setSearchId('')
+  }
+
+  const copyOrderNumber = async (idStr: string) => {
+    try {
+      await navigator.clipboard.writeText(idStr)
+      toast.success(`Order #${idStr} copied`)
+    } catch {
+      toast.error('Could not copy order number')
+    }
+  }
+
+  const processingCount = mine.filter((o) => isActiveStatus(o.status)).length
+  const fallbackExplorerUrl = ESCROW_ADDRESS ? buildAddressExplorerUrl(CHAIN_ID, ESCROW_ADDRESS) : null
+
+  const subPills =
+    topTab === 'processing'
+      ? ([
+          { id: 'all', label: 'All' },
+          { id: 'unpaid', label: 'Unpaid' },
+          { id: 'paid', label: 'Paid' },
+          { id: 'disputed', label: 'Disputed' },
+        ] as const)
+      : ([
+          { id: 'all', label: 'All' },
+          { id: 'completed', label: 'Completed' },
+          { id: 'canceled', label: 'Canceled' },
+        ] as const)
+
+  return (
+    <div className="space-y-5">
+      {/* Primary Tabs: Processing | All Orders | Profit & Loss Statement (SS 2) */}
+      <div className="flex flex-wrap items-center gap-7 border-b border-[var(--p2p-border)]">
+        {[
+          { id: 'processing' as const, label: processingCount > 0 ? `Processing (${processingCount})` : 'Processing' },
+          { id: 'all' as const, label: 'All Orders' },
+          { id: 'pnl' as const, label: 'Profit & Loss Statement' },
+        ].map((t) => {
+          const active = topTab === t.id
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => {
+                setTopTab(t.id)
+                setStatusFilter('all')
+              }}
+              className={`relative pb-3 text-sm font-bold transition-colors ${
+                active ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+              }`}
+            >
+              {t.label}
+              {active && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#FF5A00]" />}
+            </button>
+          )
+        })}
+      </div>
+
+      {topTab === 'pnl' ? (
+        <section className="space-y-4">
+          {pnlByCurrency.length === 0 ? (
+            <EmptyCard
+              title="No Completed Trades Yet"
+              body="Your completed Buy and Sell P2P volume and average exchange rates will appear here."
+            />
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)]">
+              <div className="grid border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-3 text-xs text-[var(--p2p-muted)] sm:grid-cols-5">
+                <span>Currency</span>
+                <span>Buy Volume</span>
+                <span>Avg. Buy Price</span>
+                <span>Sell Volume</span>
+                <span>Avg. Sell Price</span>
+              </div>
+              <ul className="divide-y divide-[var(--p2p-border)]">
+                {pnlByCurrency.map((row) => {
+                  const avgBuy = row.buyUsdc > 0n ? (row.buyFiat * 1_000_000n) / row.buyUsdc : 0n
+                  const avgSell = row.sellUsdc > 0n ? (row.sellFiat * 1_000_000n) / row.sellUsdc : 0n
+                  return (
+                    <li key={row.currency} className="grid gap-2 px-5 py-4 text-xs sm:grid-cols-5 sm:items-center">
+                      <span className="font-bold text-[var(--p2p-ink)]">{row.currency}</span>
+                      <span className="p2p-mono text-[var(--p2p-ink)]">
+                        {formatUsdcAmount(row.buyUsdc)} USDC ({row.buyCount})
+                      </span>
+                      <span className="p2p-mono text-[var(--p2p-muted)]">
+                        {avgBuy > 0n ? `${formatPrice(avgBuy)} ${row.currency}` : '—'}
+                      </span>
+                      <span className="p2p-mono text-[var(--p2p-ink)]">
+                        {formatUsdcAmount(row.sellUsdc)} USDC ({row.sellCount})
+                      </span>
+                      <span className="p2p-mono text-[var(--p2p-muted)]">
+                        {avgSell > 0n ? `${formatPrice(avgSell)} ${row.currency}` : '—'}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </section>
+      ) : (
+        <>
+          {/* Status Sub-Pills Row (SS 2 — without Appeal) */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex flex-wrap items-center gap-1 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-1">
+              {subPills.map((p) => {
+                const active = statusFilter === p.id
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setStatusFilter(p.id)}
+                    className={`rounded-md px-4 py-1.5 text-xs font-bold transition-colors ${
+                      active
+                        ? 'bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] shadow-sm'
+                        : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Filter Controls Bar (SS 2: Coins | Currency | Order Type | Date Range | Search order no. | Reset) */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
+              <span className="text-[var(--p2p-muted)]">Coins</span>
+              <span className="font-bold text-[var(--p2p-ink)]">USDC</span>
+            </div>
+
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
+              <span className="text-[var(--p2p-muted)]">Currency</span>
+              <select
+                value={currencyFilter}
+                onChange={(e) => setCurrencyFilter(e.target.value)}
+                className="bg-transparent font-bold text-[var(--p2p-ink)] outline-none"
+              >
+                <option value="ALL">All</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.currency}>
+                    {c.currency}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
+              <span className="text-[var(--p2p-muted)]">Order Type</span>
+              <select
+                value={sideFilter}
+                onChange={(e) => setSideFilter(e.target.value === 'buy' ? 'buy' : e.target.value === 'sell' ? 'sell' : 'all')}
+                className="bg-transparent font-bold text-[var(--p2p-ink)] outline-none"
+              >
+                <option value="all">All</option>
+                <option value="buy">Buy</option>
+                <option value="sell">Sell</option>
+              </select>
+            </div>
+
+            <div className="flex h-10 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                aria-label="Start date"
+                className="p2p-mono bg-transparent text-xs text-[var(--p2p-ink)] outline-none"
+              />
+              <span className="text-[var(--p2p-muted)]">→</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                aria-label="End date"
+                className="p2p-mono bg-transparent text-xs text-[var(--p2p-ink)] outline-none"
+              />
+            </div>
+
+            <div className="flex h-10 min-w-[180px] flex-1 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs sm:max-w-[230px]">
+              <Search className="size-3.5 shrink-0 text-[var(--p2p-muted)]" />
+              <input
+                value={searchId}
+                onChange={(e) => setSearchId(e.target.value)}
+                placeholder="Search order no."
+                className="p2p-mono w-full bg-transparent text-xs text-[var(--p2p-ink)] outline-none placeholder:font-sans placeholder:text-[var(--p2p-muted)]"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="h-10 px-2 text-xs font-bold text-[var(--p2p-ink)] hover:text-[#FF5A00]"
+            >
+              Reset
+            </button>
+          </div>
+
+          {filteredOrders.length === 0 ? (
+            <EmptyCard
+              title="No Orders Match Your Filters"
+              body={
+                mine.length === 0
+                  ? 'Pick an offer in P2P Trade to open your first escrow order.'
+                  : 'Try clearing the filters or switching between Processing and All Orders.'
+              }
+            />
+          ) : (
+            <>
+              {/* Desktop 6-Column Table (SS 2 — Tx Hash instead of Receipt, No Appeal) */}
+              <div className="hidden overflow-hidden rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] md:block">
+                <div className="grid border-b border-[var(--p2p-border)] px-5 py-3 text-xs text-[var(--p2p-muted)] md:grid-cols-[155px_150px_130px_165px_1fr_150px]">
+                  <span>Type/Date</span>
+                  <span>Order number</span>
+                  <span>Price</span>
+                  <span>Fiat / Crypto Amount</span>
+                  <span>Counterparty</span>
+                  <span>Status</span>
+                </div>
+
+                <ul className="divide-y divide-[var(--p2p-border)]">
+                  {filteredOrders.map((o) => {
+                    const idStr = o.id.toString()
+                    const currency = hexToCurrency(o.currency)
+                    const isBuyer = sameAddr(address, o.buyer)
+                    const peerWallet = (isBuyer ? o.seller : o.buyer).toLowerCase()
+                    const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet))
+                    const txHash = txHashes[idStr]
+                    const txUrl = txHash ? buildTxExplorerUrl(CHAIN_ID, txHash) : fallbackExplorerUrl
+
+                    return (
+                      <li
+                        key={idStr}
+                        className="grid items-start gap-4 px-5 py-4 text-xs transition-colors hover:bg-[var(--p2p-row-hover)] md:grid-cols-[155px_150px_130px_165px_1fr_150px]"
+                      >
+                        {/* 1. Type / Date */}
+                        <div className="space-y-1.5">
+                          <p className="font-bold">
+                            <span className={isBuyer ? 'text-[#FF5A00]' : 'text-red-400'}>
+                              {isBuyer ? 'Buy' : 'Sell'}
+                            </span>{' '}
+                            <span className="text-[var(--p2p-ink)]">USDC</span>
+                          </p>
+                          <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+                            {formatOrderTimestamp(o.createdAt)}
+                          </p>
+                        </div>
+
+                        {/* 2. Order Number */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpen(o.id)}
+                            className="p2p-mono font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
+                          >
+                            {idStr}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void copyOrderNumber(idStr)}
+                            aria-label={`Copy order ${idStr}`}
+                            className="rounded p-1 text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
+                          >
+                            <Copy className="size-3.5" />
+                          </button>
+                        </div>
+
+                        {/* 3. Price */}
+                        <div className="p2p-mono font-semibold text-[var(--p2p-ink)]">
+                          {formatPrice(o.priceE6)} {currency}
+                        </div>
+
+                        {/* 4. Fiat / Crypto Amount */}
+                        <div className="space-y-1.5">
+                          <p className="p2p-mono font-semibold text-[var(--p2p-ink)]">
+                            {formatFiat(o.fiatAmountE6, 0)} {currency}
+                          </p>
+                          <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+                            {formatUsdcAmount(o.amount)} USDC
+                          </p>
+                        </div>
+
+                        {/* 5. Counterparty + Chat Button */}
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => (onOpenTrader ? onOpenTrader(peerWallet) : onOpen(o.id))}
+                            className="block max-w-[200px] truncate font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
+                          >
+                            {peerLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => (onOpenChat ? onOpenChat(o.id) : onOpen(o.id))}
+                            className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00] hover:text-[#FF5A00]"
+                          >
+                            <span>Chat</span>
+                            <MessageSquare className="size-3" />
+                          </button>
+                        </div>
+
+                        {/* 6. Status + Tx Hash (No Receipt, No Appeal) */}
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onOpen(o.id)}
+                            className="block font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
+                          >
+                            {compactOrderStatusLabel(o.status)}
+                          </button>
+                          {txUrl && (
+                            <a
+                              href={txUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={txHash ?? 'View on Arc Explorer'}
+                              className="p2p-mono inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5A00] hover:underline"
+                            >
+                              <span>{txHash ? shortTxHash(txHash) : 'Tx Hash'}</span>
+                              <ExternalLink className="size-3" />
+                            </a>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+
+              {/* Mobile Stacked Order Cards (< 768px) */}
+              <ul className="space-y-2.5 md:hidden">
+                {filteredOrders.map((o) => {
+                  const idStr = o.id.toString()
+                  const currency = hexToCurrency(o.currency)
+                  const country = countryByCurrency(currency)
+                  const isBuyer = sameAddr(address, o.buyer)
+                  const peerWallet = (isBuyer ? o.seller : o.buyer).toLowerCase()
+                  const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet))
+                  const txHash = txHashes[idStr]
+                  const txUrl = txHash ? buildTxExplorerUrl(CHAIN_ID, txHash) : fallbackExplorerUrl
+
+                  return (
+                    <li
+                      key={idStr}
+                      className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-4 space-y-2.5 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold">
+                          <span className={isBuyer ? 'text-[#FF5A00]' : 'text-red-400'}>
+                            {isBuyer ? 'Buy' : 'Sell'}
+                          </span>{' '}
+                          <span className="text-[var(--p2p-ink)]">USDC</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onOpen(o.id)}
+                          className="inline-flex items-center gap-1 font-bold text-[var(--p2p-ink)]"
+                        >
+                          {compactOrderStatusLabel(o.status)} <ChevronRight className="size-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[var(--p2p-muted)]">
+                        <span>Amount</span>
+                        <span className="p2p-mono font-bold text-[var(--p2p-ink)]">
+                          {country?.symbol}
+                          {formatFiat(o.fiatAmountE6, 0)} {currency} ({formatUsdcAmount(o.amount)} USDC)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[var(--p2p-muted)]">
+                        <span>Order #{idStr}</span>
+                        <span className="p2p-mono">{formatOrderTimestamp(o.createdAt)}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between border-t border-[var(--p2p-border)] pt-2.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => (onOpenTrader ? onOpenTrader(peerWallet) : onOpen(o.id))}
+                            className="font-bold text-[var(--p2p-ink)] underline"
+                          >
+                            {peerLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => (onOpenChat ? onOpenChat(o.id) : onOpen(o.id))}
+                            className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--p2p-ink)]"
+                          >
+                            Chat <MessageSquare className="size-3" />
+                          </button>
+                        </div>
+
+                        {txUrl && (
+                          <a
+                            href={txUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p2p-mono inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5A00]"
+                          >
+                            {txHash ? shortTxHash(txHash) : 'Tx Hash'} <ExternalLink className="size-3" />
+                          </a>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function ArbiterOrderRow({
   order,
-  viewer,
   profilesMap,
   onOpen,
 }: {
   order: OrderWithId
-  viewer?: string
   profilesMap: Map<string, PublicTraderSummary>
   onOpen: (id: bigint) => void
 }) {
   const currency = hexToCurrency(order.currency)
   const country = countryByCurrency(currency)
-  const isBuyer = sameAddr(viewer, order.buyer)
-  const isSeller = sameAddr(viewer, order.seller)
-  const role = isBuyer ? 'Buy USDC' : isSeller ? 'Sell USDC' : 'Dispute Review'
-  const active = isActiveStatus(order.status)
-
-  const peerWallet = isBuyer ? order.seller : isSeller ? order.buyer : order.seller
-  const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet.toLowerCase()))
+  const buyerLabel = traderLabel(order.buyer, profilesMap.get(order.buyer.toLowerCase()))
+  const sellerLabel = traderLabel(order.seller, profilesMap.get(order.seller.toLowerCase()))
 
   return (
     <li className="border-b border-[var(--p2p-border)] last:border-b-0">
@@ -90,15 +686,11 @@ function OrderRow({
         className="grid w-full gap-3 bg-[var(--p2p-canvas)] px-4 py-4 text-left transition-colors hover:bg-[var(--p2p-row-hover)] sm:px-5 md:grid-cols-[180px_1fr_1fr_1fr_auto] md:items-center"
       >
         <div>
-          <span
-            className={`inline-flex items-center gap-1.5 text-xs font-bold ${
-              isBuyer ? 'text-emerald-400' : 'text-[#FF5A00]'
-            }`}
-          >
-            {role}
+          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A00]">
+            Dispute Review
           </span>
           <span className="mt-0.5 block truncate text-xs font-semibold text-[var(--p2p-ink)]">
-            {peerLabel}
+            {buyerLabel} vs {sellerLabel}
           </span>
           <span className="p2p-mono mt-0.5 block text-[11px] text-[var(--p2p-muted)]">
             Order #{order.id.toString()}
@@ -128,99 +720,14 @@ function OrderRow({
         </div>
 
         <div className="flex items-center justify-between gap-3 md:justify-end">
-          <span
-            className={`inline-flex items-center gap-1.5 rounded border px-2.5 py-1 text-xs font-semibold ${
-              active
-                ? 'border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
-          >
-            {active && <span className="size-1.5 rounded-full bg-[#FF5A00]" />}
-            {STATUS_META[order.status]?.label ?? 'Unknown'}
+          <span className="inline-flex items-center gap-1.5 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-1 text-xs font-semibold text-[#FF5A00]">
+            <span className="size-1.5 rounded-full bg-[#FF5A00]" />
+            {STATUS_META[order.status]?.label ?? 'Disputed'}
           </span>
           <ChevronRight className="size-4 text-[var(--p2p-muted)]" />
         </div>
       </button>
     </li>
-  )
-}
-
-export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
-  const { address, isConnected } = useAccount()
-  const { orders, isLoading } = useOrders()
-
-  const mine = useMemo(
-    () => orders.filter((o) => sameAddr(o.buyer, address) || sameAddr(o.seller, address)),
-    [orders, address],
-  )
-  const peerWallets = useMemo(
-    () => mine.flatMap((o) => [o.buyer, o.seller]),
-    [mine],
-  )
-  const profilesMap = useTraderProfiles(peerWallets)
-
-  if (!isConnected) return <ConnectPrompt body="Connect your wallet to inspect active escrow trades and order history." />
-  if (isLoading) {
-    return (
-      <div className="space-y-3">
-        <div className="p2p-card h-20 animate-pulse rounded-xl" />
-        <div className="p2p-card h-20 animate-pulse rounded-xl" />
-      </div>
-    )
-  }
-
-  if (mine.length === 0) {
-    return <EmptyCard title="No P2P Orders Yet" body="Pick an offer in P2P Trade to open your first escrow order." />
-  }
-
-  const active = mine.filter((o) => isActiveStatus(o.status))
-  const past = mine.filter((o) => !isActiveStatus(o.status))
-
-  return (
-    <div className="space-y-6">
-      {active.length > 0 && (
-        <section className="p2p-card overflow-hidden rounded-xl !border-[var(--p2p-border-active)]">
-          <div className="flex items-center justify-between border-b border-[var(--p2p-border)] px-5 py-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#FF5A00]">
-              Active Escrow Orders ({active.length})
-            </h3>
-            <span className="text-xs text-[var(--p2p-muted)]">Click an order to open execution room</span>
-          </div>
-          <ul>
-            {active.map((o) => (
-              <OrderRow
-                key={o.id.toString()}
-                order={o}
-                viewer={address}
-                profilesMap={profilesMap}
-                onOpen={onOpen}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {past.length > 0 && (
-        <section className="p2p-card overflow-hidden rounded-xl">
-          <div className="border-b border-[var(--p2p-border)] px-5 py-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--p2p-muted)]">
-              Completed &amp; Past Orders ({past.length})
-            </h3>
-          </div>
-          <ul>
-            {past.map((o) => (
-              <OrderRow
-                key={o.id.toString()}
-                order={o}
-                viewer={address}
-                profilesMap={profilesMap}
-                onOpen={onOpen}
-              />
-            ))}
-          </ul>
-        </section>
-      )}
-    </div>
   )
 }
 
@@ -246,7 +753,7 @@ export function ArbiterPanel({ onOpen }: { onOpen: (id: bigint) => void }) {
         <section className="p2p-card overflow-hidden rounded-xl !border-[#FF5A00]">
           <ul>
             {disputed.map((o) => (
-              <OrderRow key={o.id.toString()} order={o} profilesMap={profilesMap} onOpen={onOpen} />
+              <ArbiterOrderRow key={o.id.toString()} order={o} profilesMap={profilesMap} onOpen={onOpen} />
             ))}
           </ul>
         </section>

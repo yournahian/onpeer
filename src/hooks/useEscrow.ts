@@ -228,6 +228,57 @@ const messageEvent = parseAbiItem(
   'event OrderMessage(uint256 indexed orderId, address indexed sender, string text)',
 )
 
+const orderLifecycleEvents = [
+  parseAbiItem(
+    'event OrderOpened(uint256 indexed orderId, uint256 indexed adId, address indexed buyer, address seller, uint128 amount)',
+  ),
+  parseAbiItem('event OrderReleased(uint256 indexed orderId, address indexed buyer, uint128 amount)'),
+  parseAbiItem('event OrderCancelled(uint256 indexed orderId, address indexed caller)'),
+  parseAbiItem(
+    'event DisputeResolved(uint256 indexed orderId, bool toBuyer, address indexed recipient, uint128 amount)',
+  ),
+  parseAbiItem(
+    'event DisputeSettled(uint256 indexed orderId, address indexed caller, address indexed recipient, uint128 amount)',
+  ),
+] as const
+
+/** Maps orderId.toString() -> latest lifecycle transactionHash from Arc Testnet logs. */
+export function useOrderTxHashes() {
+  const client = usePublicClient({ chainId: CHAIN_ID })
+  const query = useQuery({
+    queryKey: ['p2p-order-tx-hashes', ESCROW_ADDRESS],
+    enabled: enabled && !!client,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    queryFn: async (): Promise<Record<string, string>> => {
+      if (!client || !ESCROW_ADDRESS) return {}
+      const head = await client.getBlockNumber()
+      const fetchRange = async (fromBlock: bigint) =>
+        client.getLogs({
+          address: ESCROW_ADDRESS,
+          events: orderLifecycleEvents,
+          fromBlock,
+          toBlock: head,
+        })
+      let logs
+      try {
+        logs = await fetchRange(DEPLOY_BLOCK)
+      } catch {
+        logs = await fetchRange(head > 25_000n ? head - 25_000n : 0n)
+      }
+      const out: Record<string, string> = {}
+      for (const l of logs) {
+        const oid = l.args.orderId
+        if (oid !== undefined && l.transactionHash) {
+          out[oid.toString()] = l.transactionHash
+        }
+      }
+      return out
+    },
+  })
+  return query.data ?? {}
+}
+
 export function useOrderMessages(orderId: bigint) {
   const client = usePublicClient({ chainId: CHAIN_ID })
   return useQuery({

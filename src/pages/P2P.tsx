@@ -8,7 +8,7 @@ import { useAds, useArbiter, useBackupArbiter } from '@/hooks/useEscrow'
 import { replaceQuery, useSearch } from '@/lib/router'
 import { unsubscribeEmailToken, useP2pAccount, verifyEmailToken } from '@/hooks/useAccount'
 import { SiteBar } from '@/components/SiteBar'
-import { Header, MobileBottomNav, type TabId } from '@/components/Header'
+import { Header, MobileBottomNav, type TabId, type UserCenterQuickTarget } from '@/components/Header'
 import { Market } from '@/components/Market'
 import { MyOrders, MyAds, ArbiterPanel } from '@/components/Lists'
 import { ChatHub } from '@/components/ChatHub'
@@ -40,6 +40,10 @@ export default function P2PPage() {
     return 'market'
   })
   const [postOpen, setPostOpen] = useState(false)
+  const [chatOrderId, setChatOrderId] = useState<bigint | null>(null)
+  const [chatSeed, setChatSeed] = useState(0)
+  const [accountTarget, setAccountTarget] = useState<UserCenterQuickTarget | undefined>(undefined)
+  const [accountSeed, setAccountSeed] = useState(0)
 
   const isArbiter = sameAddr(address, arbiter) || sameAddr(address, backupArbiter)
   const tab: TabId = selectedTab === 'arbiter' && !isArbiter ? 'market' : selectedTab
@@ -95,6 +99,20 @@ export default function P2PPage() {
         p.delete('trader')
       })
     }
+  }
+
+  const jumpToChatForOrder = (id: bigint) => {
+    clearSubOverlays()
+    setChatOrderId(id)
+    setChatSeed((s) => s + 1)
+    setTab('chat')
+  }
+
+  const jumpToUserCenterSection = (target: UserCenterQuickTarget) => {
+    clearSubOverlays()
+    setAccountTarget(target)
+    setAccountSeed((s) => s + 1)
+    setTab('account')
   }
 
   // Handle #verify_email=<token>, #unsubscribe=<token>, and ?kyc_return=1 without exposing bearer tokens in URL query
@@ -155,9 +173,14 @@ export default function P2PPage() {
         {!needsOnboarding && (
           <Header
             tab={tab}
-            onTab={setTab}
+            onTab={(t) => {
+              if (t === 'chat') setChatOrderId(null)
+              setTab(t)
+            }}
             showArbiter={isArbiter}
             onSelectTab={clearSubOverlays}
+            onPostAd={() => setPostOpen(true)}
+            onUserCenterJump={jumpToUserCenterSection}
           />
         )}
 
@@ -250,11 +273,26 @@ export default function P2PPage() {
                   onOpenTrader={openTrader}
                 />
               )}
-              {tab === 'orders' && <MyOrders onOpen={openOrder} />}
+              {tab === 'orders' && (
+                <MyOrders
+                  onOpen={openOrder}
+                  onOpenChat={jumpToChatForOrder}
+                  onOpenTrader={openTrader}
+                />
+              )}
               {tab === 'ads' && <MyAds onPostAd={() => setPostOpen(true)} />}
-              {tab === 'chat' && <ChatHub onOpen={openOrder} onOpenTrader={openTrader} />}
+              {tab === 'chat' && (
+                <ChatHub
+                  key={chatSeed}
+                  initialOrderId={chatOrderId}
+                  onOpen={openOrder}
+                  onOpenTrader={openTrader}
+                />
+              )}
               {tab === 'account' && (
                 <AccountPanel
+                  key={accountSeed}
+                  initialSection={accountTarget}
                   onOpenTrader={openTrader}
                   onBackToMarket={() => setTab('market')}
                 />
@@ -268,7 +306,10 @@ export default function P2PPage() {
         {!needsOnboarding && orderId === null && (
           <MobileBottomNav
             tab={tab}
-            onTab={setTab}
+            onTab={(t) => {
+              if (t === 'chat') setChatOrderId(null)
+              setTab(t)
+            }}
             showArbiter={isArbiter}
             onSelectTab={clearSubOverlays}
           />

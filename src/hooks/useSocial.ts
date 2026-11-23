@@ -68,6 +68,9 @@ export interface ComputedTradeMetrics {
   sellCompleted: number
   counterpartiesCount: number
   firstTradeDaysAgo: number | null
+  volume30dUsdc: bigint
+  buyVolumeUsdc: bigint
+  sellVolumeUsdc: bigint
 }
 
 export function computeTraderOrderMetrics(
@@ -88,6 +91,9 @@ export function computeTraderOrderMetrics(
       sellCompleted: 0,
       counterpartiesCount: 0,
       firstTradeDaysAgo: null,
+      volume30dUsdc: 0n,
+      buyVolumeUsdc: 0n,
+      sellVolumeUsdc: 0n,
     }
   }
   const w = wallet.toLowerCase()
@@ -97,6 +103,9 @@ export function computeTraderOrderMetrics(
   let completed30d = 0
   let buyCompleted = 0
   let sellCompleted = 0
+  let volume30dUsdc = 0n
+  let buyVolumeUsdc = 0n
+  let sellVolumeUsdc = 0n
   let payTotalSec = 0
   let paySamples = 0
   let releaseTotalSec = 0
@@ -113,15 +122,20 @@ export function computeTraderOrderMetrics(
     const isCompleted = o.status === STATUS.COMPLETED || o.status === STATUS.RESOLVED_BUYER
     if (createdSec >= cutoff30d) {
       created30d++
-      if (isCompleted) completed30d++
+      if (isCompleted) {
+        completed30d++
+        volume30dUsdc += o.amount
+      }
     }
 
     if (isCompleted) {
       if (isBuyer) {
         buyCompleted++
+        buyVolumeUsdc += o.amount
         counterparties.add(o.seller.toLowerCase())
       } else {
         sellCompleted++
+        sellVolumeUsdc += o.amount
         counterparties.add(o.buyer.toLowerCase())
       }
       if (earliestSec === null || createdSec < earliestSec) {
@@ -166,6 +180,9 @@ export function computeTraderOrderMetrics(
     sellCompleted,
     counterpartiesCount: counterparties.size,
     firstTradeDaysAgo,
+    volume30dUsdc,
+    buyVolumeUsdc,
+    sellVolumeUsdc,
   }
 }
 

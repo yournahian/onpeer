@@ -176,9 +176,7 @@ export function AdCard({
                 <button
                   type="button"
                   onClick={() => onSelectAd(ad)}
-                  className={`inline-flex h-9 min-w-[92px] items-center justify-center rounded-lg px-5 text-xs font-bold text-white transition-transform active:scale-95 ${
-                    mode === 'buy' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-[#FF5A00] hover:opacity-90'
-                  }`}
+                  className="inline-flex h-9 min-w-[92px] items-center justify-center rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-white transition-transform hover:opacity-90 active:scale-95"
                 >
                   {mode === 'buy' ? 'Buy' : 'Sell'}
                 </button>
@@ -303,9 +301,7 @@ export function AdCard({
               <button
                 type="button"
                 onClick={() => onSelectAd(ad)}
-                className={`inline-flex min-h-10 min-w-[126px] items-center justify-center rounded-lg px-4 text-xs font-bold text-white transition-opacity hover:opacity-90 ${
-                  mode === 'buy' ? 'bg-emerald-500' : 'bg-[#FF5A00]'
-                }`}
+                className="inline-flex min-h-10 min-w-[126px] items-center justify-center rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white transition-opacity hover:opacity-90"
               >
                 {mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
               </button>

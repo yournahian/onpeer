@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, CreditCard, Edit3, KeyRound, Loader2, Lock, Plus, Trash2, X } from 'lucide-react'
+import { Check, CreditCard, KeyRound, Loader2, Lock, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { COUNTRIES, PAYMENT_METHODS, methodsForCountry } from '@/lib/p2p'
 import { BackendApiError } from '@/lib/api'
@@ -25,9 +25,8 @@ export function PaymentMethodsPanel() {
   const { isSignedIn, profile, signIn, signingIn } = useP2pAccount()
   const { methods, isLoading, saveMethods, saving } = useSavedPaymentMethods()
 
-  const defaultCountry = profile?.country && COUNTRIES.some((c) => c.code === profile.country)
-    ? profile.country
-    : 'BD'
+  const defaultCountry =
+    profile?.country && COUNTRIES.some((c) => c.code === profile.country) ? profile.country : 'BD'
 
   const [formOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -45,7 +44,6 @@ export function PaymentMethodsPanel() {
     setEditingId(null)
     setCountryCode(c)
     setMethodBit(avail[0]?.bit ?? 7)
-    // Pre-fill holder name from previously saved method so user doesn't retype it
     setHolderName(methods[0]?.holderName ?? '')
     setAccountNumber('')
     setBankOrBranch('')
@@ -140,7 +138,7 @@ export function PaymentMethodsPanel() {
           <div className="max-w-xl">
             <h2 className="flex items-center gap-2 text-base font-bold text-[var(--p2p-ink)]">
               <CreditCard className="size-4 text-[#FF5A00]" />
-              Saved P2P Payment Methods
+              P2P Payment Methods
             </h2>
             <p className="mt-1 text-xs leading-relaxed text-[var(--p2p-muted)]">
               Sign in with your wallet (free &amp; gasless) to save encrypted bKash, Nagad, Rocket, UPI, or Bank
@@ -166,37 +164,33 @@ export function PaymentMethodsPanel() {
   }
 
   return (
-    <section className="p2p-card rounded-xl p-5 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--p2p-border)] pb-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-[var(--p2p-ink)]">P2P Payment Methods</h2>
-            <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
-              <Lock className="size-3" /> AES-256 Encrypted ({methods.length}/20)
-            </span>
-          </div>
-          <p className="mt-1 max-w-2xl text-xs leading-relaxed text-[var(--p2p-muted)]">
-            Add your payment accounts separately (bKash, Nagad, Rocket, Bank transfer, UPI, etc.). When creating an Ad
-            or selling USDC, selecting a payment method will <strong className="text-[var(--p2p-ink)]">auto-fill</strong>{' '}
-            its saved account details automatically.
-          </p>
-        </div>
+    <section className="space-y-4">
+      {/* Header Row (SS 4 Style) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-3xl text-xs leading-relaxed text-[var(--p2p-muted)]">
+          P2P payment methods: When you sell cryptocurrencies, the payment method added will be displayed to buyer as
+          options to accept payment — please ensure that the account owner&apos;s name is consistent with your verified
+          name on OnPeer. You can add up to 20 payment methods.{' '}
+          <span className="inline-flex items-center gap-1 font-semibold text-[#FF5A00]">
+            <Lock className="size-3" /> AES-256 Encrypted ({methods.length}/20)
+          </span>
+        </p>
 
         {!formOpen && (
           <button
             type="button"
             onClick={openAddForm}
             disabled={methods.length >= 20}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] transition-colors hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-40"
           >
-            <Plus className="size-4" /> Add Payment Method
+            <Plus className="size-4" /> Add a payment method
           </button>
         )}
       </div>
 
       {/* Add / Edit Payment Method Form */}
       {formOpen && (
-        <div className="rounded-xl border border-[#FF5A00]/60 bg-[var(--p2p-input-bg)] p-4 space-y-4">
+        <div className="rounded-xl border border-[#FF5A00]/60 bg-[var(--p2p-surface)] p-4 sm:p-5 space-y-4">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-bold text-[var(--p2p-ink)]">
               {editingId ? `Edit ${selectedMethodDef.name}` : 'Add New Payment Method'}
@@ -205,7 +199,7 @@ export function PaymentMethodsPanel() {
               type="button"
               onClick={closeForm}
               aria-label="Cancel"
-              className="flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
+              className="flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
             >
               <X className="size-4" />
             </button>
@@ -233,7 +227,7 @@ export function PaymentMethodsPanel() {
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                       active
                         ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                        : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                     }`}
                   >
                     <CountryFlag code={c.code} size={14} />
@@ -260,7 +254,7 @@ export function PaymentMethodsPanel() {
                     className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${
                       active
                         ? 'border-[#FF5A00] bg-[#FF5A00] text-[#FFFFFF]'
-                        : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]'
+                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]'
                     }`}
                   >
                     <MethodLogo name={m.name} size={16} />
@@ -290,7 +284,7 @@ export function PaymentMethodsPanel() {
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
                 {selectedMethodDef.name === 'Bank transfer'
                   ? 'Bank Account Number / IBAN *'
-                  : `${selectedMethodDef.name} Number / ID *`}
+                  : `${selectedMethodDef.name} Wallet / Account Number *`}
               </span>
               <input
                 value={accountNumber}
@@ -326,7 +320,7 @@ export function PaymentMethodsPanel() {
 
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                Payment Note (Optional)
+                Remarks (Optional)
               </span>
               <input
                 value={notes}
@@ -359,19 +353,18 @@ export function PaymentMethodsPanel() {
         </div>
       )}
 
-      {/* Saved Methods List */}
+      {/* Saved Methods Horizontal Cards (SS 4 Style) */}
       {isLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="h-24 animate-pulse rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)]" />
-          <div className="h-24 animate-pulse rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)]" />
+        <div className="space-y-3">
+          <div className="h-24 animate-pulse rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)]" />
+          <div className="h-24 animate-pulse rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)]" />
         </div>
       ) : methods.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-9 text-center">
+        <div className="rounded-xl border border-dashed border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-5 py-10 text-center">
           <CreditCard className="mx-auto size-7 text-[#FF5A00]" />
-          <p className="mt-2.5 text-sm font-bold text-[var(--p2p-ink)]">No Payment Methods Saved Yet</p>
+          <p className="mt-2.5 text-sm font-bold text-[var(--p2p-ink)]">No Payment Methods Added Yet</p>
           <p className="mx-auto mt-1 max-w-md text-xs text-[var(--p2p-muted)]">
-            Add your bKash, Nagad, Rocket, UPI, or Bank account above so you never have to type account numbers again
-            when posting or taking ads.
+            Add your bKash, Nagad, Rocket, UPI, or Bank account so it auto-fills whenever you post or take ads.
           </p>
           {!formOpen && (
             <button
@@ -379,69 +372,84 @@ export function PaymentMethodsPanel() {
               onClick={openAddForm}
               className="mt-4 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90"
             >
-              <Plus className="size-3.5" /> Add Your First Method
+              <Plus className="size-3.5" /> Add a payment method
             </button>
           )}
         </div>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="space-y-3">
           {methods.map((m) => (
             <li
               key={m.id}
-              className="flex flex-col justify-between rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4"
-              style={{ borderLeft: '3px solid #FF5A00' }}
+              className="overflow-hidden rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)]"
             >
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <MethodLogo name={m.methodName} size={20} />
-                    <span className="text-sm font-bold text-[var(--p2p-ink)]">{m.methodName}</span>
-                    {m.bankOrBranch && (
-                      <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-semibold text-[#FF5A00]">
-                        {m.bankOrBranch}
-                      </span>
-                    )}
-                  </div>
+              {/* Top Header Bar (SS 4: | Nagad [Type] ......... Edit  Delete) */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 py-2.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className="inline-flex items-center gap-2 pl-2 text-xs font-bold text-[var(--p2p-ink)] sm:text-sm"
+                    style={{ borderLeft: '3px solid #FF5A00' }}
+                  >
+                    <MethodLogo name={m.methodName} size={16} />
+                    {m.methodName}
+                  </span>
+                  {m.bankOrBranch && (
+                    <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-semibold text-[#FF5A00]">
+                      {m.bankOrBranch}
+                    </span>
+                  )}
+                </div>
 
-                  <div className="flex items-center gap-1">
+                <div className="flex items-center gap-3 text-xs font-bold">
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => openEditForm(m)}
+                    className="text-[#FF5A00] hover:underline disabled:opacity-40"
+                  >
+                    Edit
+                  </button>
+                  {confirmDeleteId === m.id ? (
                     <button
                       type="button"
                       disabled={saving}
-                      onClick={() => openEditForm(m)}
-                      aria-label={`Edit ${m.methodName}`}
-                      className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] hover:border-[#FF5A00] hover:text-[var(--p2p-ink)]"
+                      onClick={() => void handleDelete(m.id)}
+                      className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white hover:opacity-90"
                     >
-                      <Edit3 className="size-3.5" />
+                      Confirm Delete
                     </button>
-                    {confirmDeleteId === m.id ? (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void handleDelete(m.id)}
-                        className="rounded-lg bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:opacity-90"
-                      >
-                        Confirm
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => setConfirmDeleteId(m.id)}
-                        aria-label={`Delete ${m.methodName}`}
-                        className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)] hover:border-red-500/60 hover:text-red-400"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setConfirmDeleteId(m.id)}
+                      className="text-[#FF5A00] hover:text-red-400 hover:underline disabled:opacity-40"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Body Columns (SS 4: Wallet Number | Account Holder | Remarks) */}
+              <div className="grid gap-3 px-4 py-3.5 text-xs sm:grid-cols-3">
+                <div>
+                  <span className="block text-[11px] text-[var(--p2p-muted)]">
+                    {m.methodName === 'Bank transfer' ? 'Account Number' : `${m.methodName} Wallet Number`}
+                  </span>
+                  <span className="p2p-mono mt-0.5 block font-semibold text-[var(--p2p-ink)]">
+                    {m.accountNumber}
+                  </span>
                 </div>
 
-                <div className="space-y-0.5 text-xs">
-                  <p className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">{m.accountNumber}</p>
-                  <p className="text-[var(--p2p-muted)]">
-                    Holder: <strong className="text-[var(--p2p-ink)]">{m.holderName}</strong>
-                  </p>
-                  {m.notes && <p className="text-[11px] text-[var(--p2p-muted)]">Note: {m.notes}</p>}
+                <div>
+                  <span className="block text-[11px] text-[var(--p2p-muted)]">Account Holder</span>
+                  <span className="mt-0.5 block font-semibold text-[var(--p2p-ink)]">{m.holderName}</span>
+                </div>
+
+                <div>
+                  <span className="block text-[11px] text-[var(--p2p-muted)]">Remarks</span>
+                  <span className="mt-0.5 block text-[var(--p2p-ink)]">{m.notes || m.bankOrBranch || '—'}</span>
                 </div>
               </div>
             </li>

@@ -283,7 +283,7 @@ export function Market({
                   }}
                   className={`h-8 rounded-full px-5 text-xs font-extrabold transition-colors ${
                     active
-                      ? 'bg-[var(--p2p-ink)] text-[var(--p2p-canvas)]'
+                      ? 'bg-[#FF5A00] text-white'
                       : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                   }`}
                 >
@@ -484,9 +484,7 @@ export function Market({
                     }}
                     className={`h-9 rounded-md px-5 text-xs font-extrabold transition-colors ${
                       active
-                        ? m === 'buy'
-                          ? 'bg-emerald-500 text-white'
-                          : 'bg-[#FF5A00] text-white'
+                        ? 'bg-[#FF5A00] text-white'
                         : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                     }`}
                   >

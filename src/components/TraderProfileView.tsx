@@ -351,9 +351,7 @@ export function TraderProfileView({
                     <button
                       type="button"
                       onClick={() => setSelectedAd(ad)}
-                      className={`inline-flex min-h-9 min-w-[116px] items-center justify-center rounded-lg px-4 text-xs font-bold text-white transition-opacity hover:opacity-90 ${
-                        viewerMode === 'buy' ? 'bg-emerald-500' : 'bg-[#FF5A00]'
-                      }`}
+                      className="inline-flex min-h-9 min-w-[116px] items-center justify-center rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white transition-opacity hover:opacity-90"
                     >
                       {viewerMode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
                     </button>
@@ -623,9 +621,7 @@ export function TraderProfileView({
                         <button
                           type="button"
                           onClick={() => setSelectedAd(ad)}
-                          className={`h-9 rounded-lg px-5 text-xs font-bold text-white ${
-                            viewerMode === 'buy' ? 'bg-emerald-500' : 'bg-[#FF5A00]'
-                          }`}
+                          className="h-9 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-white hover:opacity-90"
                         >
                           {viewerMode === 'buy' ? 'Buy' : 'Sell'}
                         </button>
