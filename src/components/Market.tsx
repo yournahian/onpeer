@@ -1,25 +1,44 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
-import { ChevronDown, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react'
+import { ChevronDown, Filter, Plus, RefreshCw, X } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
-import { useAds, useAccounts, useMyAccount, useNow, useVerifications, type AdWithId } from '@/hooks/useEscrow'
+import {
+  useAccounts,
+  useAds,
+  useMyAccount,
+  useNow,
+  useOrders,
+  useUsdcBalance,
+  useVerifications,
+  type AdWithId,
+} from '@/hooks/useEscrow'
 import {
   COUNTRIES,
   SIDE_BUY,
   SIDE_SELL,
+  STATUS,
+  TIER0_CAP,
   fiatFor,
   formatPrice,
-  formatUsdcAmount,
   hexToCurrency,
   isAdExpired,
+  isUncapped,
   methodsForCountry,
   sameAddr,
 } from '@/lib/p2p'
 import { parseUnitsExact } from '@/onchain-money'
 import { CountryFlag } from '@/components/logos'
 import { AdCard } from '@/components/AdCard'
+import { MarketFilterSheet } from '@/components/MarketFilterSheet'
 import { TradePopupModal } from '@/components/TradeSheet'
+import {
+  loadSavedP2pFilter,
+  persistP2pFilter,
+  useMyRelations,
+  useTraderProfiles,
+  type SavedP2pFilterState,
+} from '@/hooks/useSocial'
 
 function parseFiatFilter(raw: string): bigint | null {
   if (!raw) return null
@@ -38,6 +57,7 @@ export function Market({
   onClearDeepTrade,
   onOpenedOrder,
   onPostAd,
+  onOpenTrader,
 }: {
   initialMode?: 'buy' | 'sell'
   initialCurrency?: string
@@ -46,11 +66,15 @@ export function Market({
   onClearDeepTrade: () => void
   onOpenedOrder: (orderId: bigint) => void
   onPostAd: () => void
+  onOpenTrader?: (wallet: string) => void
 }) {
   const { address } = useAccount()
   const queryClient = useQueryClient()
   const { ads, isLoading } = useAds()
+  const { orders } = useOrders()
   const viewerAccount = useMyAccount()
+  const viewerBalance = useUsdcBalance()
+  const { followingSet, blockedSet } = useMyRelations()
   const now = useNow()
 
   const [mode, setMode] = useState<'buy' | 'sell'>(initialMode ?? 'buy')
@@ -59,22 +83,25 @@ export function Market({
   )
   const [method, setMethod] = useState<number | null>(null)
   const [amount, setAmount] = useState('')
-  const [merchantsOnly, setMerchantsOnly] = useState(false)
-  const [kycOnly, setKycOnly] = useState(false)
+  const [filterState, setFilterState] = useState<SavedP2pFilterState>(() => loadSavedP2pFilter())
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [selectedAd, setSelectedAd] = useState<AdWithId | null>(null)
 
   const [currencyOpen, setCurrencyOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
-  const [mobileFilterPanel, setMobileFilterPanel] = useState<'currency' | 'amount' | 'payment' | null>(null)
+  const [sortOpen, setSortOpen] = useState(false)
+  const [mobileQuickPanel, setMobileQuickPanel] = useState<'currency' | 'amount' | 'payment' | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const currencyRef = useRef<HTMLDivElement>(null)
   const paymentRef = useRef<HTMLDivElement>(null)
+  const sortRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (currencyRef.current && !currencyRef.current.contains(e.target as Node)) setCurrencyOpen(false)
       if (paymentRef.current && !paymentRef.current.contains(e.target as Node)) setPaymentOpen(false)
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
@@ -87,11 +114,22 @@ export function Market({
   const activeCountryCode = deepCountryCode ?? countryCode
   const activePopupAd = selectedAd ?? deepAd ?? null
 
-  const country = COUNTRIES.find((c) => c.code === activeCountryCode) ?? COUNTRIES[0]
-  const currencyCode = country.currency
+  const country = COUNTRIES.find((c) => c.code === activeCountryCode) ?? COUNTRIES[0]!
   const wantedSide = activeMode === 'buy' ? SIDE_SELL : SIDE_BUY
   const countryMethods = methodsForCountry(country.code)
   const selectedMethod = method !== null ? countryMethods.find((m) => m.bit === method) : undefined
+
+  const tradedCounterparties = useMemo(() => {
+    const set = new Set<string>()
+    if (!address) return set
+    const me = address.toLowerCase()
+    for (const o of orders) {
+      if (o.status !== STATUS.COMPLETED && o.status !== STATUS.RESOLVED_BUYER) continue
+      if (o.buyer.toLowerCase() === me) set.add(o.seller.toLowerCase())
+      if (o.seller.toLowerCase() === me) set.add(o.buyer.toLowerCase())
+    }
+    return set
+  }, [orders, address])
 
   const live = useMemo(
     () => ads.filter((ad) => !ad.paused && !ad.closed && ad.available > 0n && !isAdExpired(ad.expiresAt, now)),
@@ -110,33 +148,95 @@ export function Market({
     return map
   }, [live, wantedSide, activeMode])
 
-  const hereAds = live.filter((ad) => hexToCurrency(ad.currency) === currencyCode)
-  const sellAds = hereAds.filter((ad) => ad.side === SIDE_SELL)
-  const buyAds = hereAds.filter((ad) => ad.side === SIDE_BUY)
-  const stats = {
-    bestBuy: sellAds.length ? sellAds.reduce((m, a) => (a.priceE6 < m ? a.priceE6 : m), sellAds[0].priceE6) : null,
-    bestSell: buyAds.length ? buyAds.reduce((m, a) => (a.priceE6 > m ? a.priceE6 : m), buyAds[0].priceE6) : null,
-    liquidity: sellAds.reduce((sum, a) => sum + a.available, 0n),
-    liveAds: hereAds.length,
-  }
+  const hereAds = useMemo(() => {
+    const targetCurrency = (COUNTRIES.find((c) => c.code === activeCountryCode) ?? COUNTRIES[0]!).currency
+    return live.filter((ad) => hexToCurrency(ad.currency) === targetCurrency)
+  }, [live, activeCountryCode])
 
-  const verifications = useVerifications(hereAds.map((a) => a.maker))
+  const makerAddresses = useMemo(() => hereAds.map((a) => a.maker), [hereAds])
+  const verifications = useVerifications(makerAddresses)
+  const accounts = useAccounts(makerAddresses)
+  const traderProfiles = useTraderProfiles(makerAddresses)
 
   const fiatFilter = parseFiatFilter(amount)
-  const filtered = hereAds
-    .filter((ad) => ad.side === wantedSide)
-    .filter((ad) => !merchantsOnly || ad.merchantAd)
-    .filter((ad) => !kycOnly || verifications.get(ad.maker.toLowerCase())?.verified === true)
-    .filter((ad) => method === null || (ad.paymentMask & (1 << method)) !== 0)
-    .filter((ad) => {
-      if (fiatFilter === null) return true
-      const lo = fiatFor(ad.minAmount > ad.available ? ad.available : ad.minAmount, ad.priceE6)
-      const hi = fiatFor(ad.maxAmount > ad.available ? ad.available : ad.maxAmount, ad.priceE6)
-      return fiatFilter >= lo && fiatFilter <= hi
-    })
-    .sort((a, b) => (activeMode === 'buy' ? Number(a.priceE6 - b.priceE6) : Number(b.priceE6 - a.priceE6)))
+  const userCap = viewerAccount ? viewerAccount.orderCap : TIER0_CAP
+  const viewerCompleted = viewerAccount ? viewerAccount.ordersCompleted : 0
 
-  const accounts = useAccounts(filtered.map((a) => a.maker))
+  const filtered = useMemo(() => {
+    const list = hereAds
+      .filter((ad) => ad.side === wantedSide)
+      .filter((ad) => !blockedSet.has(ad.maker.toLowerCase()))
+      .filter((ad) => !filterState.merchantsOnly || ad.merchantAd)
+      .filter((ad) => {
+        const kycOk =
+          verifications.get(ad.maker.toLowerCase())?.verified === true ||
+          traderProfiles.get(ad.maker.toLowerCase())?.kycApproved === true
+        if (filterState.kycOnly && !kycOk) return false
+        if (filterState.noVerificationOnly && ad.minTakerCompleted > 0) return false
+        return true
+      })
+      .filter((ad) => !filterState.beginnerFriendlyOnly || ad.minTakerCompleted === 0)
+      .filter((ad) => !filterState.tradedWithOnly || tradedCounterparties.has(ad.maker.toLowerCase()))
+      .filter((ad) => !filterState.followedOnly || followingSet.has(ad.maker.toLowerCase()))
+      .filter((ad) => filterState.windowLimitMin === null || ad.windowMinutes <= filterState.windowLimitMin)
+      .filter((ad) => {
+        if (!filterState.tradableOnly) return true
+        if (viewerCompleted < ad.minTakerCompleted) return false
+        const minReq = ad.minAmount > ad.available ? ad.available : ad.minAmount
+        if (!isUncapped(userCap) && minReq > userCap) return false
+        if (activeMode === 'sell' && viewerBalance !== undefined && viewerBalance < minReq) return false
+        return true
+      })
+      .filter((ad) => method === null || (ad.paymentMask & (1 << method)) !== 0)
+      .filter((ad) => {
+        if (fiatFilter === null) return true
+        const lo = fiatFor(ad.minAmount > ad.available ? ad.available : ad.minAmount, ad.priceE6)
+        const hi = fiatFor(ad.maxAmount > ad.available ? ad.available : ad.maxAmount, ad.priceE6)
+        return fiatFilter >= lo && fiatFilter <= hi
+      })
+
+    return [...list].sort((a, b) => {
+      if (filterState.sortBy === 'trades') {
+        const ta = accounts.get(a.maker.toLowerCase())?.ordersCompleted ?? 0
+        const tb = accounts.get(b.maker.toLowerCase())?.ordersCompleted ?? 0
+        if (tb !== ta) return tb - ta
+      } else if (filterState.sortBy === 'completion') {
+        const accA = accounts.get(a.maker.toLowerCase())
+        const accB = accounts.get(b.maker.toLowerCase())
+        const ca = accA && accA.ordersCreated > 0 ? accA.ordersCompleted / accA.ordersCreated : 1
+        const cb = accB && accB.ordersCreated > 0 ? accB.ordersCompleted / accB.ordersCreated : 1
+        if (cb !== ca) return cb - ca
+      }
+      return activeMode === 'buy' ? Number(a.priceE6 - b.priceE6) : Number(b.priceE6 - a.priceE6)
+    })
+  }, [
+    hereAds,
+    wantedSide,
+    blockedSet,
+    filterState,
+    verifications,
+    traderProfiles,
+    tradedCounterparties,
+    followingSet,
+    viewerCompleted,
+    userCap,
+    activeMode,
+    viewerBalance,
+    method,
+    fiatFilter,
+    accounts,
+  ])
+
+  const hasActiveAdvancedFilter =
+    filterState.tradableOnly ||
+    filterState.merchantsOnly ||
+    filterState.kycOnly ||
+    filterState.noVerificationOnly ||
+    filterState.beginnerFriendlyOnly ||
+    filterState.tradedWithOnly ||
+    filterState.followedOnly ||
+    filterState.windowLimitMin !== null ||
+    filterState.sortBy !== 'price'
 
   const triggerRefresh = () => {
     setRefreshing(true)
@@ -150,15 +250,25 @@ export function Market({
     onClearDeepTrade()
   }
 
+  const sortLabels: Record<SavedP2pFilterState['sortBy'], string> = {
+    price: 'Price',
+    trades: 'Trades',
+    completion: 'Completion',
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-3 md:space-y-4">
       {/* =====================================================================
-          MOBILE STICKY HEADER & HORIZONTAL FILTER RIBBON (< 768px)
+          MOBILE MARKET BAR (< 768px — SS 1 Exact Pattern, No Banner)
          ===================================================================== */}
-      <section className="p2p-card rounded-2xl p-3.5 md:hidden">
-        {/* Top Row: Buy | Sell Large Text Toggle + Fiat Pill + Post Ad */}
-        <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] pb-2.5">
-          <div role="tablist" aria-label="Trade direction" className="flex items-center gap-5">
+      <section className="space-y-3 md:hidden">
+        {/* Row 1: Pill [Buy | Sell] on Left + [Currency ▾] & [+ Ad] on Right */}
+        <div className="flex items-center justify-between gap-2">
+          <div
+            role="tablist"
+            aria-label="Trade direction"
+            className="inline-flex rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-0.5"
+          >
             {(['buy', 'sell'] as const).map((m) => {
               const active = activeMode === m
               return (
@@ -171,12 +281,13 @@ export function Market({
                     onClearDeepTrade()
                     setMode(m)
                   }}
-                  className={`relative pb-2 text-lg font-bold transition-colors ${
-                    active ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)]'
+                  className={`h-8 rounded-full px-5 text-xs font-extrabold transition-colors ${
+                    active
+                      ? 'bg-[var(--p2p-ink)] text-[var(--p2p-canvas)]'
+                      : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                   }`}
                 >
                   {m === 'buy' ? 'Buy' : 'Sell'}
-                  {active && <span className="absolute inset-x-0 -bottom-[11px] h-[3px] rounded-full bg-[#FF5A00]" />}
                 </button>
               )
             })}
@@ -185,88 +296,69 @@ export function Market({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setMobileFilterPanel((p) => (p === 'currency' ? null : 'currency'))}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-xs font-bold text-[var(--p2p-ink)]"
+              onClick={onPostAd}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#FF5A00]/60 bg-[var(--p2p-tint)] px-2.5 text-xs font-bold text-[#FF5A00]"
             >
-              <CountryFlag code={country.code} size={14} />
+              <Plus className="size-3.5" /> Ad
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMobileQuickPanel((p) => (p === 'currency' ? null : 'currency'))}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs font-bold text-[var(--p2p-ink)]"
+            >
               <span>{country.currency}</span>
+              <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: [USDC]  [Amount ▾]  [Payment ▾]  .......... [▽ Funnel] */}
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] pb-2.5">
+          <div className="flex items-center gap-4 text-xs font-semibold">
+            <span className="inline-flex items-center gap-1.5 font-bold text-[var(--p2p-ink)]">
+              <TokenUSDC variant="branded" size={16} /> USDC
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setMobileQuickPanel((p) => (p === 'amount' ? null : 'amount'))}
+              className={`inline-flex items-center gap-1 ${
+                amount ? 'font-bold text-[#FF5A00]' : 'text-[var(--p2p-ink)]'
+              }`}
+            >
+              <span>{amount ? `${country.symbol}${amount}` : 'Amount'}</span>
               <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
             </button>
 
             <button
               type="button"
-              onClick={onPostAd}
-              className="inline-flex h-8 items-center gap-1 rounded-full border border-[#FF5A00] bg-[var(--p2p-tint)] px-3 text-xs font-bold text-[#FF5A00]"
+              onClick={() => setMobileQuickPanel((p) => (p === 'payment' ? null : 'payment'))}
+              className={`inline-flex items-center gap-1 ${
+                selectedMethod ? 'font-bold text-[#FF5A00]' : 'text-[var(--p2p-ink)]'
+              }`}
             >
-              <Plus className="size-3.5" /> Ad
+              <span className="max-w-[96px] truncate">{selectedMethod ? selectedMethod.name : 'Payment'}</span>
+              <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
             </button>
           </div>
-        </div>
-
-        {/* Horizontal Scrollable Filter Ribbon (no scrollbar visible) */}
-        <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pt-3">
-          <span className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3 text-xs font-bold text-[var(--p2p-ink)]">
-            <TokenUSDC variant="branded" size={14} /> USDC
-          </span>
 
           <button
             type="button"
-            onClick={() => setMobileFilterPanel((p) => (p === 'amount' ? null : 'amount'))}
-            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
-              amount
-                ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
+            aria-label="Open filters"
+            onClick={() => setFilterSheetOpen(true)}
+            className="relative inline-flex size-8 items-center justify-center rounded-lg text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]"
           >
-            <span className="p2p-mono">{amount ? `${country.symbol}${amount}` : 'Amount'}</span>
-            <ChevronDown className="size-3" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setMobileFilterPanel((p) => (p === 'payment' ? null : 'payment'))}
-            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
-              selectedMethod
-                ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
-          >
-            <span>Payment: {selectedMethod ? selectedMethod.name : 'All'}</span>
-            <ChevronDown className="size-3" />
-          </button>
-
-          <button
-            type="button"
-            aria-pressed={kycOnly}
-            onClick={() => setKycOnly((v) => !v)}
-            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
-              kycOnly
-                ? 'border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] text-[var(--p2p-ok-ink)]'
-                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
-          >
-            <ShieldCheck className="size-3.5 text-[var(--p2p-ok-ink)]" />
-            KYC Verified
-          </button>
-
-          <button
-            type="button"
-            aria-pressed={merchantsOnly}
-            onClick={() => setMerchantsOnly((v) => !v)}
-            className={`inline-flex h-8 shrink-0 items-center gap-1 rounded-full border px-3 text-xs font-semibold ${
-              merchantsOnly
-                ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
-            }`}
-          >
-            <ShieldCheck className="size-3.5 text-[#FF5A00]" />
-            Verified Shield Only
+            <Filter className="size-4" />
+            {hasActiveAdvancedFilter && (
+              <span className="absolute right-1 top-1 size-2 rounded-full bg-[#FF5A00]" />
+            )}
           </button>
         </div>
 
-        {/* Expandable Mobile Filter Drawer (Currency / Amount / Payment) */}
-        {mobileFilterPanel === 'currency' && (
-          <div className="mt-3 grid grid-cols-2 gap-1.5 border-t border-[var(--p2p-border)] pt-3">
+        {/* Quick Mobile Inline Dropdowns */}
+        {mobileQuickPanel === 'currency' && (
+          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
             {COUNTRIES.map((c) => {
               const active = c.code === country.code
               return (
@@ -277,7 +369,7 @@ export function Market({
                     onClearDeepTrade()
                     setCountryCode(c.code)
                     setMethod(null)
-                    setMobileFilterPanel(null)
+                    setMobileQuickPanel(null)
                   }}
                   className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs font-semibold ${
                     active
@@ -285,7 +377,7 @@ export function Market({
                       : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)]'
                   }`}
                 >
-                  <CountryFlag code={c.code} size={16} />
+                  <CountryFlag code={c.code} size={15} />
                   <span>
                     {c.currency} ({c.symbol})
                   </span>
@@ -295,9 +387,9 @@ export function Market({
           </div>
         )}
 
-        {mobileFilterPanel === 'amount' && (
-          <div className="mt-3 flex items-center gap-2 border-t border-[var(--p2p-border)] pt-3">
-            <div className="p2p-input flex h-10 flex-1 items-center rounded-xl px-3">
+        {mobileQuickPanel === 'amount' && (
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
+            <div className="p2p-input flex h-10 flex-1 items-center rounded-lg px-3">
               <span className="mr-1.5 text-xs font-bold text-[var(--p2p-muted)]">{country.symbol}</span>
               <input
                 inputMode="decimal"
@@ -317,21 +409,21 @@ export function Market({
             </div>
             <button
               type="button"
-              onClick={() => setMobileFilterPanel(null)}
-              className="h-10 rounded-xl bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF]"
+              onClick={() => setMobileQuickPanel(null)}
+              className="h-10 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white"
             >
-              Done
+              Confirm
             </button>
           </div>
         )}
 
-        {mobileFilterPanel === 'payment' && (
-          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--p2p-border)] pt-3">
+        {mobileQuickPanel === 'payment' && (
+          <div className="flex flex-wrap gap-1.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
             <button
               type="button"
               onClick={() => {
                 setMethod(null)
-                setMobileFilterPanel(null)
+                setMobileQuickPanel(null)
               }}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 method === null
@@ -339,7 +431,7 @@ export function Market({
                   : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)]'
               }`}
             >
-              All Payments
+              All
             </button>
             {countryMethods.map((m) => {
               const active = method === m.bit
@@ -349,14 +441,13 @@ export function Market({
                   type="button"
                   onClick={() => {
                     setMethod(m.bit)
-                    setMobileFilterPanel(null)
+                    setMobileQuickPanel(null)
                   }}
                   className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                     active
                       ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
                       : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)]'
                   }`}
-                  style={{ borderLeft: '3px solid #FF5A00' }}
                 >
                   {m.name}
                 </button>
@@ -367,12 +458,12 @@ export function Market({
       </section>
 
       {/* =====================================================================
-          DESKTOP CONTROL & FILTER BAR (>= 768px)
+          DESKTOP CONTROL & FILTER BAR (>= 768px — SS 12 Pattern, No Banner)
          ===================================================================== */}
-      <section className="p2p-card relative z-20 hidden rounded-xl p-4 md:block">
-        <div className="flex flex-wrap items-center justify-between gap-2.5 lg:flex-nowrap">
-          {/* Left Group: Buy / Sell Segmented Toggle + Asset Chip */}
-          <div className="flex shrink-0 items-center gap-2">
+      <section className="p2p-card relative z-20 hidden rounded-xl p-4 space-y-3.5 md:block">
+        {/* Top Row: [Buy | Sell] + USDC + Currency Tabs + Post Ad */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--p2p-border)] pb-3">
+          <div className="flex flex-wrap items-center gap-4">
             <div
               role="tablist"
               aria-label="Trade direction"
@@ -391,28 +482,66 @@ export function Market({
                       setMode(m)
                       setSelectedAd(null)
                     }}
-                    className={`min-h-9 whitespace-nowrap rounded-md px-3.5 text-xs font-bold transition-colors xl:px-4 xl:text-sm ${
+                    className={`h-9 rounded-md px-5 text-xs font-extrabold transition-colors ${
                       active
-                        ? 'bg-[#FF5A00] text-[#FFFFFF]'
+                        ? m === 'buy'
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-[#FF5A00] text-white'
                         : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                     }`}
                   >
-                    {m === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+                    {m === 'buy' ? 'Buy' : 'Sell'}
                   </button>
                 )
               })}
             </div>
 
-            <span className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3 text-xs font-bold text-[var(--p2p-ink)]">
-              <TokenUSDC variant="branded" size={16} />
-              USDC
+            <span className="inline-flex items-center gap-1.5 border-b-2 border-[#FF5A00] pb-1 text-sm font-extrabold text-[var(--p2p-ink)]">
+              <TokenUSDC variant="branded" size={16} /> USDC
             </span>
+
+            {/* Quick Corridor Tabs (SS 12) */}
+            <div className="flex flex-wrap items-center gap-1">
+              {COUNTRIES.map((c) => {
+                const active = c.code === country.code
+                return (
+                  <button
+                    key={c.code}
+                    type="button"
+                    onClick={() => {
+                      onClearDeepTrade()
+                      setCountryCode(c.code)
+                      setMethod(null)
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                      active
+                        ? 'bg-[var(--p2p-tint)] text-[#FF5A00]'
+                        : 'text-[var(--p2p-muted)] hover:bg-[var(--p2p-input-bg)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    <CountryFlag code={c.code} size={14} />
+                    {c.currency}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
-          {/* Center Group: Combined Amount + Fiat Dropdown & Payment Method Dropdown */}
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 lg:justify-center">
-            <div ref={currencyRef} className="relative flex min-w-[235px] flex-1 max-w-[360px]">
-              <div className="p2p-input flex min-h-11 w-full items-center rounded-lg">
+          <button
+            type="button"
+            onClick={onPostAd}
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white hover:opacity-90"
+          >
+            <Plus className="size-4" /> Post Ad
+          </button>
+        </div>
+
+        {/* Second Row: Amount + Fiat Dropdown | All Payments Dropdown | Funnel Filter ...... Sort By + Refresh */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Amount + Currency */}
+            <div ref={currencyRef} className="relative w-64">
+              <div className="p2p-input flex h-10 items-center rounded-lg">
                 <input
                   inputMode="decimal"
                   value={amount}
@@ -421,8 +550,7 @@ export function Market({
                     if (/^\d*\.?\d{0,2}$/.test(v)) setAmount(v)
                   }}
                   placeholder="Transaction amount"
-                  aria-label={`Filter by amount in ${country.currency}`}
-                  className="p2p-mono w-full bg-transparent px-3 text-sm font-semibold text-[var(--p2p-ink)] outline-none placeholder:font-sans placeholder:font-normal placeholder:text-[var(--p2p-muted)]"
+                  className="p2p-mono w-full bg-transparent px-3 text-xs font-bold text-[var(--p2p-ink)] outline-none placeholder:font-sans placeholder:font-normal placeholder:text-[var(--p2p-muted)]"
                 />
                 <button
                   type="button"
@@ -430,22 +558,16 @@ export function Market({
                     setCurrencyOpen((o) => !o)
                     setPaymentOpen(false)
                   }}
-                  aria-expanded={currencyOpen}
-                  className="flex h-full shrink-0 items-center gap-1.5 border-l border-[var(--p2p-border)] px-3 py-2 text-xs font-bold text-[var(--p2p-ink)] hover:text-[#FF5A00]"
+                  className="flex h-full shrink-0 items-center gap-1.5 border-l border-[var(--p2p-border)] px-3 text-xs font-bold text-[var(--p2p-ink)]"
                 >
-                  <CountryFlag code={country.code} size={16} />
-                  <span>
-                    {country.currency} {country.symbol}
-                  </span>
+                  <CountryFlag code={country.code} size={15} />
+                  <span>{country.currency}</span>
                   <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
                 </button>
               </div>
 
               {currencyOpen && (
-                <ul
-                  role="listbox"
-                  className="p2p-glass-popover absolute right-0 top-full z-30 mt-1.5 max-h-72 w-60 overflow-y-auto rounded-xl p-1.5"
-                >
+                <ul className="p2p-glass-popover absolute right-0 top-full z-30 mt-1.5 max-h-72 w-60 overflow-y-auto rounded-xl p-1.5">
                   {COUNTRIES.map((c) => {
                     const active = c.code === country.code
                     const best = bestByCurrency.get(c.currency)
@@ -457,20 +579,17 @@ export function Market({
                             onClearDeepTrade()
                             setCountryCode(c.code)
                             setMethod(null)
-                            setSelectedAd(null)
                             setCurrencyOpen(false)
                           }}
-                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                          className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-xs ${
                             active
                               ? 'bg-[var(--p2p-tint)] font-bold text-[#FF5A00]'
                               : 'text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]'
                           }`}
                         >
                           <span className="flex items-center gap-2">
-                            <CountryFlag code={c.code} size={18} />
-                            <span>
-                              {c.currency} <span className="text-[var(--p2p-muted)]">({c.symbol})</span>
-                            </span>
+                            <CountryFlag code={c.code} size={16} />
+                            <span>{c.currency}</span>
                           </span>
                           <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
                             {best !== undefined ? `${c.symbol}${formatPrice(best)}` : c.name}
@@ -483,28 +602,22 @@ export function Market({
               )}
             </div>
 
-            <div ref={paymentRef} className="relative min-w-[165px] flex-1 max-w-[225px]">
+            {/* Payment Method */}
+            <div ref={paymentRef} className="relative w-48">
               <button
                 type="button"
                 onClick={() => {
                   setPaymentOpen((o) => !o)
                   setCurrencyOpen(false)
                 }}
-                aria-expanded={paymentOpen}
-                className="p2p-input flex min-h-11 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs font-semibold text-[var(--p2p-ink)]"
+                className="p2p-input flex h-10 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs font-semibold text-[var(--p2p-ink)]"
               >
-                <span className="flex items-center gap-2 truncate">
-                  <span className="h-3.5 w-[3px] shrink-0 rounded-full bg-[#FF5A00]" />
-                  <span className="truncate">{selectedMethod ? selectedMethod.name : 'All Payments'}</span>
-                </span>
+                <span className="truncate">{selectedMethod ? selectedMethod.name : 'All payments'}</span>
                 <ChevronDown className="size-3.5 shrink-0 text-[var(--p2p-muted)]" />
               </button>
 
               {paymentOpen && (
-                <ul
-                  role="listbox"
-                  className="p2p-glass-popover absolute left-0 top-full z-30 mt-1.5 max-h-72 w-56 overflow-y-auto rounded-xl p-1.5"
-                >
+                <ul className="p2p-glass-popover absolute left-0 top-full z-30 mt-1.5 max-h-72 w-56 overflow-y-auto rounded-xl p-1.5">
                   <li>
                     <button
                       type="button"
@@ -512,14 +625,13 @@ export function Market({
                         setMethod(null)
                         setPaymentOpen(false)
                       }}
-                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
                         method === null
                           ? 'bg-[var(--p2p-tint)] font-bold text-[#FF5A00]'
                           : 'text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]'
                       }`}
                     >
-                      <span className="h-3 w-[3px] rounded-full bg-[#FF5A00]" />
-                      All Payments
+                      All payments
                     </button>
                   </li>
                   {countryMethods.map((m) => {
@@ -532,7 +644,7 @@ export function Market({
                             setMethod(m.bit)
                             setPaymentOpen(false)
                           }}
-                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                          className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs ${
                             active
                               ? 'bg-[var(--p2p-tint)] font-bold text-[#FF5A00]'
                               : 'text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]'
@@ -547,90 +659,79 @@ export function Market({
                 </ul>
               )}
             </div>
+
+            {/* Funnel Filter Drawer Trigger */}
+            <button
+              type="button"
+              onClick={() => setFilterSheetOpen(true)}
+              className={`relative inline-flex h-10 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+                hasActiveAdvancedFilter
+                  ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
+              }`}
+            >
+              <Filter className="size-3.5" />
+              <span>Filter</span>
+              {hasActiveAdvancedFilter && <span className="size-1.5 rounded-full bg-[#FF5A00]" />}
+            </button>
           </div>
 
-          {/* Right Action Group */}
-          <div className="flex shrink-0 items-center gap-2">
+          {/* Right Group: Sort By + Refresh */}
+          <div className="flex items-center gap-2">
+            <div ref={sortRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setSortOpen((o) => !o)}
+                className="p2p-input inline-flex h-10 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-[var(--p2p-ink)]"
+              >
+                <span className="text-[var(--p2p-muted)]">Sort By</span>
+                <span className="font-bold">{sortLabels[filterState.sortBy]}</span>
+                <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
+              </button>
+
+              {sortOpen && (
+                <ul className="p2p-glass-popover absolute right-0 top-full z-30 mt-1.5 w-44 rounded-xl p-1.5">
+                  {(['price', 'trades', 'completion'] as const).map((sKey) => {
+                    const active = filterState.sortBy === sKey
+                    return (
+                      <li key={sKey}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = { ...filterState, sortBy: sKey }
+                            setFilterState(next)
+                            persistP2pFilter(next)
+                            setSortOpen(false)
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs ${
+                            active
+                              ? 'bg-[var(--p2p-tint)] font-bold text-[#FF5A00]'
+                              : 'text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]'
+                          }`}
+                        >
+                          {sortLabels[sKey]}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={triggerRefresh}
-              title="Live auto-refresh active (click to refresh now)"
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2.5 text-xs font-medium text-[var(--p2p-muted)] transition-colors hover:border-[var(--p2p-border-active)] hover:text-[var(--p2p-ink)]"
+              title="Refresh offers"
+              className="inline-flex size-10 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[#FF5A00]"
             >
-              <RefreshCw className={`size-3.5 text-[#FF5A00] ${refreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden 2xl:inline">Auto-refresh</span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={kycOnly}
-              onClick={() => setKycOnly((v) => !v)}
-              title="Show KYC Verified Advertisers Only"
-              className={`inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
-                kycOnly
-                  ? 'border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] text-[var(--p2p-ok-ink)]'
-                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-              }`}
-            >
-              <ShieldCheck className="size-3.5 text-[var(--p2p-ok-ink)]" />
-              <span>KYC Verified</span>
-            </button>
-
-            <button
-              type="button"
-              aria-pressed={merchantsOnly}
-              onClick={() => setMerchantsOnly((v) => !v)}
-              title="Show Verified Merchants Only (100+ USDC staked)"
-              className={`inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
-                merchantsOnly
-                  ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                  : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-              }`}
-            >
-              <ShieldCheck className="size-3.5 text-[#FF5A00]" />
-              <span>Merchants Only</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onPostAd}
-              className="inline-flex min-h-11 shrink-0 whitespace-nowrap items-center gap-1.5 rounded-lg border border-[#FF5A00] bg-transparent px-3 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[var(--p2p-tint)]"
-            >
-              <Plus className="size-4" /> Post Ad
+              <RefreshCw className={`size-4 text-[#FF5A00] ${refreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-1.5 border-t border-[var(--p2p-border)] pt-3 text-xs">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-            <span className="text-[var(--p2p-muted)]">
-              Market: <strong className="text-[var(--p2p-ink)]">{country.name} ({country.currency})</strong>
-            </span>
-            <span className="text-[var(--p2p-muted)]">
-              Best Buy:{' '}
-              <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">
-                {stats.bestBuy ? `${country.symbol}${formatPrice(stats.bestBuy)}` : '—'}
-              </span>
-            </span>
-            <span className="text-[var(--p2p-muted)]">
-              Best Sell:{' '}
-              <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">
-                {stats.bestSell ? `${country.symbol}${formatPrice(stats.bestSell)}` : '—'}
-              </span>
-            </span>
-            <span className="text-[var(--p2p-muted)]">
-              Escrow Liquidity:{' '}
-              <span className="p2p-mono font-semibold text-[#FF5A00]">{formatUsdcAmount(stats.liquidity)} USDC</span>
-            </span>
-          </div>
-          <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-            {filtered.length} active {filtered.length === 1 ? 'offer' : 'offers'} • 0.05 USDC/ad listing • 0 trade fee
-          </span>
         </div>
       </section>
 
       {/* =====================================================================
-          OFFER LIST: MOBILE STACKED CARDS (< 768px) & DESKTOP 5-COL TABLE (>= 768px)
+          OFFER LIST: MOBILE DIVIDER ROWS (< 768px) & DESKTOP 5-COL TABLE (>= 768px)
          ===================================================================== */}
       {isLoading ? (
         <div className="space-y-3">
@@ -644,20 +745,20 @@ export function Market({
             No {activeMode === 'buy' ? 'sell' : 'buy'} offers for {country.currency} match your filters
           </p>
           <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
-            Switch currency/payment filters above, or post the first {country.currency} offer on Arc Testnet with your preferred rate and payment method.
+            Adjust or reset your filters, switch currency, or post a {country.currency} ad with your custom rate.
           </p>
           <button
             type="button"
             onClick={onPostAd}
-            className="mt-5 inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90"
+            className="mt-5 inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90"
           >
             <Plus className="size-4" /> Post {country.currency} Ad
           </button>
         </div>
       ) : (
         <>
-          {/* Mobile Offer Cards (< 768px) */}
-          <ul className="space-y-3 md:hidden">
+          {/* Mobile Flat Divider Rows (< 768px) */}
+          <ul className="-mx-4 border-t border-[var(--p2p-border)] md:hidden">
             {filtered.map((ad) => (
               <AdCard
                 key={`mob-${activeMode}-${country.code}-${ad.id.toString()}`}
@@ -666,26 +767,23 @@ export function Market({
                 mode={activeMode}
                 account={accounts.get(ad.maker.toLowerCase())}
                 makerKyc={verifications.get(ad.maker.toLowerCase())}
+                makerProfile={traderProfiles.get(ad.maker.toLowerCase())}
                 viewerAccount={viewerAccount}
                 own={sameAddr(ad.maker, address)}
                 onSelectAd={setSelectedAd}
+                onOpenTrader={onOpenTrader}
               />
             ))}
           </ul>
 
-          {/* Desktop 5-Column Offer Book Table (>= 768px) */}
+          {/* Desktop 5-Column Offer Book Table (>= 768px — SS 12) */}
           <section className="p2p-card relative z-10 hidden overflow-hidden rounded-xl md:block">
-            <div className="grid border-b border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-5 py-3 text-xs font-medium text-[var(--p2p-muted)] md:grid-cols-[minmax(0,1.45fr)_minmax(0,1.05fr)_minmax(0,1.35fr)_minmax(0,1.15fr)_150px]">
-              <span>Advertiser</span>
+            <div className="grid border-b border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-5 py-3 text-xs font-medium text-[var(--p2p-muted)] md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.1fr)_150px]">
+              <span>Advertisers</span>
               <span>Price</span>
               <span>Available / Order Limit</span>
               <span>Payment</span>
-              <span className="text-right">
-                Trade{' '}
-                <span className="ml-1 rounded bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-bold text-[#FF5A00]">
-                  Escrow
-                </span>
-              </span>
+              <span className="text-right">Trade</span>
             </div>
             <ul>
               {filtered.map((ad) => (
@@ -696,9 +794,11 @@ export function Market({
                   mode={activeMode}
                   account={accounts.get(ad.maker.toLowerCase())}
                   makerKyc={verifications.get(ad.maker.toLowerCase())}
+                  makerProfile={traderProfiles.get(ad.maker.toLowerCase())}
                   viewerAccount={viewerAccount}
                   own={sameAddr(ad.maker, address)}
                   onSelectAd={setSelectedAd}
+                  onOpenTrader={onOpenTrader}
                 />
               ))}
             </ul>
@@ -706,12 +806,35 @@ export function Market({
         </>
       )}
 
-      {/* Centered Trade Popup Modal (KYC Warning Step 1 if unverified -> Order Form Step 2) */}
+      {/* Full-Screen / Drawer Advanced Filter Sheet (SS 4, 5, 6) */}
+      <MarketFilterSheet
+        key={filterSheetOpen ? 'open' : 'closed'}
+        open={filterSheetOpen}
+        countryCode={country.code}
+        amount={amount}
+        method={method}
+        filterState={filterState}
+        onClose={() => setFilterSheetOpen(false)}
+        onApply={(next) => {
+          onClearDeepTrade()
+          setCountryCode(next.countryCode)
+          setAmount(next.amount)
+          setMethod(next.method)
+          setFilterState(next.filterState)
+          persistP2pFilter(next.filterState)
+        }}
+      />
+
+      {/* Order Placement Screen / Modal (SS 3 Mobile / Centered Desktop) */}
       <TradePopupModal
         ad={activePopupAd}
         makerAccount={activePopupAd ? accounts.get(activePopupAd.maker.toLowerCase()) : undefined}
         initialUsdc={deepAd?.id === activePopupAd?.id ? deepAmount : undefined}
         onClose={closeTradePopup}
+        onOpenTrader={(w) => {
+          closeTradePopup()
+          onOpenTrader?.(w)
+        }}
         onOpened={(orderId) => {
           setSelectedAd(null)
           onOpenedOrder(orderId)

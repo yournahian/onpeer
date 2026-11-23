@@ -1,8 +1,14 @@
 import { createPortal } from 'react-dom'
-import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
-import { ArrowLeftRight, Gavel, Lock, Megaphone, ReceiptText, ShieldCheck } from 'lucide-react'
+import { useAccount, useSwitchChain } from 'wagmi'
+import {
+  ArrowLeftRight,
+  Gavel,
+  Megaphone,
+  MessageSquare,
+  ReceiptText,
+  User,
+} from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
-import type { Address } from 'viem'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
@@ -15,7 +21,7 @@ import {
 import { useClaimable, useOrders, useUsdcBalance } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 
-export type TabId = 'market' | 'orders' | 'ads' | 'account' | 'arbiter'
+export type TabId = 'market' | 'orders' | 'ads' | 'chat' | 'account' | 'arbiter'
 
 export function Header({
   tab,
@@ -35,27 +41,17 @@ export function Header({
   const { orders } = useOrders()
   const { run, writeContractAsync, pendingKey } = useTx()
 
-  const encKey = useReadContract({
-    address: ESCROW_ADDRESS,
-    abi: p2pEscrowAbi,
-    chainId: CHAIN_ID,
-    functionName: 'encryptionKey',
-    args: [address as Address],
-    query: { enabled: !!ESCROW_ADDRESS && !!address, refetchInterval: 30_000 },
-  })
-  const hasE2eeKey = typeof encKey.data === 'string' && encKey.data.length > 66
-
   const activeOrderCount = address
     ? orders.filter((o) => (sameAddr(o.buyer, address) || sameAddr(o.seller, address)) && isActiveStatus(o.status)).length
     : 0
   const disputeCount = orders.filter((o) => o.status === STATUS.DISPUTED).length
 
-  const tabs: { id: TabId; label: string; badge?: number }[] = [
-    { id: 'market', label: 'P2P Trade' },
-    { id: 'ads', label: 'My Ads' },
-    { id: 'orders', label: 'My Orders', badge: activeOrderCount },
-    { id: 'account', label: 'Account' },
-    ...(showArbiter ? [{ id: 'arbiter' as const, label: 'Disputes', badge: disputeCount }] : []),
+  const rightNav: { id: TabId; label: string; icon: typeof ReceiptText; badge?: number }[] = [
+    { id: 'orders', label: 'Orders', icon: ReceiptText, badge: activeOrderCount },
+    { id: 'chat', label: 'Chat', icon: MessageSquare, badge: activeOrderCount },
+    { id: 'ads', label: 'My Ads', icon: Megaphone },
+    { id: 'account', label: 'User Center', icon: User },
+    ...(showArbiter ? [{ id: 'arbiter' as const, label: 'Disputes', icon: Gavel, badge: disputeCount }] : []),
   ]
 
   const selectTab = (id: TabId) => {
@@ -65,58 +61,55 @@ export function Header({
 
   return (
     <>
-      {/* Desktop Sub-Header (>= 768px) */}
+      {/* Desktop Sub-Header (>= 768px — SS 12 & SS 13 Top P2P Bar) */}
       <div className="hidden border-b border-[var(--p2p-border)] bg-[var(--p2p-bar)] backdrop-blur-xl md:block">
-        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-2 px-4 sm:px-8 lg:px-10">
-          <nav className="flex items-center gap-1 overflow-x-auto" aria-label="P2P sections">
-            {tabs.map((t) => {
-              const active = tab === t.id
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => selectTab(t.id)}
-                  aria-current={active ? 'page' : undefined}
-                  className={`relative flex min-h-11 items-center gap-2 whitespace-nowrap px-3.5 text-xs font-semibold transition-colors sm:px-4 sm:text-sm ${
-                    active ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
-                  }`}
-                >
-                  <span>{t.label}</span>
-                  {!!t.badge && (
-                    <span className="p2p-mono rounded-full bg-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#FFFFFF]">
-                      {t.badge}
-                    </span>
-                  )}
-                  {active && <span className="absolute inset-x-0 bottom-0 h-[2px] bg-[#FF5A00]" />}
-                </button>
-              )
-            })}
-          </nav>
-
-          <div className="flex flex-wrap items-center gap-2 py-1.5">
-            <span className="hidden items-center gap-1.5 rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2.5 py-1 text-[11px] font-semibold text-[#FF5A00] lg:inline-flex">
-              <span className="size-1.5 rounded-full bg-[#FF5A00]" />
-              Arc Network
-            </span>
-
-            <span
-              title={
-                hasE2eeKey
-                  ? 'X25519 public encryption key registered on Arc'
-                  : 'On-chain escrow active • Step 2 X25519 E2EE registry ready'
-              }
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium ${
-                hasE2eeKey
-                  ? 'border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-[#FF5A00]'
-                  : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-muted)]'
+        <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 sm:px-8 lg:px-10">
+          {/* Left Primary Section Tab: P2P */}
+          <nav className="flex items-center gap-6" aria-label="P2P primary">
+            <button
+              type="button"
+              onClick={() => selectTab('market')}
+              aria-current={tab === 'market' ? 'page' : undefined}
+              className={`relative flex min-h-12 items-center gap-2 whitespace-nowrap px-1 text-sm font-extrabold transition-colors ${
+                tab === 'market' ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
               }`}
             >
-              <Lock className="size-3.5 text-[#FF5A00]" />
-              {hasE2eeKey ? 'E2EE Key Active' : 'Escrow Verified'}
-            </span>
+              <span>P2P</span>
+              {tab === 'market' && <span className="absolute inset-x-0 bottom-0 h-[3px] rounded-full bg-[#FF5A00]" />}
+            </button>
+          </nav>
+
+          {/* Right P2P Utility Links: Orders | Chat | My Ads | User Center (+ Wallet Balance) */}
+          <div className="flex flex-wrap items-center gap-1.5 py-1.5 sm:gap-2">
+            <nav className="flex items-center gap-1" aria-label="P2P sections">
+              {rightNav.map((item) => {
+                const active = tab === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => selectTab(item.id)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`relative inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors ${
+                      active
+                        ? 'bg-[var(--p2p-tint)] text-[#FF5A00]'
+                        : 'text-[var(--p2p-muted)] hover:bg-[var(--p2p-input-bg)] hover:text-[var(--p2p-ink)]'
+                    }`}
+                  >
+                    <item.icon className="size-3.5" />
+                    <span>{item.label}</span>
+                    {!!item.badge && (
+                      <span className="p2p-mono rounded-full bg-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#FFFFFF]">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                )
+              })}
+            </nav>
 
             {isConnected && balance !== undefined && (
-              <span className="p2p-mono inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-2.5 py-1 text-xs font-semibold text-[var(--p2p-ink)]">
+              <span className="p2p-mono ml-1 inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
                 <TokenUSDC variant="branded" size={14} />
                 {formatUsdcAmount(balance)} USDC
               </span>
@@ -156,14 +149,23 @@ export function Header({
         </div>
       </div>
 
-      {/* Mobile Compact Utility Strip (< 768px, only when claimable > 0 or wrong network) */}
-      {isConnected && (claimable > 0n || chainId !== CHAIN_ID) && (
+      {/* Mobile Compact Utility Strip (< 768px, only when claimable > 0, wrong network, or arbiter has disputes) */}
+      {isConnected && (claimable > 0n || chainId !== CHAIN_ID || (showArbiter && disputeCount > 0)) && (
         <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-2 backdrop-blur-xl md:hidden">
           <span className="p2p-mono inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
             <TokenUSDC variant="branded" size={14} />
             {balance !== undefined ? `${formatUsdcAmount(balance)} USDC` : 'Arc Escrow'}
           </span>
           <div className="flex items-center gap-2">
+            {showArbiter && disputeCount > 0 && (
+              <button
+                type="button"
+                onClick={() => selectTab('arbiter')}
+                className="inline-flex items-center gap-1 rounded-lg border border-[#FF5A00] bg-[var(--p2p-tint)] px-2.5 py-1 text-xs font-bold text-[#FF5A00]"
+              >
+                <Gavel className="size-3" /> Disputes ({disputeCount})
+              </button>
+            )}
             {claimable > 0n && (
               <button
                 type="button"
@@ -200,15 +202,16 @@ export function Header({
   )
 }
 
-/** Fixed 60px 4-tab Bottom Navigation Bar for Mobile (< 768px, hidden during Active Order Execution) */
+/** Fixed 62px 5-tab Bottom Navigation Bar for Mobile (< 768px — SS 1, 7, 8, 11) */
 export function MobileBottomNav({
   tab,
   onTab,
-  showArbiter,
+  onSelectTab,
 }: {
   tab: TabId
   onTab: (t: TabId) => void
-  showArbiter: boolean
+  showArbiter?: boolean
+  onSelectTab?: () => void
 }) {
   const { address } = useAccount()
   const { orders } = useOrders()
@@ -216,20 +219,19 @@ export function MobileBottomNav({
   const activeOrderCount = address
     ? orders.filter((o) => (sameAddr(o.buyer, address) || sameAddr(o.seller, address)) && isActiveStatus(o.status)).length
     : 0
-  const disputeCount = orders.filter((o) => o.status === STATUS.DISPUTED).length
 
   const items: { id: TabId; label: string; icon: typeof ArrowLeftRight; badge?: number }[] = [
     { id: 'market', label: 'P2P', icon: ArrowLeftRight },
     { id: 'orders', label: 'Orders', icon: ReceiptText, badge: activeOrderCount },
-    { id: 'ads', label: 'My Ads', icon: Megaphone },
-    { id: 'account', label: 'Account', icon: ShieldCheck },
-    ...(showArbiter ? [{ id: 'arbiter' as const, label: 'Disputes', icon: Gavel, badge: disputeCount }] : []),
+    { id: 'ads', label: 'Ads', icon: Megaphone },
+    { id: 'chat', label: 'Chat', icon: MessageSquare, badge: activeOrderCount },
+    { id: 'account', label: 'Profile', icon: User },
   ]
 
   const nav = (
     <nav
       aria-label="Mobile P2P navigation"
-      className="p2p-terminal fixed inset-x-0 bottom-0 z-40 flex h-[60px] items-center justify-around border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden"
+      className="p2p-terminal fixed inset-x-0 bottom-0 z-40 flex h-[62px] items-center justify-around border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl md:hidden"
     >
       {items.map((item) => {
         const active = tab === item.id
@@ -237,7 +239,10 @@ export function MobileBottomNav({
           <button
             key={item.id}
             type="button"
-            onClick={() => onTab(item.id)}
+            onClick={() => {
+              onTab(item.id)
+              onSelectTab?.()
+            }}
             aria-current={active ? 'page' : undefined}
             className={`relative flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors ${
               active ? 'text-[#FF5A00]' : 'text-[var(--p2p-muted)]'

@@ -142,66 +142,102 @@ export function KycPanel() {
         </div>
       )}
 
-      {/* Scenario picker rendered ONLY when DIDIT_MODE=sandbox */}
-      {isSandbox && data.scenarios.length > 0 && (
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-            Sandbox Test Scenario
-          </span>
-          <select
-            value={scenario}
-            onChange={(e) => setScenario(e.target.value)}
-            className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium text-[var(--p2p-ink)]"
-          >
-            {data.scenarios.map((s) => (
-              <option key={s.slug} value={s.slug}>
-                {s.label} ({s.slug})
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
-      {!data.hasConsent && (
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
-          <input
-            type="checkbox"
-            checked={consentChecked}
-            onChange={(e) => setConsentChecked(e.target.checked)}
-            className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
-          />
+      {data.kycStatus === 'approved' || data.onchainVerified ? (
+        <div className="flex items-center gap-2.5 rounded-lg border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-4 py-3 text-xs font-semibold text-[var(--p2p-ok-ink)]">
+          <CheckCircle2 className="size-4 shrink-0" />
           <span>
-            I consent to share test verification data with Didit under Didit&apos;s privacy notice and the{' '}
-            <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
-              OnPeer Privacy &amp; Encryption Notice
-            </AppLink>
-            .
+            {data.onchainVerified
+              ? `Your identity is verified on Arc (Level ${Math.max(1, data.kycLevel)}). No further KYC session is needed.`
+              : 'Your KYC is approved and currently syncing to the Arc escrow contract.'}
           </span>
-        </label>
+        </div>
+      ) : data.kycStatus === 'pending' || data.kycStatus === 'in_review' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-4 py-3 text-xs text-[var(--p2p-ink)]">
+          <span className="inline-flex items-center gap-2 font-semibold text-[#FF5A00]">
+            <Clock className="size-4 shrink-0" />
+            Verification session is {data.kycStatus === 'in_review' ? 'in review' : 'in progress'}.
+          </span>
+          {hostedUrl && (
+            <a
+              href={hostedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3.5 py-2 text-xs font-bold text-white"
+            >
+              Continue Verification <ExternalLink className="size-3.5" />
+            </a>
+          )}
+        </div>
+      ) : (
+        <>
+          {/* Scenario picker rendered ONLY when DIDIT_MODE=sandbox and not yet verified */}
+          {isSandbox && data.scenarios.length > 0 && (
+            <label className="block">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                Sandbox Test Scenario
+              </span>
+              <select
+                value={scenario}
+                onChange={(e) => setScenario(e.target.value)}
+                className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium text-[var(--p2p-ink)]"
+              >
+                {data.scenarios.map((s) => (
+                  <option key={s.slug} value={s.slug}>
+                    {s.label} ({s.slug})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {!data.hasConsent && (
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
+              <input
+                type="checkbox"
+                checked={consentChecked}
+                onChange={(e) => setConsentChecked(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
+              />
+              <span>
+                I consent to share test verification data with Didit under Didit&apos;s privacy notice and the{' '}
+                <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
+                  OnPeer Privacy &amp; Encryption Notice
+                </AppLink>
+                .
+              </span>
+            </label>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={starting || !hasConsent}
+              onClick={() => void handleStart()}
+              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
+            >
+              {starting ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
+              {starting
+                ? 'Starting Session...'
+                : data.kycStatus === 'declined' || data.kycStatus === 'expired' || data.kycStatus === 'revoked'
+                  ? 'Retry KYC Verification'
+                  : isSandbox
+                    ? 'Start Test KYC'
+                    : 'Start KYC Verification'}
+            </button>
+
+            {hostedUrl && (
+              <a
+                href={hostedUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3.5 text-xs font-bold text-[#FF5A00]"
+              >
+                Re-open Verification Link <ExternalLink className="size-3.5" />
+              </a>
+            )}
+          </div>
+        </>
       )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={starting || !hasConsent}
-          onClick={() => void handleStart()}
-          className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
-        >
-          {starting ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
-          {starting ? 'Starting Session...' : isSandbox ? 'Start Test KYC' : 'Start KYC Verification'}
-        </button>
-
-        {hostedUrl && (
-          <a
-            href={hostedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3.5 text-xs font-bold text-[#FF5A00]"
-          >
-            Re-open Verification Link <ExternalLink className="size-3.5" />
-          </a>
-        )}
-      </div>
     </section>
   )
 }

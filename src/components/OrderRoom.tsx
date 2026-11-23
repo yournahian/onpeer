@@ -54,9 +54,11 @@ import {
 import { useTx } from '@/hooks/useTx'
 import { OrderChat } from '@/components/OrderChat'
 import { DisputeFileSheet } from '@/components/DisputeFileSheet'
+import { OrderFeedbackCard } from '@/components/OrderFeedbackCard'
 import { MethodLogo } from '@/components/logos'
 import { BackendApiError } from '@/lib/api'
 import { useP2pAccount, useSavedPaymentMethods } from '@/hooks/useAccount'
+import { traderLabel, useTraderProfiles } from '@/hooks/useSocial'
 import { useOrderVault, useVaultActions, type NameMatchBadgeData } from '@/hooks/useVault'
 
 const DISPUTE_WAIT = 15 * 60
@@ -186,6 +188,13 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const country = countryByCurrency(currency)
   const isBuyer = sameAddr(address, order.buyer)
   const isSeller = sameAddr(address, order.seller)
+  const partyProfiles = useTraderProfiles([order.buyer, order.seller])
+  const buyerProfile = partyProfiles.get(order.buyer.toLowerCase()) ?? null
+  const sellerProfile = partyProfiles.get(order.seller.toLowerCase()) ?? null
+  const buyerLabel = traderLabel(order.buyer, buyerProfile)
+  const sellerLabel = traderLabel(order.seller, sellerProfile)
+  const counterpartyAddr = isBuyer ? order.seller : order.buyer
+  const counterpartyProfile = isBuyer ? sellerProfile : buyerProfile
   const isPrimaryArbiter = sameAddr(address, arbiter) && !isBuyer && !isSeller
   const isBackupWallet = sameAddr(address, backupArbiter) && !isBuyer && !isSeller
   const backupAnchor = order.disputedAt > 0n ? Number(order.disputedAt) : Number(order.paidAt)
@@ -681,8 +690,8 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
               <div>
                 <dt className="text-[var(--p2p-muted)]">Counterparties</dt>
-                <dd className="p2p-mono mt-0.5 text-[var(--p2p-ink)]">
-                  B:{shortAddr(order.buyer).slice(0, 6)} • S:{shortAddr(order.seller).slice(0, 6)}
+                <dd className="mt-0.5 truncate font-semibold text-[var(--p2p-ink)]">
+                  B: {buyerLabel} • S: {sellerLabel}
                 </dd>
               </div>
             </dl>
@@ -1280,22 +1289,33 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             </div>
           )}
 
-          {/* TERMINAL OUTCOME BANNERS */}
+          {/* TERMINAL OUTCOME BANNERS + POST-TRADE FEEDBACK */}
           {(status === STATUS.COMPLETED ||
             status === STATUS.CANCELLED ||
             status === STATUS.RESOLVED_BUYER ||
             status === STATUS.RESOLVED_SELLER ||
             status === STATUS.SETTLED) && (
-            <div className="p2p-card flex items-center gap-3 rounded-xl !border-[var(--p2p-border-active)] p-4 text-sm font-semibold text-[var(--p2p-ink)]">
-              <Check className="size-5 shrink-0 text-[#FF5A00]" />
-              <span>
-                {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount)} USDC released to buyer.`}
-                {status === STATUS.CANCELLED && 'Order cancelled — escrowed USDC returned.'}
-                {status === STATUS.RESOLVED_BUYER && 'Dispute resolved by arbiter — USDC released to buyer.'}
-                {status === STATUS.RESOLVED_SELLER && 'Dispute resolved by arbiter — USDC returned to seller.'}
-                {status === STATUS.SETTLED && 'Dispute settled directly by parties — zero bond charged.'}
-              </span>
-            </div>
+            <>
+              <div className="p2p-card flex items-center gap-3 rounded-xl !border-[var(--p2p-border-active)] p-4 text-sm font-semibold text-[var(--p2p-ink)]">
+                <Check className="size-5 shrink-0 text-[#FF5A00]" />
+                <span>
+                  {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount)} USDC released to buyer.`}
+                  {status === STATUS.CANCELLED && 'Order cancelled — escrowed USDC returned.'}
+                  {status === STATUS.RESOLVED_BUYER && 'Dispute resolved by arbiter — USDC released to buyer.'}
+                  {status === STATUS.RESOLVED_SELLER && 'Dispute resolved by arbiter — USDC returned to seller.'}
+                  {status === STATUS.SETTLED && 'Dispute settled directly by parties — zero bond charged.'}
+                </span>
+              </div>
+
+              {status !== STATUS.CANCELLED && (isBuyer || isSeller) && (
+                <OrderFeedbackCard
+                  orderId={order.id}
+                  viewer={address}
+                  counterparty={counterpartyAddr}
+                  counterpartyProfile={counterpartyProfile}
+                />
+              )}
+            </>
           )}
         </div>
 
@@ -1463,7 +1483,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         Confirm USDC Release
                       </h3>
                       <p className="text-xs text-[var(--p2p-muted)]">
-                        Order #{order.id.toString()} • Buyer {shortAddr(order.buyer)}
+                        Order #{order.id.toString()} • Buyer {buyerLabel} ({shortAddr(order.buyer)})
                       </p>
                     </div>
                   </div>

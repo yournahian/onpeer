@@ -16,6 +16,7 @@ import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
 import { handleChatRoutes } from './chat'
 import { handleVaultRoutes } from './vault'
 import { handleDisputeRoutes } from './disputes'
+import { handleSocialRoutes } from './social'
 import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
@@ -298,6 +299,13 @@ async function handleApi(
     if (/^\/orders\/\d+\/disputes$/.test(path) || path === '/admin/disputes') {
       const chain = makeChain(env)
       const res = await runDb(env, (db) => handleDisputeRoutes(req, env, db, chain, path))
+      return res ?? json(404, { error: 'not_found' })
+    }
+
+    // ---- P2P Public Profiles, Follow/Block Relations & Post-Trade Feedback ----
+    if (path.startsWith('/p2p/') || /^\/orders\/\d+\/feedback$/.test(path)) {
+      const chain = makeChain(env)
+      const res = await runDb(env, (db) => handleSocialRoutes(req, env, db, chain, path))
       return res ?? json(404, { error: 'not_found' })
     }
 

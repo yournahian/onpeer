@@ -169,6 +169,8 @@ class AccountMemoryDb implements Queryable {
     }
 
     if (
+      n.startsWith('DELETE FROM public.p2p_relations') ||
+      n.startsWith('UPDATE public.p2p_feedback') ||
       n.startsWith('DELETE FROM public.vault_blobs') ||
       n.startsWith('UPDATE public.vault_blobs') ||
       n.startsWith('UPDATE public.chat_messages') ||

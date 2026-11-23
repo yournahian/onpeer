@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
-import { ChevronRight, Loader2, Plus, RotateCw } from 'lucide-react'
+import { ChevronRight, Loader2, Plus, RotateCw, Share2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
@@ -21,10 +22,12 @@ import {
   maskToMethods,
   sameAddr,
 } from '@/lib/p2p'
+import { buildShareLink } from '@/lib/share'
 import { parseUnitsExact } from '@/onchain-money'
 import { useAds, useNow, useOrders, type OrderWithId } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 import { AppLink } from '@/components/AppLink'
+import { traderLabel, useTraderProfiles, type PublicTraderSummary } from '@/hooks/useSocial'
 
 function EmptyCard({ title, body, cta }: { title: string; body: string; cta?: React.ReactNode }) {
   return (
@@ -61,10 +64,12 @@ function ConnectPrompt({ body }: { body: string }) {
 function OrderRow({
   order,
   viewer,
+  profilesMap,
   onOpen,
 }: {
   order: OrderWithId
   viewer?: string
+  profilesMap: Map<string, PublicTraderSummary>
   onOpen: (id: bigint) => void
 }) {
   const currency = hexToCurrency(order.currency)
@@ -74,18 +79,28 @@ function OrderRow({
   const role = isBuyer ? 'Buy USDC' : isSeller ? 'Sell USDC' : 'Dispute Review'
   const active = isActiveStatus(order.status)
 
+  const peerWallet = isBuyer ? order.seller : isSeller ? order.buyer : order.seller
+  const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet.toLowerCase()))
+
   return (
     <li className="border-b border-[var(--p2p-border)] last:border-b-0">
       <button
         type="button"
         onClick={() => onOpen(order.id)}
-        className="grid w-full gap-3 bg-[var(--p2p-canvas)] px-4 py-4 text-left transition-colors hover:bg-[var(--p2p-row-hover)] md:grid-cols-[140px_1fr_1fr_1fr_auto] md:items-center sm:px-5"
+        className="grid w-full gap-3 bg-[var(--p2p-canvas)] px-4 py-4 text-left transition-colors hover:bg-[var(--p2p-row-hover)] sm:px-5 md:grid-cols-[180px_1fr_1fr_1fr_auto] md:items-center"
       >
         <div>
-          <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#FF5A00]">
+          <span
+            className={`inline-flex items-center gap-1.5 text-xs font-bold ${
+              isBuyer ? 'text-emerald-400' : 'text-[#FF5A00]'
+            }`}
+          >
             {role}
           </span>
-          <span className="p2p-mono mt-0.5 block text-xs text-[var(--p2p-muted)]">
+          <span className="mt-0.5 block truncate text-xs font-semibold text-[var(--p2p-ink)]">
+            {peerLabel}
+          </span>
+          <span className="p2p-mono mt-0.5 block text-[11px] text-[var(--p2p-muted)]">
             Order #{order.id.toString()}
           </span>
         </div>
@@ -134,6 +149,16 @@ export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
   const { address, isConnected } = useAccount()
   const { orders, isLoading } = useOrders()
 
+  const mine = useMemo(
+    () => orders.filter((o) => sameAddr(o.buyer, address) || sameAddr(o.seller, address)),
+    [orders, address],
+  )
+  const peerWallets = useMemo(
+    () => mine.flatMap((o) => [o.buyer, o.seller]),
+    [mine],
+  )
+  const profilesMap = useTraderProfiles(peerWallets)
+
   if (!isConnected) return <ConnectPrompt body="Connect your wallet to inspect active escrow trades and order history." />
   if (isLoading) {
     return (
@@ -144,7 +169,6 @@ export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
     )
   }
 
-  const mine = orders.filter((o) => sameAddr(o.buyer, address) || sameAddr(o.seller, address))
   if (mine.length === 0) {
     return <EmptyCard title="No P2P Orders Yet" body="Pick an offer in P2P Trade to open your first escrow order." />
   }
@@ -164,7 +188,13 @@ export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
           </div>
           <ul>
             {active.map((o) => (
-              <OrderRow key={o.id.toString()} order={o} viewer={address} onOpen={onOpen} />
+              <OrderRow
+                key={o.id.toString()}
+                order={o}
+                viewer={address}
+                profilesMap={profilesMap}
+                onOpen={onOpen}
+              />
             ))}
           </ul>
         </section>
@@ -179,7 +209,13 @@ export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
           </div>
           <ul>
             {past.map((o) => (
-              <OrderRow key={o.id.toString()} order={o} viewer={address} onOpen={onOpen} />
+              <OrderRow
+                key={o.id.toString()}
+                order={o}
+                viewer={address}
+                profilesMap={profilesMap}
+                onOpen={onOpen}
+              />
             ))}
           </ul>
         </section>
@@ -190,8 +226,11 @@ export function MyOrders({ onOpen }: { onOpen: (id: bigint) => void }) {
 
 export function ArbiterPanel({ onOpen }: { onOpen: (id: bigint) => void }) {
   const { orders, isLoading } = useOrders()
+  const disputed = useMemo(() => orders.filter((o) => o.status === STATUS.DISPUTED), [orders])
+  const peerWallets = useMemo(() => disputed.flatMap((o) => [o.buyer, o.seller]), [disputed])
+  const profilesMap = useTraderProfiles(peerWallets)
+
   if (isLoading) return <div className="p2p-card h-24 animate-pulse rounded-xl" />
-  const disputed = orders.filter((o) => o.status === STATUS.DISPUTED)
 
   return (
     <div className="space-y-4">
@@ -207,7 +246,7 @@ export function ArbiterPanel({ onOpen }: { onOpen: (id: bigint) => void }) {
         <section className="p2p-card overflow-hidden rounded-xl !border-[#FF5A00]">
           <ul>
             {disputed.map((o) => (
-              <OrderRow key={o.id.toString()} order={o} onOpen={onOpen} />
+              <OrderRow key={o.id.toString()} order={o} profilesMap={profilesMap} onOpen={onOpen} />
             ))}
           </ul>
         </section>
@@ -262,11 +301,21 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
   const closeAd = (id: bigint) =>
     run(`close-${id}`, 'Close ad', () => writeContractAsync({ ...base, functionName: 'closeAd', args: [id] }))
 
+  const copyAdShare = async (adId: string) => {
+    try {
+      const link = await buildShareLink(`/p2p?trade=${adId}`)
+      await navigator.clipboard.writeText(link)
+      toast.success(`Ad #${adId} share link copied`)
+    } catch {
+      toast.error('Could not copy share link')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="p2p-card flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3">
         <p className="text-xs text-[var(--p2p-muted)]">
-          Manage your active offers, refresh TTL timers, adjust rates, or close ads to withdraw unreserved USDC.
+          Manage your active offers, refresh TTL timers, adjust rates, share your ad link, or close ads to withdraw unreserved USDC.
         </p>
         <button
           type="button"
@@ -393,6 +442,14 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                         className="min-h-9 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]"
                       >
                         Edit Price
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => void copyAdShare(id)}
+                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                      >
+                        <Share2 className="size-3.5 text-[#FF5A00]" /> Share Ad
                       </button>
 
                       <button

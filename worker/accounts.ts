@@ -617,6 +617,14 @@ export async function handleAccountRoutes(
         `UPDATE public.notifications_outbox SET status = 'skipped' WHERE wallet = $1 AND status = 'pending'`,
         [wallet],
       )
+      await tx.query(
+        `DELETE FROM public.p2p_relations WHERE actor = $1 OR target = $1`,
+        [wallet],
+      )
+      await tx.query(
+        `UPDATE public.p2p_feedback SET anonymous = true WHERE from_wallet = $1`,
+        [wallet],
+      )
       // Immediately delete author's truly unbound draft blobs (never touch ad_details bound to an ad)
       await tx.query(
         `DELETE FROM public.vault_blobs WHERE author = $1 AND order_id IS NULL AND ad_id IS NULL`,

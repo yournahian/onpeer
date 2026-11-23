@@ -11,6 +11,8 @@ import { SiteBar } from '@/components/SiteBar'
 import { Header, MobileBottomNav, type TabId } from '@/components/Header'
 import { Market } from '@/components/Market'
 import { MyOrders, MyAds, ArbiterPanel } from '@/components/Lists'
+import { ChatHub } from '@/components/ChatHub'
+import { TraderProfileView } from '@/components/TraderProfileView'
 import { PostAdSheet } from '@/components/PostAdSheet'
 import { OrderRoom } from '@/components/OrderRoom'
 import { AccountPanel } from '@/components/AccountPanel'
@@ -18,6 +20,8 @@ import { AccountSetup } from '@/components/AccountSetup'
 import { useEligibility } from '@/hooks/useEligibility'
 
 const parseId = (raw: string | null): bigint | null => (raw && /^\d+$/.test(raw) ? BigInt(raw) : null)
+const parseWalletParam = (raw: string | null): string | null =>
+  raw && /^0x[0-9a-fA-F]{40}$/.test(raw.trim()) ? raw.trim().toLowerCase() : null
 
 export default function P2PPage() {
   const { address, isConnected } = useAccount()
@@ -43,6 +47,7 @@ export default function P2PPage() {
   const search = useSearch()
   const params = new URLSearchParams(search)
   const orderId = parseId(params.get('order'))
+  const traderWallet = parseWalletParam(params.get('trader'))
   const deepTradeId = parseId(params.get('trade'))
   const deepAmount = params.get('amount') ?? undefined
   const rawMode = params.get('mode')
@@ -61,7 +66,19 @@ export default function P2PPage() {
       else {
         p.delete('trade')
         p.delete('amount')
+        p.delete('trader')
         p.set('order', id.toString())
+      }
+    })
+
+  const openTrader = (wallet: string | null) =>
+    replaceQuery((p) => {
+      if (wallet === null) p.delete('trader')
+      else {
+        p.delete('order')
+        p.delete('trade')
+        p.delete('amount')
+        p.set('trader', wallet.toLowerCase())
       }
     })
 
@@ -70,6 +87,15 @@ export default function P2PPage() {
       p.delete('trade')
       p.delete('amount')
     })
+
+  const clearSubOverlays = () => {
+    if (orderId !== null || traderWallet !== null) {
+      replaceQuery((p) => {
+        p.delete('order')
+        p.delete('trader')
+      })
+    }
+  }
 
   // Handle #verify_email=<token>, #unsubscribe=<token>, and ?kyc_return=1 without exposing bearer tokens in URL query
   useEffect(() => {
@@ -125,21 +151,20 @@ export default function P2PPage() {
 
       {/* RibbonBackdrop is rendered globally from App.tsx (persistent across routes) */}
 
-      <div className="p2p-terminal relative z-10 pb-24 md:pb-20">
+      <div className="p2p-terminal relative z-10 pb-24 md:pb-12">
         {!needsOnboarding && (
           <Header
             tab={tab}
             onTab={setTab}
             showArbiter={isArbiter}
-            onSelectTab={() => {
-              if (orderId !== null) openOrder(null)
-            }}
+            onSelectTab={clearSubOverlays}
           />
         )}
 
         <main
-          className={`mx-auto w-full ${orderId !== null ? 'max-w-[1120px]' : 'max-w-[1440px]'
-            } space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10`}
+          className={`mx-auto w-full ${
+            orderId !== null ? 'max-w-[1120px]' : 'max-w-[1440px]'
+          } space-y-4 px-4 py-4 sm:px-8 sm:py-6 lg:px-10`}
         >
           {!needsOnboarding && blocked && (
             <div
@@ -204,6 +229,12 @@ export default function P2PPage() {
             </div>
           ) : orderId !== null ? (
             <OrderRoom orderId={orderId} onClose={() => openOrder(null)} />
+          ) : traderWallet !== null ? (
+            <TraderProfileView
+              wallet={traderWallet}
+              onBack={() => openTrader(null)}
+              onOpenedOrder={(id) => openOrder(id)}
+            />
           ) : (
             <>
               {tab === 'market' && (
@@ -216,22 +247,32 @@ export default function P2PPage() {
                   onClearDeepTrade={clearDeepTrade}
                   onOpenedOrder={(id) => openOrder(id)}
                   onPostAd={() => setPostOpen(true)}
+                  onOpenTrader={openTrader}
                 />
               )}
               {tab === 'orders' && <MyOrders onOpen={openOrder} />}
               {tab === 'ads' && <MyAds onPostAd={() => setPostOpen(true)} />}
-              {tab === 'account' && <AccountPanel />}
+              {tab === 'chat' && <ChatHub onOpen={openOrder} onOpenTrader={openTrader} />}
+              {tab === 'account' && (
+                <AccountPanel
+                  onOpenTrader={openTrader}
+                  onBackToMarket={() => setTab('market')}
+                />
+              )}
               {tab === 'arbiter' && <ArbiterPanel onOpen={openOrder} />}
             </>
           )}
-
-          <p className="pt-4 text-center text-[11px] text-[var(--p2p-muted)]">
-            Arc Testnet Non-Custodial Escrow • Fiat transfers settle off-chain between peers • Verify local crypto regulations before trading.
-          </p>
         </main>
 
-        {/* Mobile 60px Fixed 4-Tab Bottom Navigation Bar (Marketplace / Tabs view) */}
-        {!needsOnboarding && orderId === null && <MobileBottomNav tab={tab} onTab={setTab} showArbiter={isArbiter} />}
+        {/* Mobile Fixed 5-Tab Bottom Navigation Bar (P2P | Orders | Ads | Chat | Profile) */}
+        {!needsOnboarding && orderId === null && (
+          <MobileBottomNav
+            tab={tab}
+            onTab={setTab}
+            showArbiter={isArbiter}
+            onSelectTab={clearSubOverlays}
+          />
+        )}
 
         <PostAdSheet
           open={postSheetOpen}

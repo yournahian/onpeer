@@ -20,6 +20,7 @@ import { STATUS, formatDuration, sameAddr, shortAddr } from '@/lib/p2p'
 import { BackendApiError, useBackendSession } from '@/lib/api'
 import { useChat } from '@/hooks/useChat'
 import { useNow } from '@/hooks/useEscrow'
+import { traderInitial, traderLabel, useTraderProfiles } from '@/hooks/useSocial'
 import {
   fetchOrderEvidenceBlob,
   uploadOrderEvidence,
@@ -198,6 +199,11 @@ export function OrderChat({
       ? buyer
       : buyer
 
+  const profiles = useTraderProfiles([buyer, seller])
+  const cpProfile = profiles.get(counterparty.toLowerCase()) ?? null
+  const cpDisplay = traderLabel(counterparty, cpProfile)
+  const cpInit = traderInitial(counterparty, cpProfile)
+
   // Auto-scroll message stream inside the chat box when new messages arrive
   useEffect(() => {
     if (encMessages.length !== prevCountRef.current) {
@@ -295,9 +301,9 @@ export function OrderChat({
     sameAddr(sender, address)
       ? 'You'
       : sameAddr(sender, buyer)
-        ? 'Buyer'
+        ? traderLabel(buyer, profiles.get(buyer.toLowerCase()))
         : sameAddr(sender, seller)
-          ? 'Seller'
+          ? traderLabel(seller, profiles.get(seller.toLowerCase()))
           : `Arbiter (${shortAddr(sender)})`
 
   return (
@@ -322,11 +328,11 @@ export function OrderChat({
             </button>
           )}
           <span className="p2p-mono flex size-8 items-center justify-center rounded-full border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-xs font-bold text-[#FF5A00]">
-            {counterparty.slice(2, 4).toUpperCase()}
+            {cpInit}
           </span>
           <div>
-            <p className="p2p-mono flex items-center gap-2 text-xs font-bold text-[var(--p2p-ink)]">
-              {shortAddr(counterparty)}
+            <p className="flex items-center gap-2 text-xs font-bold text-[var(--p2p-ink)]">
+              <span>{cpDisplay}</span>
               <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#FF5A00]">
                 <span className="size-1.5 rounded-full bg-[#FF5A00]" /> Live
               </span>
