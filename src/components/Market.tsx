@@ -19,7 +19,6 @@ import {
   SIDE_BUY,
   SIDE_SELL,
   STATUS,
-  TIER0_CAP,
   fiatFor,
   formatPrice,
   hexToCurrency,
@@ -27,6 +26,7 @@ import {
   isUncapped,
   methodsForCountry,
   sameAddr,
+  tier0CapFor,
 } from '@/lib/p2p'
 import { parseUnitsExact } from '@/onchain-money'
 import { CoinLogo, CountryFlag } from '@/components/logos'
@@ -162,7 +162,7 @@ export function Market({
   const traderProfiles = useTraderProfiles(makerAddresses)
 
   const fiatFilter = parseFiatFilter(amount)
-  const userCap = viewerAccount ? viewerAccount.orderCap : TIER0_CAP
+  const userCap = viewerAccount ? viewerAccount.orderCap : tier0CapFor(activeAsset)
   const viewerCompleted = viewerAccount ? viewerAccount.ordersCompleted : 0
 
   const filtered = useMemo(() => {
@@ -193,8 +193,8 @@ export function Market({
       .filter((ad) => method === null || (ad.paymentMask & (1 << method)) !== 0)
       .filter((ad) => {
         if (fiatFilter === null) return true
-        const lo = fiatFor(ad.minAmount > ad.available ? ad.available : ad.minAmount, ad.priceE6)
-        const hi = fiatFor(ad.maxAmount > ad.available ? ad.available : ad.maxAmount, ad.priceE6)
+        const lo = fiatFor(ad.minAmount > ad.available ? ad.available : ad.minAmount, ad.priceE6, ad.asset)
+        const hi = fiatFor(ad.maxAmount > ad.available ? ad.available : ad.maxAmount, ad.priceE6, ad.asset)
         return fiatFilter >= lo && fiatFilter <= hi
       })
 

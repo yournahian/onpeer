@@ -6,13 +6,18 @@ import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { getUsdc } from '@/onchain-facts'
 import {
   CHAIN_ID,
+  CIRBTC_DEPLOY_BLOCK,
+  CIRBTC_ESCROW_ADDRESS,
   DEFAULT_LISTING_FEE,
   DEPLOY_BLOCK,
   ESCROW_ADDRESS,
   EURC_DEPLOY_BLOCK,
   EURC_ESCROW_ADDRESS,
   P2P_ASSETS,
+  WETH_DEPLOY_BLOCK,
+  WETH_ESCROW_ADDRESS,
   decodeScopedId,
+  defaultListingFeeFor,
   encodeScopedId,
   getEscrowConfig,
   type P2pAsset,
@@ -30,11 +35,13 @@ const POLL = 15_000
 
 const base = { address: ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
 const eurcBase = { address: EURC_ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
+const cirbtcBase = { address: CIRBTC_ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
+const wethBase = { address: WETH_ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
 const enabled = !!ESCROW_ADDRESS
 
 export const USDC_ADDRESS = getUsdc(CHAIN_ID)?.address as Address | undefined
 
-// ---- Reactive P2P Asset Store ('USDC' | 'EURC') ----
+// ---- Reactive P2P Asset Store ('USDC' | 'EURC' | 'cirBTC' | 'WETH') ----
 let currentP2pAsset: P2pAsset = 'USDC'
 const assetListeners = new Set<() => void>()
 
@@ -57,7 +64,10 @@ export function useP2pAsset(): readonly [P2pAsset, (next: P2pAsset) => void] {
 }
 
 function escrowBaseFor(asset: P2pAsset) {
-  return asset === 'EURC' ? eurcBase : base
+  if (asset === 'EURC') return eurcBase
+  if (asset === 'cirBTC') return cirbtcBase
+  if (asset === 'WETH') return wethBase
+  return base
 }
 
 /** Ticks once per second so countdowns stay live. */
@@ -108,71 +118,66 @@ export function useAds(assetOverride?: P2pAsset) {
   return useSingleAssetAds(assetOverride ?? activeAsset)
 }
 
-/** Reads BOTH USDC and EURC ads merged together (for MyAds, TraderProfileView, and deep links). */
+/** Reads ALL 4 asset markets (USDC, EURC, cirBTC, WETH) merged together. */
 export function useAllAds() {
   const usdc = useSingleAssetAds('USDC')
   const eurc = useSingleAssetAds('EURC')
+  const cirbtc = useSingleAssetAds('cirBTC')
+  const weth = useSingleAssetAds('WETH')
   const ads = useMemo(
-    () => [...usdc.ads, ...eurc.ads].sort((a, b) => Number(b.createdAt - a.createdAt)),
-    [usdc.ads, eurc.ads],
+    () => [...usdc.ads, ...eurc.ads, ...cirbtc.ads, ...weth.ads].sort((a, b) => Number(b.createdAt - a.createdAt)),
+    [usdc.ads, eurc.ads, cirbtc.ads, weth.ads],
   )
   return {
     ads,
-    isLoading: usdc.isLoading && eurc.isLoading,
-    total: usdc.total + eurc.total,
+    isLoading: usdc.isLoading && eurc.isLoading && cirbtc.isLoading && weth.isLoading,
+    total: usdc.total + eurc.total + cirbtc.total + weth.total,
   }
 }
 
-/** Reads BOTH USDC and EURC orders merged & sorted newest-first. */
-export function useOrders() {
-  const usdcCount = useReadContract({
-    ...base,
+function useSingleAssetOrders(asset: P2pAsset) {
+  const contractBase = escrowBaseFor(asset)
+  const count = useReadContract({
+    ...contractBase,
     functionName: 'orderCount',
     query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
-  const usdcTotal = usdcCount.data ?? 0n
-  const usdcOffset = usdcTotal > PAGE ? usdcTotal - PAGE : 0n
-  const usdcList = useReadContract({
-    ...base,
+  const total = count.data ?? 0n
+  const offset = total > PAGE ? total - PAGE : 0n
+  const list = useReadContract({
+    ...contractBase,
     functionName: 'getOrders',
-    args: [usdcOffset, PAGE],
+    args: [offset, PAGE],
     query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
   })
-
-  const eurcCount = useReadContract({
-    ...eurcBase,
-    functionName: 'orderCount',
-    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
-  })
-  const eurcTotal = eurcCount.data ?? 0n
-  const eurcOffset = eurcTotal > PAGE ? eurcTotal - PAGE : 0n
-  const eurcList = useReadContract({
-    ...eurcBase,
-    functionName: 'getOrders',
-    args: [eurcOffset, PAGE],
-    query: { enabled, refetchInterval: POLL, placeholderData: (prev) => prev },
-  })
-
   const orders = useMemo<OrderWithId[]>(() => {
-    const out: OrderWithId[] = []
-    if (usdcList.data) {
-      usdcList.data.forEach((o, i) => {
-        const rawId = usdcOffset + BigInt(i) + 1n
-        out.push({ ...o, rawId, id: rawId, asset: 'USDC' })
-      })
-    }
-    if (eurcList.data) {
-      eurcList.data.forEach((o, i) => {
-        const rawId = eurcOffset + BigInt(i) + 1n
-        out.push({ ...o, rawId, id: encodeScopedId('EURC', rawId), asset: 'EURC' })
-      })
-    }
-    return out.sort((a, b) => Number(b.createdAt - a.createdAt))
-  }, [usdcList.data, usdcOffset, eurcList.data, eurcOffset])
+    if (!list.data) return []
+    return list.data.map((o, i) => {
+      const rawId = offset + BigInt(i) + 1n
+      return { ...o, rawId, id: encodeScopedId(asset, rawId), asset }
+    })
+  }, [list.data, offset, asset])
+  return { orders, isLoading: list.data === undefined && list.isLoading }
+}
+
+/** Reads ALL 4 asset markets (USDC, EURC, cirBTC, WETH) orders merged & sorted newest-first. */
+export function useOrders() {
+  const usdc = useSingleAssetOrders('USDC')
+  const eurc = useSingleAssetOrders('EURC')
+  const cirbtc = useSingleAssetOrders('cirBTC')
+  const weth = useSingleAssetOrders('WETH')
+
+  const orders = useMemo<OrderWithId[]>(
+    () =>
+      [...usdc.orders, ...eurc.orders, ...cirbtc.orders, ...weth.orders].sort((a, b) =>
+        Number(b.createdAt - a.createdAt),
+      ),
+    [usdc.orders, eurc.orders, cirbtc.orders, weth.orders],
+  )
 
   return {
     orders,
-    isLoading: enabled && usdcList.data === undefined && usdcList.isLoading,
+    isLoading: enabled && usdc.isLoading,
   }
 }
 
@@ -274,9 +279,10 @@ export function usePrivacySwitches(assetOverride?: P2pAsset) {
 
 export function useListingFee(assetOverride?: P2pAsset) {
   const [activeAsset] = useP2pAsset()
-  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
+  const target = assetOverride ?? activeAsset
+  const contractBase = escrowBaseFor(target)
   const res = useReadContract({ ...contractBase, functionName: 'listingFee', query: { enabled, refetchInterval: 20_000 } })
-  return res.data ?? DEFAULT_LISTING_FEE
+  return res.data ?? defaultListingFeeFor(target)
 }
 
 export function useFeeConfig() {
@@ -299,7 +305,6 @@ export function useVerifier() {
 export type KycInfo = { verified: boolean; level: number; expiry: bigint; isLoading?: boolean }
 
 export function useVerification(address: Address | undefined): KycInfo {
-  // Verification is attested on the primary P2PEscrow contract by the Verifier worker
   const ver = useReadContract({
     ...base,
     functionName: 'verification',
@@ -360,11 +365,17 @@ const orderLifecycleEvents = [
   ),
 ] as const
 
-/** Maps scopedOrderId.toString() -> latest lifecycle transactionHash across USDC & EURC escrows. */
+/** Maps scopedOrderId.toString() -> latest lifecycle transactionHash across all 4 escrows. */
 export function useOrderTxHashes() {
   const client = usePublicClient({ chainId: CHAIN_ID })
   const query = useQuery({
-    queryKey: ['p2p-order-tx-hashes', ESCROW_ADDRESS, EURC_ESCROW_ADDRESS],
+    queryKey: [
+      'p2p-order-tx-hashes',
+      ESCROW_ADDRESS,
+      EURC_ESCROW_ADDRESS,
+      CIRBTC_ESCROW_ADDRESS,
+      WETH_ESCROW_ADDRESS,
+    ],
     enabled: enabled && !!client,
     staleTime: 30_000,
     refetchInterval: 30_000,
@@ -396,13 +407,15 @@ export function useOrderTxHashes() {
         return entries
       }
 
-      const [usdcEntries, eurcEntries] = await Promise.all([
+      const [usdcEntries, eurcEntries, cirbtcEntries, wethEntries] = await Promise.all([
         collect(ESCROW_ADDRESS, DEPLOY_BLOCK, 'USDC'),
         collect(EURC_ESCROW_ADDRESS, EURC_DEPLOY_BLOCK, 'EURC').catch(() => [] as Array<[string, string]>),
+        collect(CIRBTC_ESCROW_ADDRESS, CIRBTC_DEPLOY_BLOCK, 'cirBTC').catch(() => [] as Array<[string, string]>),
+        collect(WETH_ESCROW_ADDRESS, WETH_DEPLOY_BLOCK, 'WETH').catch(() => [] as Array<[string, string]>),
       ])
 
       const out: Record<string, string> = {}
-      for (const [k, v] of [...usdcEntries, ...eurcEntries]) {
+      for (const [k, v] of [...usdcEntries, ...eurcEntries, ...cirbtcEntries, ...wethEntries]) {
         out[k] = v
       }
       return out

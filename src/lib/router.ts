@@ -14,9 +14,14 @@ export type Route =
 
 export const LANDING_URL = 'https://onpeer.xyz'
 export const APP_URL = 'https://app.onpeer.xyz'
+export const DOCS_URL = 'https://docs.onpeer.xyz'
 
 export function isAppSubdomain(): boolean {
   return typeof window !== 'undefined' && window.location.hostname.startsWith('app.')
+}
+
+export function isDocsSubdomain(): boolean {
+  return typeof window !== 'undefined' && window.location.hostname.startsWith('docs.')
 }
 
 export function isLandingDomain(): boolean {
@@ -28,6 +33,7 @@ export function isLandingDomain(): boolean {
 const NAV_EVENT = 'app:navigate'
 
 function currentRoute(): Route {
+  if (isDocsSubdomain()) return 'docs'
   const { pathname, search } = window.location
   if (pathname.startsWith('/p2p')) return 'p2p'
   if (pathname.startsWith('/swap')) return 'swap'
@@ -62,6 +68,10 @@ export function navigate(path: string) {
 
 export function useRoute(): Route {
   return useSyncExternalStore(subscribe, currentRoute, () => 'home')
+}
+
+export function usePathname(): string {
+  return useSyncExternalStore(subscribe, () => window.location.pathname, () => '/')
 }
 
 function subscribeSearch(onChange: () => void) {

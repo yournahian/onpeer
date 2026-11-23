@@ -1,11 +1,12 @@
 import { ConnectKitButton } from 'connectkit'
-import { Check, ExternalLink, Info, Loader2, X } from 'lucide-react'
+import { AlertTriangle, Check, ExternalLink, Info, Loader2, X } from 'lucide-react'
 import {
-  STEP_LABELS,
-  STEP_ORDER,
+  bridgeStepLabel,
+  bridgeStepOrderFor,
   chainLabel,
   useBridgeFlow,
   type BridgeChainName,
+  type BridgeToken,
   type StepState,
 } from '@/hooks/useBridgeFlow'
 import { Button } from '@/components/ui'
@@ -15,23 +16,26 @@ export function BridgeCard({
   from,
   to,
   amount,
+  token = 'USDC',
   onSettled,
 }: {
   from: BridgeChainName
   to: BridgeChainName
   amount: string
+  token?: BridgeToken
   onSettled: (text: string) => void
 }) {
-  const flow = useBridgeFlow({ from, to, amount, onSettled })
-  const { phase, quote, steps, result, error } = flow
+  const flow = useBridgeFlow({ from, to, amount, token, onSettled })
+  const { phase, quote, steps, result, warnings, error } = flow
   const showSteps = phase === 'bridging' || phase === 'done' || phase === 'failed'
+  const stepOrder = bridgeStepOrderFor(token)
 
   return (
     <div className="space-y-3 text-sm" aria-live="polite">
       <p className="flex flex-wrap items-center gap-1.5 font-semibold">
         <span>Bridge {amount}</span>
-        <CoinLogo symbol="USDC" size={16} />
-        <span>USDC from</span>
+        <CoinLogo symbol={token} size={16} />
+        <span>{token} from</span>
         <ChainLogo chain={from} size={16} />
         <span>{chainLabel(from)} to</span>
         <ChainLogo chain={to} size={16} />
@@ -53,21 +57,21 @@ export function BridgeCard({
           ))}
           <p className="flex items-start gap-1.5 pt-1 text-xs" style={{ color: 'var(--subtle)' }}>
             <Info className="mt-0.5 size-3.5 shrink-0" />
-            Circle delivers the USDC on the destination, so you only need gas on {chainLabel(from)}.
+            Circle delivers the {token} on the destination, so you only need gas on {chainLabel(from)}.
           </p>
         </div>
       )}
 
       {showSteps && (
         <div className="inner space-y-2 rounded-xl p-3">
-          {STEP_ORDER.map((name) => {
+          {stepOrder.map((name) => {
             const state: StepState = steps[name] ?? 'idle'
             const real = result?.steps.find((s) => s.name === name)
             return (
               <div key={name} className="flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <StepIcon state={state} />
-                  {STEP_LABELS[name]}
+                  {bridgeStepLabel(name, token)}
                 </span>
                 {real?.explorerUrl && (
                   <a
@@ -86,9 +90,15 @@ export function BridgeCard({
         </div>
       )}
 
+      {warnings.length > 0 && (
+        <p className="flex items-start gap-1.5 text-xs" style={{ color: 'var(--warn)' }}>
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>{warnings.join(' ')}</span>
+        </p>
+      )}
       {phase === 'done' && (
         <p className="font-semibold" style={{ color: 'var(--success)' }}>
-          Bridge complete. Your USDC is on {chainLabel(to)}.
+          Bridge complete. Your {token} is on {chainLabel(to)}.
         </p>
       )}
       {phase === 'failed' && (

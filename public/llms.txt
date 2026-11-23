@@ -1,0 +1,33 @@
+# OnPeer
+
+> Non-custodial peer-to-peer (P2P) crypto marketplace, instant token swap, fiat onramp, and cross-chain bridge for South Asia built on Arc (Circle's Layer-1 blockchain where USDC is the native gas token).
+
+OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhutan, Maldives, and Afghanistan to buy and sell **USDC**, **EURC**, **cirBTC**, and **WETH** directly using local payment rails (bKash, Nagad, Rocket, UPI, IMPS, Paytm, Raast, JazzCash, Easypaisa, LankaQR, eSewa, Khalti, mBoB, BML, and bank transfers) protected by non-custodial smart contract escrow (`P2PEscrow v2.1`) with **0% trading fees**.
+
+## Canonical Domains
+
+- [Landing Website](https://onpeer.xyz/): Product overview, regional corridors, and protocol highlights.
+- [Web Application](https://app.onpeer.xyz/p2p): Live P2P marketplace, Swap, Bridge, Buy USDC onramp, and AI Assistant.
+- [Documentation Portal](https://docs.onpeer.xyz/): Complete protocol architecture, smart contract rules, CCTPx routes, and security reference.
+- [Full LLM Reference](https://onpeer.xyz/llms-full.txt): Single-file comprehensive technical specification for AI assistants and answer engines.
+
+## Core Products
+
+- [P2P Marketplace](https://app.onpeer.xyz/p2p): Non-custodial Buy & Sell orderbook for `USDC`, `EURC`, `cirBTC`, and `WETH` across 8 South Asian fiat currencies (`BDT`, `INR`, `PKR`, `LKR`, `NPR`, `BTN`, `MVR`, `AFN`).
+- [Token Swap](https://app.onpeer.xyz/swap): Permissionless swaps among `USDC`, `EURC`, `cirBTC`, and `WETH` on Arc via Circle Swap Kit.
+- [Cross-Chain Bridge](https://app.onpeer.xyz/bridge): Native `USDC` bridging via Circle CCTP v2 and `EURC`, `cirBTC`, `WETH` bridging via Circle CCTPx (`FAST` and `SLOW` modes).
+- [Buy USDC Onramp](https://app.onpeer.xyz/buy): Hosted Circle Onramp widget for card, Apple Pay, Google Pay, and bank purchases.
+
+## Documentation Pages
+
+- [Introduction](https://docs.onpeer.xyz/): Protocol overview and design principles.
+- [Quickstart Guide](https://docs.onpeer.xyz/quickstart): Wallet setup on Arc Testnet (Chain ID `5042002`) and first trade.
+- [Arc Network & Gas](https://docs.onpeer.xyz/arc-network): Native USDC gas and sub-second deterministic finality.
+- [P2P Marketplace](https://docs.onpeer.xyz/p2p-marketplace): Supported crypto assets, fiat corridors, and auto-filled payment methods.
+- [Escrow Smart Contract](https://docs.onpeer.xyz/escrow): `P2PEscrow v2.1` state machine, 0% trade fee, tiered caps, and merchant margin.
+- [Swap & Bridge (CCTP / CCTPx)](https://docs.onpeer.xyz/swap-and-bridge): Multi-token swaps and cross-chain routes.
+- [Fiat Onramp](https://docs.onpeer.xyz/fiat-onramp): Circle Onramp integration and session security.
+- [KYC & Encrypted Vault](https://docs.onpeer.xyz/kyc-and-vault): Didit identity verification and AES-256-GCM payment vault.
+- [Dispute Resolution](https://docs.onpeer.xyz/disputes): 30-minute cooling-off, 2-phone video proof, and asymmetric bonds.
+- [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Testnet.
+- [Security & API Reference](https://docs.onpeer.xyz/security-and-api): Non-custodial guarantees, CSP, and Worker endpoints.

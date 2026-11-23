@@ -1,0 +1,49 @@
+# OnPeer — Full Technical & Product Reference (GEO / LLM Context)
+
+> Canonical URLs: https://onpeer.xyz | https://app.onpeer.xyz | https://docs.onpeer.xyz
+> Official X (Twitter): https://x.com/onpeerapp (@onpeerapp)
+> Network: Arc Testnet (Chain ID: 5042002, Native Gas Token: USDC)
+
+## 1. Executive Summary
+
+OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, swap terminal, fiat onramp, and cross-chain bridge built on **Arc** (Circle's EVM Layer-1 blockchain where USDC is the native gas token). OnPeer is purpose-built for South Asian fiat corridors where users rely on instant mobile-money and real-time banking rails.
+
+### Key Facts at a Glance
+- **Custody Model:** 100% non-custodial smart contract escrow (`P2PEscrow.sol` v2.1, Solidity 0.8.28). OnPeer operators and backend workers cannot move or freeze escrowed user funds.
+- **Supported Cryptocurrencies (P2P, Swap & Bridge):**
+  1. `USDC` — 6 decimals (`0x3600000000000000000000000000000000000000`)
+  2. `EURC` — 6 decimals (`0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a`)
+  3. `cirBTC` — 8 decimals (`0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF`)
+  4. `WETH` — 18 decimals (`0x2c4047028a72803939b6fb674D01bC059B5C4961`)
+- **Supported South Asian Fiat Currencies (8 Corridors):**
+  - **Bangladesh (`BDT`, ৳):** bKash, Nagad, Rocket, Bank Transfer
+  - **India (`INR`, ₹):** UPI, IMPS, Paytm, Bank Transfer
+  - **Pakistan (`PKR`, ₨):** Raast, JazzCash, Easypaisa, Bank Transfer
+  - **Sri Lanka (`LKR`, Rs):** LankaQR, Bank Transfer
+  - **Nepal (`NPR`, Rs):** eSewa, Khalti, Bank Transfer
+  - **Bhutan (`BTN`, Nu.):** mBoB, Bank Transfer
+  - **Maldives (`MVR`, Rf):** BML Transfer, Bank Transfer
+  - **Afghanistan (`AFN`, ؋):** HesabPay, Bank Transfer
+- **Fee Schedule:**
+  - **P2P Trade Fee (Maker & Taker):** `0%` (free)
+  - **Ad Refresh, Chat & Dispute Filing:** `0%` (free)
+  - **Ad Listing Fee:** Flat ~`$0.05` equivalent per new ad (`0.05 USDC`, `0.05 EURC`, `0.00000050 cirBTC`, or `0.00002 WETH`) to prevent order-book spam.
+
+## 2. Deployed Smart Contracts on Arc Testnet (Chain ID: 5042002)
+
+| Contract | Address | Deploy Block | Purpose |
+| --- | --- | --- | --- |
+| `P2PEscrow` (`USDC`) | `0xf719ebbc5080aee09e38909764b897e0bf01a9b0` | `72902228` | Primary USDC P2P escrow contract |
+| `P2PEscrow` (`EURC`) | `0x0db2fbf8357617172a3b852bc2ac3054dba1d402` | `73721819` | Euro Coin (EURC) P2P escrow contract |
+| `P2PEscrow` (`cirBTC`) | `0x6ba3b81833b6354f08483740211af3ddda396b39` | `73734225` | 8-decimal cirBTC P2P escrow contract |
+| `P2PEscrow` (`WETH`) | `0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3` | `73734238` | 18-decimal Wrapped Ether (WETH) P2P escrow contract |
+| `CrossChainTokenService` | `0x63753E722bd2C2A5DF6EE19C5106662208B81077` | — | Circle CCTPx cross-chain router on Arc Testnet (Domain 26) |
+| KYC Verifier Wallet | `0xeebd29441AF1a931C4a6eEc2265B0757fd992f5e` | — | Attests Didit KYC level on-chain; zero custody power |
+
+## 3. P2PEscrow v2.1 Safety Mechanics
+
+1. **Fixed Price Slippage Guard:** `openOrder` verifies `expectedPriceE6` on-chain so a maker cannot front-run a rate change while a taker signs.
+2. **5-Minute Late Payment Recovery Window:** If a buyer sends fiat just before the countdown expires, they have a hidden 5-minute grace period to submit their bank/mobile-money transfer ID (`payerProof != 0`, capped at 2 late marks per 30 days) so honest buyers never lose funds to clock skew.
+3. **Strict Anti-Third-Party & Name-Match Policy:** Counterparties must pay and receive strictly from accounts matching their verified identity.
+4. **AES-256-GCM Encrypted Payment Vault:** Receiving account numbers, order chat messages, and dispute evidence (images/PDFs) are sealed off-chain with per-record AES-256-GCM keys and bound to on-chain `keccak256` hashes.
+5. **Fair Dispute Resolution:** `0` upfront wallet balance required to open a dispute, 30-minute penalty-free cooling-off settlement, and a 7-day backup arbiter fail-safe.

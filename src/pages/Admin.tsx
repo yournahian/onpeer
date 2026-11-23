@@ -106,7 +106,7 @@ export default function AdminPage() {
     for (const o of orders) {
       if (o.status === STATUS.PENDING || o.status === STATUS.PAID || o.status === STATUS.DISPUTED) {
         active++
-        held += o.amount
+        if (o.asset === 'USDC') held += o.amount
       }
       if (o.status === STATUS.COMPLETED) completed++
       if (o.status === STATUS.SETTLED) settled++
@@ -231,7 +231,9 @@ export default function AdminPage() {
                   <ul className="space-y-2">
                     {resolved.map((o) => (
                       <li key={o.id.toString()} className="glass flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-sm">
-                        <span className="font-semibold">Order #{o.id.toString()} · {formatUsdcAmount(o.amount)} USDC</span>
+                        <span className="font-semibold">
+                          Order #{o.rawId.toString()} ({o.asset}) · {formatUsdcAmount(o.amount, undefined, o.asset)} {o.asset}
+                        </span>
                         <span style={{ color: o.status === STATUS.RESOLVED_BUYER ? 'var(--success)' : 'var(--subtle)' }}>
                           {o.status === STATUS.RESOLVED_BUYER
                             ? 'Released to buyer'

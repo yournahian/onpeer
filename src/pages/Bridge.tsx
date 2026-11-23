@@ -3,20 +3,24 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
 import { erc20Abi, type Address } from 'viem'
-import {
-  arbitrumSepolia,
-  arcTestnet,
-  avalancheFuji,
-  baseSepolia,
-  optimismSepolia,
-  polygonAmoy,
-  sepolia,
-} from 'viem/chains'
-import type { BridgeResult } from '@circle-fin/app-kit'
-import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, Loader2, X } from 'lucide-react'
-import { getUsdc } from '@/onchain-facts'
-import { formatUsdc, parseUsdc } from '@/onchain-money'
+import type { BridgeEstimateResult, BridgeResult } from '@circle-fin/app-kit'
+import { AlertTriangle, ArrowDownUp, Check, ChevronDown, ExternalLink, Info, Loader2, X } from 'lucide-react'
+import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import {
+  ALL_BRIDGE_EVENTS,
+  BRIDGE_CHAINS,
+  BRIDGE_TOKENS,
+  BRIDGE_TOKEN_DECIMALS,
+  bridgeStepLabel,
+  bridgeStepOrderFor,
+  getBridgeTokenAddress,
+  toBridgeKitToken,
+  type BridgeChainName,
+  type BridgeToken,
+  type BridgeTransferSpeed,
+  type StepState,
+} from '@/hooks/useBridgeFlow'
 import { SiteBar } from '@/components/SiteBar'
 import { Button } from '@/components/ui'
 import { ChainLogo, CoinLogo } from '@/components/logos'
@@ -28,98 +32,130 @@ const PCT_PRESETS = [
   { label: 'MAX', num: 100n },
 ] as const
 
-const CHAINS = [
-  { kit: 'Arc_Testnet', label: 'Arc Testnet', id: arcTestnet.id },
-  { kit: 'Ethereum_Sepolia', label: 'Ethereum Sepolia', id: sepolia.id },
-  { kit: 'Base_Sepolia', label: 'Base Sepolia', id: baseSepolia.id },
-  { kit: 'Arbitrum_Sepolia', label: 'Arbitrum Sepolia', id: arbitrumSepolia.id },
-  { kit: 'Optimism_Sepolia', label: 'Optimism Sepolia', id: optimismSepolia.id },
-  { kit: 'Avalanche_Fuji', label: 'Avalanche Fuji', id: avalancheFuji.id },
-  { kit: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy', id: polygonAmoy.id },
-] as const
+type ChainOption = (typeof BRIDGE_CHAINS)[number]
 
-type ChainOption = (typeof CHAINS)[number]
-type KitChain = ChainOption['kit']
-
-const STEP_LABELS: Record<string, string> = {
-  approve: 'Approve USDC',
-  burn: 'Burn on source chain',
-  fetchAttestation: 'Circle attestation',
-  mint: 'Mint on destination',
+type Quote = {
+  key: string
+  fees: { type: string; amount: string | null; token: string }[]
+  gas: { name: string; fee: string; token: string }[]
+  rawEstimate: BridgeEstimateResult
 }
-const STEP_ORDER = ['approve', 'burn', 'fetchAttestation', 'mint']
 
-type Quote = { key: string; fees: { type: string; amount: string | null; token: string }[]; gas: { name: string; fee: string; token: string }[] }
-type StepState = 'idle' | 'running' | 'done' | 'error'
+function normalizeBridgeToken(raw: string | null): BridgeToken {
+  if (!raw) return 'USDC'
+  const u = raw.trim().toUpperCase()
+  if (u === 'EURC') return 'EURC'
+  if (u === 'CIRBTC') return 'cirBTC'
+  if (u === 'WETH') return 'WETH'
+  return 'USDC'
+}
 
 const initial = () => {
   const q = new URLSearchParams(window.location.search)
-  const names = CHAINS.map((c) => c.kit) as string[]
+  const names = BRIDGE_CHAINS.map((c) => c.kit) as string[]
+  const token = normalizeBridgeToken(q.get('token'))
   const from = q.get('from')
   const to = q.get('to')
   const a = q.get('amount')
-  const f = (names.includes(from ?? '') ? from : 'Arc_Testnet') as KitChain
-  let t = (names.includes(to ?? '') ? to : 'Base_Sepolia') as KitChain
-  if (t === f) t = f === 'Arc_Testnet' ? 'Base_Sepolia' : 'Arc_Testnet'
-  return { from: f, to: t, amount: a && /^\d+(\.\d{1,6})?$/.test(a) ? a : '' }
+  const defaultDest: BridgeChainName = token === 'cirBTC' || token === 'WETH' ? 'Ethereum_Sepolia' : 'Base_Sepolia'
+  const f = (names.includes(from ?? '') ? from : 'Arc_Testnet') as BridgeChainName
+  let t = (names.includes(to ?? '') ? to : defaultDest) as BridgeChainName
+  if (t === f) t = f === 'Arc_Testnet' ? defaultDest : 'Arc_Testnet'
+  const maxDec = BRIDGE_TOKEN_DECIMALS[token]
+  return {
+    token,
+    from: f,
+    to: t,
+    amount: a && new RegExp(`^\\d+(\\.\\d{1,${maxDec}})?$`).test(a) ? a : '',
+  }
 }
 
 export default function BridgePage() {
   const { address, isConnected, connector, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
-  const [fromKit, setFromKit] = useState<KitChain>(() => initial().from)
-  const [toKit, setToKit] = useState<KitChain>(() => initial().to)
+  const [token, setToken] = useState<BridgeToken>(() => initial().token)
+  const [speed, setSpeed] = useState<BridgeTransferSpeed>('FAST')
+  const [fromKit, setFromKit] = useState<BridgeChainName>(() => initial().from)
+  const [toKit, setToKit] = useState<BridgeChainName>(() => initial().to)
   const [amount, setAmount] = useState(() => initial().amount)
   const [quote, setQuote] = useState<Quote | null>(null)
   const [busy, setBusy] = useState<'quote' | 'bridge' | 'retry' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [steps, setSteps] = useState<Record<string, StepState>>({})
-  const [result, setResult] = useState<BridgeResult | null>(null)
+  const [result, setResult] = useState<BridgeResult<string> | null>(null)
   const [flips, setFlips] = useState(0)
   const adapterRef = useRef<Awaited<ReturnType<typeof adapterFromConnector>> | null>(null)
 
-  const from: ChainOption = CHAINS.find((c) => c.kit === fromKit) ?? CHAINS[0]
-  const to: ChainOption = CHAINS.find((c) => c.kit === toKit) ?? CHAINS[2]
+  const from: ChainOption = BRIDGE_CHAINS.find((c) => c.kit === fromKit) ?? BRIDGE_CHAINS[0]
+  const to: ChainOption = BRIDGE_CHAINS.find((c) => c.kit === toKit) ?? BRIDGE_CHAINS[1]
+  const decimals = BRIDGE_TOKEN_DECIMALS[token]
+  const isCctpx = token !== 'USDC'
 
-  const usdc = getUsdc(from.id)?.address as Address | undefined
+  const tokenAddress = getBridgeTokenAddress(token, fromKit)
   const balRes = useReadContract({
-    address: usdc,
+    address: tokenAddress,
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [address as Address],
     chainId: from.id,
-    query: { enabled: !!address && !!usdc, refetchInterval: 10_000 },
+    query: { enabled: !!address && !!tokenAddress, refetchInterval: 10_000 },
   })
   const balance = balRes.data
 
   const amountRaw = useMemo(() => {
     try {
-      return amount ? parseUsdc(amount) : 0n
+      return amount ? parseUnitsExact(amount, decimals) : 0n
     } catch {
       return 0n
     }
-  }, [amount])
+  }, [amount, decimals])
 
-  const key = `${address}|${fromKit}|${toKit}|${amount}`
+  const key = `${address}|${token}|${speed}|${fromKit}|${toKit}|${amount}`
   const isQuoted = quote?.key === key
   const insufficient = balance !== undefined && amountRaw > balance
   const sameChain = fromKit === toKit
 
-  // Real bridge progress: each step flips only when the kit emits its event.
+  // Real bridge progress: subscribe to both CCTP (burn/mint) and CCTPx (transfer/forward) events.
   useEffect(() => {
     const onStep = (name: string) => () => setSteps((s) => ({ ...s, [name]: 'done' }))
-    const handlers = STEP_ORDER.map((name) => [name, onStep(name)] as const)
+    const handlers = ALL_BRIDGE_EVENTS.map((name) => [name, onStep(name)] as const)
     for (const [name, h] of handlers) appKit.on(`bridge.${name}` as 'bridge.approve', h)
     return () => {
       for (const [name, h] of handlers) appKit.off(`bridge.${name}` as 'bridge.approve', h)
     }
   }, [])
 
+  const selectToken = (next: BridgeToken) => {
+    setToken(next)
+    setAmount('')
+    setQuote(null)
+    setError(null)
+    setWarnings([])
+    setResult(null)
+    setSteps({})
+    // Nudge to a known CCTPx route if switching to cirBTC/WETH from an unrelated chain pair
+    if (next === 'cirBTC' || next === 'WETH') {
+      const validPair =
+        (fromKit === 'Arc_Testnet' && toKit === 'Ethereum_Sepolia') ||
+        (fromKit === 'Ethereum_Sepolia' && toKit === 'Arc_Testnet')
+      if (!validPair) {
+        if (fromKit === 'Ethereum_Sepolia') {
+          setToKit('Arc_Testnet')
+        } else {
+          setFromKit('Arc_Testnet')
+          setToKit('Ethereum_Sepolia')
+        }
+      }
+    }
+  }
+
   const flip = () => {
     setFlips((n) => n + 1)
     setFromKit(toKit)
     setToKit(fromKit)
     setQuote(null)
+    setError(null)
   }
 
   const prepare = async () => {
@@ -133,20 +169,30 @@ export default function BridgePage() {
   const review = async () => {
     setBusy('quote')
     setError(null)
+    setWarnings([])
     setResult(null)
     try {
       const adapter = await prepare()
-      const est = await appKit.estimateBridge({
-        from: { adapter, chain: fromKit },
-        to: { adapter, chain: toKit, useForwarder: true },
-        amount,
-      })
+      const est =
+        token === 'USDC'
+          ? await appKit.estimateBridge({
+            from: { adapter, chain: fromKit },
+            to: { adapter, chain: toKit, useForwarder: true },
+            amount,
+            token: 'USDC',
+          })
+          : await appKit.estimateBridge({
+            from: { adapter, chain: fromKit },
+            to: { adapter, chain: toKit },
+            amount,
+            token: toBridgeKitToken(token),
+            config: { transferSpeed: speed },
+          })
       setQuote({
         key,
         fees: est.fees.map((f) => ({ type: f.type, amount: f.amount, token: f.token })),
-        gas: est.gasFees
-          .filter((g) => g.fees)
-          .map((g) => ({ name: g.name, fee: g.fees!.fee, token: g.token })),
+        gas: est.gasFees.filter((g) => g.fees).map((g) => ({ name: g.name, fee: g.fees!.fee, token: g.token })),
+        rawEstimate: est,
       })
     } catch (err) {
       setQuote(null)
@@ -157,18 +203,30 @@ export default function BridgePage() {
   }
 
   const bridge = async () => {
-    if (!isQuoted) return
+    if (!isQuoted || !quote) return
     setBusy('bridge')
     setError(null)
+    setWarnings([])
     setResult(null)
     setSteps({ approve: 'running' })
     try {
       const adapter = await prepare()
-      const res = await appKit.bridge({
-        from: { adapter, chain: fromKit },
-        to: { adapter, chain: toKit, useForwarder: true },
-        amount,
-      })
+      const res =
+        token === 'USDC'
+          ? await appKit.bridge({
+            from: { adapter, chain: fromKit },
+            to: { adapter, chain: toKit, useForwarder: true },
+            amount,
+            token: 'USDC',
+          })
+          : await appKit.bridge({
+            from: { adapter, chain: fromKit },
+            to: { adapter, chain: toKit },
+            amount,
+            token: toBridgeKitToken(token),
+            config: { transferSpeed: speed },
+            quote: (quote.rawEstimate as { quote?: unknown }).quote as never,
+          })
       finish(res)
     } catch (err) {
       setError(kitErrorMessage(err))
@@ -193,8 +251,12 @@ export default function BridgePage() {
     }
   }
 
-  const finish = (res: BridgeResult) => {
+  const finish = (res: BridgeResult<string>) => {
     setResult(res)
+    const resWarnings = ((res as { warnings?: { code?: string; message?: string }[] }).warnings ?? [])
+      .map((w) => w.message || w.code || '')
+      .filter(Boolean)
+    setWarnings(resWarnings)
     const next: Record<string, StepState> = {}
     for (const s of res.steps) next[s.name] = s.state === 'success' ? 'done' : s.state === 'error' ? 'error' : 'idle'
     setSteps(next)
@@ -204,19 +266,32 @@ export default function BridgePage() {
     }
   }
 
-  const stepList = result?.steps ?? []
+  const stepList = useMemo(() => result?.steps ?? [], [result])
+  const orderedSteps = useMemo(() => {
+    const baseOrder = [...bridgeStepOrderFor(token)]
+    if (stepList.some((s) => s.name === 'approveFee') && !baseOrder.includes('approveFee')) {
+      baseOrder.splice(1, 0, 'approveFee')
+    }
+    return baseOrder
+  }, [token, stepList])
   const showProgress = busy === 'bridge' || result !== null
 
   const applyPct = (num: bigint) => {
     if (balance === undefined) return
-    setAmount(formatUsdc((balance * num) / 100n))
+    const spendable =
+      token === 'USDC' && fromKit === 'Arc_Testnet'
+        ? balance > 1_000_000n
+          ? balance - 1_000_000n
+          : 0n
+        : balance
+    setAmount(formatUnitsExact((spendable * num) / 100n, decimals))
+    setQuote(null)
   }
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip">
       <SiteBar />
       <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
-
         <motion.section
           className="relative z-20 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
           style={{
@@ -232,24 +307,26 @@ export default function BridgePage() {
           <div>
             <div className="flex items-center justify-between text-xs font-medium" style={{ color: 'var(--muted)' }}>
               <span>You&apos;re bridging</span>
-              <span>{balance === undefined ? 'Balance unavailable' : `Balance: ${formatUsdc(balance)}`}</span>
+              <span>
+                {balance === undefined ? 'Balance unavailable' : `Balance: ${formatUnitsExact(balance, decimals)}`}
+              </span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
               <input
                 inputMode="decimal"
                 value={amount}
-                onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setAmount(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (new RegExp(`^\\d*\\.?\\d{0,${decimals}}$`).test(val)) {
+                    setAmount(val)
+                    setQuote(null)
+                  }
+                }}
                 placeholder="0.00"
-                aria-label="USDC amount to bridge"
+                aria-label={`${token} amount to bridge`}
                 className="no-focus-ring display w-full min-w-0 bg-transparent text-2xl font-bold tabular-nums outline-none sm:text-3xl"
               />
-              <span
-                className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold"
-                style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
-              >
-                <CoinLogo symbol="USDC" size={18} />
-                <span>USDC</span>
-              </span>
+              <BridgeTokenSelect value={token} onChange={selectToken} />
             </div>
 
             {/* 25% 50% 75% MAX pills */}
@@ -269,7 +346,7 @@ export default function BridgePage() {
             </div>
           </div>
 
-          {/* Middle: From, To, Protocol, Fees */}
+          {/* Middle: From, To, Protocol, Transfer Speed, Fees */}
           <div className="mt-3.5 space-y-2 border-y py-3 text-xs" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between gap-3">
               <span style={{ color: 'var(--subtle)' }}>From</span>
@@ -296,8 +373,40 @@ export default function BridgePage() {
             </div>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Protocol</span>
-              <span className="font-semibold">Circle CCTP</span>
+              <span className="font-semibold">{isCctpx ? 'Circle CCTPx' : 'Circle CCTP'}</span>
             </div>
+            {isCctpx && (
+              <div className="flex items-center justify-between">
+                <span style={{ color: 'var(--subtle)' }}>Transfer speed</span>
+                <div className="flex gap-1.5">
+                  {(['FAST', 'SLOW'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => {
+                        setSpeed(mode)
+                        setQuote(null)
+                      }}
+                      className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors"
+                      style={
+                        speed === mode
+                          ? { background: 'var(--accent-bg)', color: 'var(--on-accent)' }
+                          : { background: 'var(--fill-2)', color: 'var(--muted)' }
+                      }
+                    >
+                      {mode === 'FAST' ? 'Fast' : 'Standard'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {isCctpx && (
+              <p className="text-[11px]" style={{ color: 'var(--subtle)' }}>
+                {token === 'EURC'
+                  ? 'Active testnet routes: Arc, Ethereum Sepolia, Base Sepolia & Avalanche Fuji.'
+                  : `Active testnet route for ${token}: Ethereum Sepolia ↔ Arc Testnet.`}
+              </p>
+            )}
             {isQuoted && (
               <>
                 {quote.fees.map((f, i) => (
@@ -314,7 +423,7 @@ export default function BridgePage() {
                 ))}
                 <p className="flex items-start gap-1.5 pt-1 text-[11px] leading-relaxed" style={{ color: 'var(--subtle)' }}>
                   <Info className="mt-0.5 size-3 shrink-0" />
-                  Circle&apos;s forwarding service delivers the USDC on {to.label}, so you only need gas on {from.label}.
+                  Circle&apos;s relayer delivers {token} on {to.label}, so you only need gas on {from.label}.
                 </p>
               </>
             )}
@@ -336,12 +445,18 @@ export default function BridgePage() {
                 className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold"
                 style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
               >
-                <CoinLogo symbol="USDC" size={18} />
-                <span>USDC</span>
+                <CoinLogo symbol={token} size={18} />
+                <span>{token}</span>
               </span>
             </div>
           </div>
 
+          {warnings.length > 0 && (
+            <div className="mt-3 flex items-start gap-1.5 text-xs font-medium" style={{ color: 'var(--warn)' }}>
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{warnings.join(' ')}</span>
+            </div>
+          )}
           {error && (
             <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }} role="alert">
               {error}
@@ -349,7 +464,10 @@ export default function BridgePage() {
           )}
           {insufficient && (
             <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }}>
-              Not enough USDC on {from.label}. On Arc, use &quot;Get test USDC&quot; in the Arc Studio sidebar.
+              Not enough {token} on {from.label}.
+              {token === 'USDC' && fromKit === 'Arc_Testnet'
+                ? ' Use "Get test USDC" in the Arc Studio sidebar.'
+                : ''}
             </p>
           )}
 
@@ -370,7 +488,7 @@ export default function BridgePage() {
                 disabled={busy !== null}
                 onClick={() => void bridge()}
               >
-                {busy === 'bridge' ? 'Bridging...' : `Bridge ${amount} USDC to ${to.label}`}
+                {busy === 'bridge' ? 'Bridging...' : `Bridge ${amount} ${token} to ${to.label}`}
               </Button>
             ) : (
               <Button
@@ -394,14 +512,16 @@ export default function BridgePage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
-            {STEP_ORDER.map((name) => {
-              const state: StepState = steps[name] ?? (busy === 'bridge' && Object.keys(steps).length === 0 && name === 'approve' ? 'running' : 'idle')
+            {orderedSteps.map((name) => {
+              const state: StepState =
+                steps[name] ??
+                (busy === 'bridge' && Object.keys(steps).length === 0 && name === 'approve' ? 'running' : 'idle')
               const real = stepList.find((s) => s.name === name)
               return (
                 <div key={name} className="flex items-center justify-between text-sm">
                   <span className="flex items-center gap-2">
                     <StepIcon state={state} />
-                    {STEP_LABELS[name]}
+                    {bridgeStepLabel(name, token)}
                   </span>
                   {real?.explorerUrl && (
                     <a
@@ -419,7 +539,7 @@ export default function BridgePage() {
             })}
             {result?.state === 'success' && (
               <p className="pt-1 text-sm font-semibold" style={{ color: 'var(--success)' }}>
-                Bridge complete. Your USDC is on {to.label}.
+                Bridge complete. Your {token} is on {to.label}.
               </p>
             )}
             {result?.state === 'error' && (
@@ -427,7 +547,13 @@ export default function BridgePage() {
                 <p className="text-sm" style={{ color: 'var(--danger)' }}>
                   The transfer stopped part-way. Your funds are safe: retry resumes from the failed step.
                 </p>
-                <Button className="mt-2 w-full rounded-full" variant="ghost" loading={busy === 'retry'} disabled={busy !== null} onClick={() => void retry()}>
+                <Button
+                  className="mt-2 w-full rounded-full"
+                  variant="ghost"
+                  loading={busy === 'retry'}
+                  disabled={busy !== null}
+                  onClick={() => void retry()}
+                >
                   Retry from failed step
                 </Button>
               </div>
@@ -443,19 +569,113 @@ export default function BridgePage() {
   )
 }
 
+function BridgeTokenSelect({
+  value,
+  onChange,
+}: {
+  value: BridgeToken
+  onChange: (next: BridgeToken) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={wrapRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Select token to bridge"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold transition-all hover:bg-[var(--fill-3)]"
+        style={{
+          background: 'var(--fill-2)',
+          border: `1px solid ${open ? 'var(--accent)' : 'var(--border-strong)'}`,
+        }}
+      >
+        <CoinLogo symbol={value} size={18} />
+        <span>{value}</span>
+        <ChevronDown className={`size-3.5 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.ul
+            role="listbox"
+            initial={{ opacity: 0, y: 6, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-2xl p-1.5 backdrop-blur-2xl"
+            style={{
+              background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
+              border: '1px solid var(--border-strong)',
+              boxShadow: '0 18px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border)',
+            }}
+          >
+            {BRIDGE_TOKENS.map((tok) => {
+              const selected = tok === value
+              return (
+                <li key={tok}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      onChange(tok)
+                      setOpen(false)
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[var(--fill-2)]"
+                    style={{
+                      background: selected ? 'var(--fill-3)' : undefined,
+                      color: selected ? 'var(--ink)' : 'var(--ink-2)',
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <CoinLogo symbol={tok} size={16} />
+                      {tok}
+                    </span>
+                    {selected && <Check className="size-3.5" style={{ color: 'var(--accent)' }} />}
+                  </button>
+                </li>
+              )
+            })}
+          </motion.ul>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 function ChainSelect({
   value,
   onChange,
   exclude,
 }: {
-  value: KitChain
-  onChange: (v: KitChain) => void
-  exclude: KitChain
+  value: BridgeChainName
+  onChange: (v: BridgeChainName) => void
+  exclude: BridgeChainName
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const current = CHAINS.find((c) => c.kit === value) ?? CHAINS[0]
-  const options = CHAINS.filter((c) => c.kit !== exclude)
+  const current = BRIDGE_CHAINS.find((c) => c.kit === value) ?? BRIDGE_CHAINS[0]
+  const options = BRIDGE_CHAINS.filter((c) => c.kit !== exclude)
 
   useEffect(() => {
     if (!open) return

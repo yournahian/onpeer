@@ -44,6 +44,23 @@ export default function App() {
     }
   }, [redirectToApp, search])
 
+  useEffect(() => {
+    const titles: Record<string, string> = {
+      home: 'OnPeer | P2P USDC, EURC, cirBTC & WETH, Swap & Bridge for South Asia on Arc',
+      p2p: 'OnPeer P2P Marketplace | Buy & Sell USDC, EURC, cirBTC & WETH in South Asia',
+      swap: 'Swap USDC, EURC, cirBTC & WETH on Arc | OnPeer',
+      bridge: 'Bridge USDC, EURC, cirBTC & WETH Across Chains (CCTP & CCTPx) | OnPeer',
+      buy: 'Buy USDC with Card, Apple Pay & Bank Transfer | OnPeer Fiat Onramp',
+      assistant: 'AI Trading, Swap & Bridge Assistant | OnPeer',
+      docs: 'OnPeer Documentation | P2P Escrow, Swap, CCTPx Bridge & Arc Smart Contracts',
+      'brand-kit': 'Brand Kit & Official Media Assets | OnPeer',
+      privacy: 'Privacy & Vault Encryption Notice | OnPeer',
+      admin: 'Admin Control Room | OnPeer',
+    }
+    const nextTitle = titles[route]
+    if (nextTitle) document.title = nextTitle
+  }, [route])
+
   if (redirectToApp) return null
   // Swap and Bridge read their prefill from the URL on mount, so a new link remounts them.
   const page =
@@ -94,9 +111,11 @@ export default function App() {
         </ErrorBoundary>
         {route === 'home' && <Footer />}
       </div>
-      <ErrorBoundary label="assistant" fallback={null}>
-        <AgentChat route={route} />
-      </ErrorBoundary>
+      {route !== 'docs' && (
+        <ErrorBoundary label="assistant" fallback={null}>
+          <AgentChat route={route} />
+        </ErrorBoundary>
+      )}
       </AgentProvider>
     </MotionConfig>
   )

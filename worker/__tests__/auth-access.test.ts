@@ -476,4 +476,50 @@ describe('Step 3: Wallet-Signature Auth, Sessions & Onchain Role Access', () => 
     const landingPrivacyRes = await worker.fetch(new Request('https://onpeer.xyz/privacy'), env)
     expect(landingPrivacyRes.status).toBe(200)
   })
+
+  it('serves absolute HTTPS Open Graph / Twitter image cards, JSON-LD AEO schema, robots.txt, sitemap.xml, and llms.txt', async () => {
+    const db = new MemoryDb()
+    const env = makeTestEnv({
+      ASSETS: {
+        fetch: async () =>
+          new Response(
+            '<!DOCTYPE html><html><head><!-- ONPEER_SEO_SLOT --></head><body><div id="root"></div></body></html>',
+            { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } },
+          ),
+      },
+    })
+    const chain = makeChainMock()
+    const worker = createWorkerApp({
+      runWithDb: async (_env, fn) => fn(db),
+      makeChain: () => chain,
+    })
+
+    const homeRes = await worker.fetch(new Request('https://onpeer.xyz/'), env)
+    expect(homeRes.status).toBe(200)
+    const homeHtml = await homeRes.text()
+    expect(homeHtml).toContain('property="og:image" content="https://onpeer.xyz/brand/open-graph-1200x630.png?v=2"')
+    expect(homeHtml).toContain('name="twitter:image" content="https://onpeer.xyz/brand/open-graph-1200x630.png?v=2"')
+    expect(homeHtml).toContain('name="twitter:card" content="summary_large_image"')
+    expect(homeHtml).toContain('name="twitter:site" content="@onpeerapp"')
+    expect(homeHtml).toContain('"@type":"FAQPage"')
+    expect(homeHtml).toContain('"@type":"WebApplication"')
+
+    const docsRes = await worker.fetch(new Request('https://docs.onpeer.xyz/escrow'), env)
+    expect(docsRes.status).toBe(200)
+    const docsHtml = await docsRes.text()
+    expect(docsHtml).toContain('href="https://docs.onpeer.xyz/escrow"')
+    expect(docsHtml).toContain('"@type":"TechArticle"')
+
+    const robotsRes = await worker.fetch(new Request('https://onpeer.xyz/robots.txt'), env)
+    expect(robotsRes.status).toBe(200)
+    expect(await robotsRes.text()).toContain('User-agent: GPTBot')
+
+    const sitemapRes = await worker.fetch(new Request('https://onpeer.xyz/sitemap.xml'), env)
+    expect(sitemapRes.status).toBe(200)
+    expect(await sitemapRes.text()).toContain('https://docs.onpeer.xyz/escrow')
+
+    const llmsRes = await worker.fetch(new Request('https://onpeer.xyz/llms.txt'), env)
+    expect(llmsRes.status).toBe(200)
+    expect(await llmsRes.text()).toContain('# OnPeer')
+  })
 })

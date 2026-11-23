@@ -379,7 +379,7 @@ export function OrderChat({
       <div ref={streamRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
         <div className="text-center">
           <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-1 text-[11px] text-[var(--p2p-muted)]">
-            Order #{orderId.toString()} created{amountText ? ` • ${amountText} USDC locked in Arc escrow` : ''}
+            Order #{orderId.toString()} created{amountText ? ` • ${amountText} locked in Arc escrow` : ''}
           </span>
         </div>
 

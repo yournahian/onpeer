@@ -6,14 +6,16 @@ import { ChainLogo, CoinLogo } from '@/components/logos'
 
 export function SwapCard({
   tokenIn,
+  tokenOut: requestedOut,
   amount,
   onSettled,
 }: {
   tokenIn: SwapToken
+  tokenOut?: SwapToken
   amount: string
   onSettled: (text: string) => void
 }) {
-  const flow = useSwapFlow({ tokenIn, amount, onSettled })
+  const flow = useSwapFlow({ tokenIn, tokenOut: requestedOut, amount, onSettled })
   const { phase, estimate, done, error, slippage, tokenOut } = flow
 
   return (

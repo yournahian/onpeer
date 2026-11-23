@@ -405,7 +405,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
               <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">{asset} Escrow</span>
               <span className="p2p-mono mt-1 block text-base font-bold text-[var(--p2p-ink)]">
-                {formatUsdcAmount(order.amount)} {asset}
+                {formatUsdcAmount(order.amount, undefined, asset)} {asset}
               </span>
             </div>
             <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
@@ -560,9 +560,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           <div className="p2p-card hidden rounded-xl p-4 sm:block">
             <ol className="grid gap-3 sm:grid-cols-3">
               {[
-                { n: 1, title: 'Order Created', sub: 'USDC Locked in Escrow' },
+                { n: 1, title: 'Order Created', sub: `${asset} Locked in Escrow` },
                 { n: 2, title: 'Transfer Fiat', sub: 'Verify Payer & Notify' },
-                { n: 3, title: 'Release USDC', sub: 'Seller Confirms Receipt' },
+                { n: 3, title: `Release ${asset}`, sub: 'Seller Confirms Receipt' },
               ].map((s) => {
                 const done = stepIndex > s.n || status === STATUS.COMPLETED || status === STATUS.RESOLVED_BUYER
                 const active = stepIndex === s.n && status !== STATUS.CANCELLED && status !== STATUS.RESOLVED_SELLER
@@ -634,7 +634,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                       {isBuyer ? 'Complete fiat payment within' : 'Awaiting buyer fiat transfer'}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
-                      Escrow holds {formatUsdcAmount(order.amount)} USDC safely until release.
+                      Escrow holds {formatUsdcAmount(order.amount, undefined, asset)} {asset} safely until release.
                     </p>
                   </div>
                   <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3.5 py-2 text-right">
@@ -666,7 +666,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   {isBuyer ? 'Receive Amount' : 'Escrowed Amount'}
                 </span>
                 <p className="p2p-mono mt-1 text-xl font-bold text-[var(--p2p-ink)] sm:text-2xl">
-                  {formatUsdcAmount(order.amount)} {asset}
+                  {formatUsdcAmount(order.amount, undefined, asset)} {asset}
                 </p>
               </div>
             </div>
@@ -687,7 +687,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               <div>
                 <dt className="text-[var(--p2p-muted)]">Dispute Bond</dt>
                 <dd className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
-                  {formatUsdcAmount(order.bond)} USDC
+                  {formatUsdcAmount(order.bond, undefined, asset)} {asset}
                 </dd>
               </div>
               <div>
@@ -975,7 +975,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     ? 'Payment window expired without payment confirmation. You may cancel the order now.'
                     : pastDeadline
                       ? 'Payment timer expired. Wait briefly in case the buyer is submitting a transfer ID, then cancellation unlocks.'
-                      : 'Waiting for the buyer to send fiat and mark the order as paid. Only release USDC once you verify the exact amount inside your payment app.'}
+                      : `Waiting for the buyer to send fiat and mark the order as paid. Only release ${asset} once you verify the exact amount inside your payment app.`}
                 </p>
               )}
 
@@ -988,7 +988,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-40"
                   >
                     {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
-                    Release USDC Early
+                    Release {asset} Early
                   </button>
                 )}
                 {hardExpired && (
@@ -1067,7 +1067,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] shadow-sm transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
-                  Release USDC
+                  Release {asset}
                 </button>
                 <button
                   type="button"
@@ -1089,7 +1089,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
 
               <p className="text-[11px] text-[var(--p2p-muted)]">
-                Asymmetric Dispute Bond: <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond)} USDC</strong> (0 upfront cost; if an arbiter rules, the loser owes the bond from margin or recorded debt).
+                Asymmetric Dispute Bond: <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond, undefined, asset)} {asset}</strong> (0 upfront cost; if an arbiter rules, the loser owes the bond from margin or recorded debt).
               </p>
             </div>
           )}
@@ -1099,7 +1099,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <div className="p2p-card space-y-3.5 rounded-xl p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="text-sm font-bold text-[var(--p2p-ink)]">Waiting for Seller to Release USDC</p>
+                  <p className="text-sm font-bold text-[var(--p2p-ink)]">Waiting for Seller to Release {asset}</p>
                   <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
                     Tap Chat to share your transaction reference if the seller needs help locating it.
                   </p>
@@ -1112,7 +1112,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
 
               <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
-                <strong className="text-[var(--p2p-ink)]">Dispute Bond Rule ({formatUsdcAmount(order.bond)} USDC):</strong> You need <strong className="text-[var(--p2p-ink)]">0 USDC</strong> in your wallet to open a dispute. When an arbiter rules, your full {formatUsdcAmount(order.amount)} USDC is never reduced — the losing party owes the {formatUsdcAmount(order.bond)} USDC bond from margin or deferred unban debt.
+                <strong className="text-[var(--p2p-ink)]">Dispute Bond Rule ({formatUsdcAmount(order.bond, undefined, asset)} {asset}):</strong> You need <strong className="text-[var(--p2p-ink)]">0 {asset}</strong> in your wallet to open a dispute. When an arbiter rules, your full {formatUsdcAmount(order.amount, undefined, asset)} {asset} is never reduced — the losing party owes the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond from margin or deferred unban debt.
               </div>
 
               <div className="flex flex-col gap-2 md:flex-row">
@@ -1153,7 +1153,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     Dispute Active • {inReview ? 'Arbiter In Review' : inCoolingOff ? `Cooling-off (${formatDuration(coolingOffLeft)})` : 'Post Cooling-off'}
                   </p>
                   <p className="text-xs text-[var(--p2p-muted)]">
-                    Escrowed {formatUsdcAmount(order.amount)} USDC stays 100% intact. When an arbiter rules, the arbiter decides whether the loser pays the {formatUsdcAmount(order.bond)} USDC bond.
+                    Escrowed {formatUsdcAmount(order.amount, undefined, asset)} {asset} stays 100% intact. When an arbiter rules, the arbiter decides whether the loser pays the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond.
                   </p>
                 </div>
                 <span className="p2p-mono rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
@@ -1192,7 +1192,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         ) : (
                           <Handshake className="size-4" />
                         )}
-                        Settle Dispute Now — Release USDC to Buyer
+                        Settle Dispute Now — Release {asset} to Buyer
                       </button>
                     )}
                     {isBuyer && (
@@ -1207,7 +1207,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         ) : (
                           <Handshake className="size-4" />
                         )}
-                        Settle Dispute Now — Cancel &amp; Return USDC to Seller
+                        Settle Dispute Now — Cancel &amp; Return {asset} to Seller
                       </button>
                     )}
                   </div>
@@ -1252,7 +1252,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                       className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
                     />
                     <span>
-                      Charge <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond)} USDC</strong> dispute bond to the losing party (from free margin first, shortfall recorded as debt).
+                      Charge <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond, undefined, asset)} {asset}</strong> dispute bond to the losing party (from free margin first, shortfall recorded as debt).
                     </span>
                   </label>
                   <label className="flex cursor-pointer items-start gap-2 text-xs text-[var(--p2p-muted)]">
@@ -1263,7 +1263,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                       className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
                     />
                     <span>
-                      Also slash extra merchant margin from the losing party (up to {formatUsdcAmount(order.amount)} USDC).
+                      Also slash extra merchant margin from the losing party (up to {formatUsdcAmount(order.amount, undefined, asset)} {asset}).
                     </span>
                   </label>
                   <div className="grid grid-cols-2 gap-2.5">
@@ -1301,7 +1301,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               <div className="p2p-card flex items-center gap-3 rounded-xl !border-[var(--p2p-border-active)] p-4 text-sm font-semibold text-[var(--p2p-ink)]">
                 <Check className="size-5 shrink-0 text-[#FF5A00]" />
                 <span>
-                  {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount)} ${asset} released to buyer.`}
+                  {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount, undefined, asset)} ${asset} released to buyer.`}
                   {status === STATUS.CANCELLED && `Order cancelled — escrowed ${asset} returned.`}
                   {status === STATUS.RESOLVED_BUYER && `Dispute resolved by arbiter — ${asset} released to buyer.`}
                   {status === STATUS.RESOLVED_SELLER && `Dispute resolved by arbiter — ${asset} returned to seller.`}
@@ -1330,7 +1330,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             canPost={canPostChat}
             orderStatus={status}
             disputedAt={order.disputedAt}
-            amountText={formatUsdcAmount(order.amount)}
+            amountText={`${formatUsdcAmount(order.amount, undefined, asset)} ${asset}`}
           />
         </div>
       </div>
@@ -1371,7 +1371,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               onClick={() => openReleaseConfirm('early')}
               className="h-12 flex-1 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
-              Release USDC Early
+              Release {asset} Early
             </button>
           )}
           {hardExpired && (
@@ -1404,7 +1404,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
           >
             {pendingKey === 'release' && <Loader2 className="size-4 animate-spin" />}
-            Release USDC
+            Release {asset}
           </button>
         </div>
       )}
@@ -1436,7 +1436,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               onClick={() => openReleaseConfirm('settle')}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
-              <Handshake className="size-4" /> Settle Dispute — Release USDC
+              <Handshake className="size-4" /> Settle Dispute — Release {asset}
             </button>
           ) : (
             <button
@@ -1482,10 +1482,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     </div>
                     <div>
                       <h3 id="release-confirm-title" className="text-base font-bold text-[var(--p2p-ink)]">
-                        Confirm USDC Release
+                        Confirm {asset} Release
                       </h3>
                       <p className="text-xs text-[var(--p2p-muted)]">
-                        Order #{order.id.toString()} • Buyer {buyerLabel} ({shortAddr(order.buyer)})
+                        Order #{order.rawId.toString()} ({asset}) • Buyer {buyerLabel} ({shortAddr(order.buyer)})
                       </p>
                     </div>
                   </div>
@@ -1494,7 +1494,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                     <div>
                       <span className="block text-[var(--p2p-muted)]">Releasing Escrow</span>
                       <span className="p2p-mono mt-0.5 block text-sm font-bold text-[var(--p2p-ink)]">
-                        {formatUsdcAmount(order.amount)} USDC
+                        {formatUsdcAmount(order.amount, undefined, asset)} {asset}
                       </span>
                     </div>
                     <div>
@@ -1507,7 +1507,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   </div>
 
                   <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3.5 py-2.5 text-xs font-semibold leading-relaxed text-[var(--p2p-warn-ink)]">
-                    Onchain USDC release is final and irreversible. Do <strong>NOT</strong> release if the sender name
+                    Onchain {asset} release is final and irreversible. Do <strong>NOT</strong> release if the sender name
                     mismatches (third-party payment) — open a dispute instead. If you still release despite a name
                     mismatch, <strong>OnPeer is not responsible or liable</strong>.
                   </div>
@@ -1575,7 +1575,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   canPost={canPostChat}
                   orderStatus={status}
                   disputedAt={order.disputedAt}
-                  amountText={formatUsdcAmount(order.amount)}
+                  amountText={`${formatUsdcAmount(order.amount, undefined, asset)} ${asset}`}
                   onBackToOrder={() => {
                     setSeenMessages(totalMessages)
                     setMobileChatOpen(false)

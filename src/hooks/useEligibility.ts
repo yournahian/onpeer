@@ -24,7 +24,7 @@ export function useEligibility(assetOverride?: P2pAsset): {
     if (account.restricted || account.disputeLimitReached)
       blocked = 'This account is restricted from opening new trades. Existing orders can still be finished.'
     else if (account.totalDebt > 0n)
-      blocked = `Unpaid dispute bond of ${formatUsdcAmount(account.totalDebt)} ${asset}. Repay it in Restrictions Removal Center to resume trading.`
+      blocked = `Unpaid dispute bond of ${formatUsdcAmount(account.totalDebt, undefined, asset)} ${asset}. Repay it in Restrictions Removal Center to resume trading.`
     else if (Number(account.bannedUntil) > now)
       blocked = `Cooldown after repeated cancellations. You can trade again in ${formatDuration(Number(account.bannedUntil) - now)}.`
     else if (kycRequired && !kyc.verified)

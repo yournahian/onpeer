@@ -26,7 +26,6 @@ import {
   DETAILS_MODE,
   MAX_OPEN_ORDERS,
   SIDE_SELL,
-  TIER0_CAP,
   TIER_TABLE,
   ZERO_BYTES32,
   computeBond,
@@ -44,6 +43,7 @@ import {
   isUncapped,
   maskToMethods,
   shortAddr,
+  tier0CapFor,
   usdcFor,
 } from '@/lib/p2p'
 import { formatUnitsFixed, parseUnitsExact } from '@/onchain-money'
@@ -102,7 +102,10 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     [savedMethods, ad.paymentMask],
   )
 
-  const validInitial = initialUsdc && /^\d+(\.\d{1,6})?$/.test(initialUsdc) ? initialUsdc : ''
+  const tokenDecimals = escrowCfg.decimals
+  const displayDigits = asset === 'cirBTC' ? 6 : asset === 'WETH' ? 5 : 4
+  const validInitial =
+    initialUsdc && new RegExp(`^\\d+(\\.\\d{1,${tokenDecimals}})?$`).test(initialUsdc) ? initialUsdc : ''
   const [fiat, setFiat] = useState('')
   const [usdc, setUsdc] = useState(validInitial)
   const [edited, setEdited] = useState<'fiat' | 'usdc'>(validInitial ? 'usdc' : 'fiat')
@@ -155,20 +158,27 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   }
 
   const usdcRaw = useMemo(
-    () => (edited === 'fiat' ? usdcFor(safeParse(fiat, 6), ad.priceE6) : safeParse(usdc, 6)),
-    [edited, fiat, usdc, ad.priceE6],
+    () => (edited === 'fiat' ? usdcFor(safeParse(fiat, 6), ad.priceE6, asset) : safeParse(usdc, tokenDecimals)),
+    [edited, fiat, usdc, ad.priceE6, asset, tokenDecimals],
   )
   const fiatRaw = useMemo(
-    () => (edited === 'fiat' ? safeParse(fiat, 6) : fiatFor(safeParse(usdc, 6), ad.priceE6)),
-    [edited, fiat, usdc, ad.priceE6],
+    () => (edited === 'fiat' ? safeParse(fiat, 6) : fiatFor(safeParse(usdc, tokenDecimals), ad.priceE6, asset)),
+    [edited, fiat, usdc, ad.priceE6, asset, tokenDecimals],
   )
 
   const shownFiat = edited === 'fiat' ? fiat : fiatRaw > 0n ? formatUnitsFixed(fiatRaw, 6, 2) : ''
-  const shownUsdc = edited === 'usdc' ? usdc : usdcRaw > 0n ? formatUnitsFixed(usdcRaw, 6, 4) : ''
+  const shownUsdc =
+    edited === 'usdc'
+      ? usdc
+      : usdcRaw > 0n
+        ? tokenDecimals > 6
+          ? formatUnitsFixed(usdcRaw, tokenDecimals, displayDigits).replace(/\.?0+$/, '') || '0'
+          : formatUnitsFixed(usdcRaw, tokenDecimals, displayDigits)
+        : ''
 
   const detailBytes = new TextEncoder().encode(details).length
   const isRemainder = usdcRaw === ad.available
-  const userCap = account ? account.orderCap : TIER0_CAP
+  const userCap = account ? account.orderCap : tier0CapFor(asset)
   const tierInfo = TIER_TABLE[account ? account.tier : 0] ?? TIER_TABLE[0]
   const expiredAd = isAdExpired(ad.expiresAt, now)
 
@@ -183,11 +193,15 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     }
     if (targetTab === 'fiat') {
       setEdited('fiat')
-      const maxFiat = fiatFor(maxAllowed, ad.priceE6)
+      const maxFiat = fiatFor(maxAllowed, ad.priceE6, asset)
       setFiat(maxFiat > 0n ? formatUnitsFixed(maxFiat, 6, 2) : '')
     } else {
       setEdited('usdc')
-      setUsdc(maxAllowed > 0n ? formatUnitsFixed(maxAllowed, 6, 6).replace(/\.?0+$/, '') : '')
+      setUsdc(
+        maxAllowed > 0n
+          ? formatUnitsFixed(maxAllowed, tokenDecimals, Math.min(tokenDecimals, 8)).replace(/\.?0+$/, '')
+          : '',
+      )
     }
   }
 
@@ -196,13 +210,16 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   else if (kycRequired && !makerKyc.verified)
     problem = 'This advertiser does not currently hold active KYC verification.'
   else if (usdcRaw === 0n) problem = null
-  else if (usdcRaw > ad.available) problem = `Only ${formatUsdcAmount(ad.available)} USDC is available.`
-  else if (usdcRaw > ad.maxAmount) problem = `Maximum order is ${formatUsdcAmount(ad.maxAmount)} USDC.`
-  else if (usdcRaw < ad.minAmount && !isRemainder) problem = `Minimum order is ${formatUsdcAmount(ad.minAmount)} USDC.`
+  else if (usdcRaw > ad.available)
+    problem = `Only ${formatUsdcAmount(ad.available, undefined, asset)} ${asset} is available.`
+  else if (usdcRaw > ad.maxAmount)
+    problem = `Maximum order is ${formatUsdcAmount(ad.maxAmount, undefined, asset)} ${asset}.`
+  else if (usdcRaw < ad.minAmount && !isRemainder)
+    problem = `Minimum order is ${formatUsdcAmount(ad.minAmount, undefined, asset)} ${asset}.`
   else if (!isUncapped(userCap) && usdcRaw > userCap)
-    problem = `Your ${tierInfo.label} tier (Tier ${tierInfo.tier}) caps orders at ${formatOrderCap(userCap)}.`
+    problem = `Your ${tierInfo.label} tier (Tier ${tierInfo.tier}) caps orders at ${formatOrderCap(userCap, asset)}.`
   else if (!userBuys && balance !== undefined && usdcRaw > balance)
-    problem = `Insufficient balance (${formatUsdcAmount(balance)} USDC available).`
+    problem = `Insufficient balance (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
   else if (!userBuys && !isSealedBuyAd && detailBytes > DETAILS_MAX_BYTES)
     problem = 'Receiving details exceed 200 bytes.'
   else if (isSealedBuyAd && details.trim().length > 400)
@@ -270,6 +287,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
 
   return {
     asset,
+    tokenDecimals,
     escrowAddress: escrowCfg.escrowAddress,
     isConnected,
     balance,
@@ -432,7 +450,7 @@ function MobileOrderScreen({
     <motion.section
       role="dialog"
       aria-modal="true"
-      aria-label={s.userBuys ? 'Buy USDC' : 'Sell USDC'}
+      aria-label={s.userBuys ? `Buy ${s.asset}` : `Sell ${s.asset}`}
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
@@ -513,7 +531,7 @@ function MobileOrderScreen({
                 value={s.shownUsdc}
                 onChange={(e) => {
                   const v = e.target.value.replace(/[^0-9.]/g, '')
-                  if (/^\d*\.?\d{0,6}$/.test(v)) s.setUsdc(v)
+                  if (new RegExp(`^\\d*\\.?\\d{0,${s.tokenDecimals}}$`).test(v)) s.setUsdc(v)
                 }}
                 placeholder="0"
                 className="p2p-mono w-full bg-transparent text-3xl font-extrabold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]"
@@ -534,15 +552,15 @@ function MobileOrderScreen({
 
           <p className="p2p-mono text-xs text-[var(--p2p-muted)]">
             {s.edited === 'fiat'
-              ? `Limit ${formatFiat(fiatFor(s.adLow, ad.priceE6), 0)} - ${formatFiat(fiatFor(s.effectiveHigh, ad.priceE6), 0)} ${s.currency}`
-              : `Limit ${formatUsdcAmount(s.adLow)} - ${formatUsdcAmount(s.effectiveHigh)} ${s.asset}`}
+              ? `Limit ${formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 0)} - ${formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 0)} ${s.currency}`
+              : `Limit ${formatUsdcAmount(s.adLow, undefined, s.asset)} - ${formatUsdcAmount(s.effectiveHigh, undefined, s.asset)} ${s.asset}`}
           </p>
 
           <div className="flex items-center justify-between pt-1 text-xs">
             <span className="text-[var(--p2p-muted)]">You Receive</span>
             <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
               {s.userBuys
-                ? `${s.usdcRaw > 0n ? formatUsdcAmount(s.usdcRaw, 4) : '0'} ${s.asset}`
+                ? `${s.usdcRaw > 0n ? formatUsdcAmount(s.usdcRaw, undefined, s.asset) : '0'} ${s.asset}`
                 : `${s.country?.symbol ?? ''}${s.fiatRaw > 0n ? formatFiat(s.fiatRaw) : '0.00'} ${s.currency}`}
             </span>
           </div>
@@ -715,7 +733,7 @@ export function InlineOrderDrawer({
     makerAccount && makerAccount.ordersCreated > 0
       ? ((makerAccount.ordersCompleted / makerAccount.ordersCreated) * 100).toFixed(2)
       : '100.00'
-  const previewBond = computeBond(s.usdcRaw > 0n ? s.usdcRaw : s.adLow)
+  const previewBond = computeBond(s.usdcRaw > 0n ? s.usdcRaw : s.adLow, s.asset)
 
   return (
     <div>
@@ -767,13 +785,13 @@ export function InlineOrderDrawer({
               <div>
                 <span className="block text-[var(--p2p-muted)]">Available Escrow</span>
                 <span className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
-                  {formatUsdcAmount(ad.available)} {s.asset}
+                  {formatUsdcAmount(ad.available, undefined, s.asset)} {s.asset}
                 </span>
               </div>
               <div>
                 <span className="block text-[var(--p2p-muted)]">Asymmetric Dispute Bond</span>
                 <span className="p2p-mono mt-0.5 font-semibold text-[#FF5A00]">
-                  {formatUsdcAmount(previewBond)} {s.asset} (loser pays)
+                  {formatUsdcAmount(previewBond, undefined, s.asset)} {s.asset} (loser pays)
                 </span>
               </div>
             </div>
@@ -832,8 +850,8 @@ export function InlineOrderDrawer({
                   <span className="font-medium text-[var(--p2p-muted)]">I want to pay</span>
                   <span className="p2p-mono text-[var(--p2p-muted)]">
                     Limit: {s.country?.symbol}
-                    {formatFiat(fiatFor(s.adLow, ad.priceE6), 0)} - {s.country?.symbol}
-                    {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6), 0)}
+                    {formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 0)} - {s.country?.symbol}
+                    {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 0)}
                   </span>
                 </div>
                 <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
@@ -874,7 +892,7 @@ export function InlineOrderDrawer({
                   <span className="font-medium text-[var(--p2p-muted)]">I will receive</span>
                   {s.account && (
                     <span className="p2p-mono text-[var(--p2p-muted)]">
-                      Tier {s.account.tier} cap: {formatOrderCap(s.account.orderCap)}
+                      Tier {s.account.tier} cap: {formatOrderCap(s.account.orderCap, s.asset)}
                     </span>
                   )}
                 </div>
@@ -884,7 +902,7 @@ export function InlineOrderDrawer({
                     value={s.shownUsdc}
                     onChange={(e) => {
                       const v = e.target.value.replace(/[^0-9.]/g, '')
-                      if (/^\d*\.?\d{0,6}$/.test(v)) {
+                      if (new RegExp(`^\\d*\\.?\\d{0,${s.tokenDecimals}}$`).test(v)) {
                         s.setEdited('usdc')
                         s.setUsdc(v)
                       }
@@ -905,8 +923,8 @@ export function InlineOrderDrawer({
                   <span className="font-medium text-[var(--p2p-muted)]">I want to sell</span>
                   <span className="p2p-mono text-[var(--p2p-muted)]">
                     {s.balance !== undefined
-                      ? `Wallet: ${formatUsdcAmount(s.balance)} ${s.asset}`
-                      : `Max: ${formatUsdcAmount(s.effectiveHigh)} ${s.asset}`}
+                      ? `Wallet: ${formatUsdcAmount(s.balance, undefined, s.asset)} ${s.asset}`
+                      : `Max: ${formatUsdcAmount(s.effectiveHigh, undefined, s.asset)} ${s.asset}`}
                   </span>
                 </div>
                 <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
@@ -915,7 +933,7 @@ export function InlineOrderDrawer({
                     value={s.shownUsdc}
                     onChange={(e) => {
                       const v = e.target.value.replace(/[^0-9.]/g, '')
-                      if (/^\d*\.?\d{0,6}$/.test(v)) {
+                      if (new RegExp(`^\\d*\\.?\\d{0,${s.tokenDecimals}}$`).test(v)) {
                         s.setEdited('usdc')
                         s.setUsdc(v)
                       }
@@ -947,8 +965,8 @@ export function InlineOrderDrawer({
                   <span className="font-medium text-[var(--p2p-muted)]">I will receive</span>
                   <span className="p2p-mono text-[var(--p2p-muted)]">
                     Limit: {s.country?.symbol}
-                    {formatFiat(fiatFor(s.adLow, ad.priceE6), 0)} - {s.country?.symbol}
-                    {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6), 0)}
+                    {formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 0)} - {s.country?.symbol}
+                    {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 0)}
                   </span>
                 </div>
                 <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
@@ -1154,7 +1172,7 @@ function TradePopupStage({
       <motion.section
         role="dialog"
         aria-modal="true"
-        aria-label={s.userBuys ? 'Buy USDC' : 'Sell USDC'}
+        aria-label={s.userBuys ? `Buy ${s.asset}` : `Sell ${s.asset}`}
         initial={{ opacity: 0, scale: 0.97, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.97, y: 10 }}

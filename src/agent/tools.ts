@@ -3,8 +3,13 @@ import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { getUsdc } from '@/onchain-facts'
 import { formatUnitsFixed } from '@/onchain-money'
 import { arcTestnet } from 'viem/chains'
-import type { SwapToken } from '@/hooks/useSwapFlow'
-import type { BridgeChainName } from '@/hooks/useBridgeFlow'
+import {
+  SWAP_TOKEN_ADDRESS,
+  SWAP_TOKEN_DECIMALS,
+  defaultSwapCounterpart,
+  type SwapToken,
+} from '@/hooks/useSwapFlow'
+import { BRIDGE_TOKEN_DECIMALS, type BridgeChainName, type BridgeToken } from '@/hooks/useBridgeFlow'
 import {
   CHAIN_ID,
   COUNTRIES,
@@ -26,8 +31,8 @@ import {
 } from '@/lib/p2p'
 
 export type InlineAction =
-  | { kind: 'swap'; tokenIn: SwapToken; amount: string }
-  | { kind: 'bridge'; from: BridgeChainName; to: BridgeChainName; amount: string }
+  | { kind: 'swap'; tokenIn: SwapToken; tokenOut: SwapToken; amount: string }
+  | { kind: 'bridge'; from: BridgeChainName; to: BridgeChainName; token: BridgeToken; amount: string }
 
 export type Proposal = {
   /** When set, the user can finish the action right inside the chat instead of opening the page. */
@@ -150,7 +155,7 @@ async function searchAds(args: Record<string, unknown>, ctx: ToolContext): Promi
 async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
   if (!ctx.address) return { result: { connected: false } }
   const usdc = getUsdc(CHAIN_ID)?.address as Address | undefined
-  const read = async (token: Address | undefined) => {
+  const read = async (token: Address | undefined, dec = 6, frac = 2) => {
     if (!token) return null
     const raw = await ctx.client.readContract({
       address: token,
@@ -158,11 +163,13 @@ async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
       functionName: 'balanceOf',
       args: [ctx.address as Address],
     })
-    return formatUnitsFixed(raw, 6, 2)
+    return formatUnitsFixed(raw, dec, frac)
   }
-  const [u, e, account, kycOk] = await Promise.all([
-    read(usdc),
-    read(eurc && /^0x[0-9a-fA-F]{40}$/.test(eurc) ? (eurc as Address) : undefined),
+  const [u, e, btc, weth, account, kycOk] = await Promise.all([
+    read(usdc, 6, 2),
+    read(eurc && /^0x[0-9a-fA-F]{40}$/.test(eurc) ? (eurc as Address) : SWAP_TOKEN_ADDRESS.EURC, 6, 2),
+    read(SWAP_TOKEN_ADDRESS.cirBTC, 8, 6),
+    read(SWAP_TOKEN_ADDRESS.WETH, 18, 6),
     ESCROW_ADDRESS
       ? ctx.client
           .readContract({ address: ESCROW_ADDRESS, abi: p2pEscrowAbi, functionName: 'getAccount', args: [ctx.address] })
@@ -181,6 +188,8 @@ async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
       network: arcTestnet.name,
       usdc_balance: u,
       eurc_balance: e,
+      cirbtc_balance: btc,
+      weth_balance: weth,
       ...(account
         ? {
             p2p_tier: account.tier,
@@ -227,21 +236,34 @@ async function myOrders(ctx: ToolContext): Promise<ToolOutcome> {
   }
 }
 
+function normalizeSupportedToken(raw: string): SwapToken | null {
+  const u = raw.trim().toUpperCase()
+  if (u === 'USDC') return 'USDC'
+  if (u === 'EURC') return 'EURC'
+  if (u === 'CIRBTC') return 'cirBTC'
+  if (u === 'WETH') return 'WETH'
+  return null
+}
+
 function proposeSwap(args: Record<string, unknown>, ctx: ToolContext): ToolOutcome {
-  const token = str(args.token_in).toUpperCase()
+  const token = normalizeSupportedToken(str(args.token_in))
+  const rawOut = normalizeSupportedToken(str(args.token_out))
   const amount = str(args.amount)
-  if (token !== 'USDC' && token !== 'EURC') return { result: { error: 'token_in must be USDC or EURC' } }
-  if (!AMOUNT.test(amount) || toRaw(amount) === 0n) return { result: { error: 'amount must be a positive decimal number' } }
-  const out = token === 'USDC' ? 'EURC' : 'USDC'
+  if (!token) return { result: { error: 'token_in must be USDC, EURC, cirBTC, or WETH' } }
+  const out: SwapToken = rawOut && rawOut !== token ? rawOut : defaultSwapCounterpart(token)
+  const maxDec = SWAP_TOKEN_DECIMALS[token]
+  if (!new RegExp(`^\\d+(\\.\\d{1,${maxDec}})?$`).test(amount) || Number(amount) <= 0) {
+    return { result: { error: 'amount must be a positive decimal number' } }
+  }
   return {
     result: { status: 'card_shown', note: 'The user must review the quote and sign on the Swap page.' },
     proposal: {
       kind: 'swap',
       title: `Swap ${amount} ${token} to ${out}`,
       lines: ['Network: Arc Testnet', 'You will see the live quote and fees before signing', ...walletLine(ctx)],
-      url: `/swap?tokenIn=${token}&amount=${amount}`,
+      url: `/swap?tokenIn=${token}&tokenOut=${out}&amount=${amount}`,
       cta: 'Review swap',
-      inline: { kind: 'swap', tokenIn: token, amount },
+      inline: { kind: 'swap', tokenIn: token, tokenOut: out, amount },
     },
   }
 }
@@ -250,18 +272,22 @@ function proposeBridge(args: Record<string, unknown>, ctx: ToolContext): ToolOut
   const from = str(args.from_chain)
   const to = str(args.to_chain)
   const amount = str(args.amount)
+  const token: BridgeToken = normalizeSupportedToken(str(args.token) || 'USDC') ?? 'USDC'
   if (!BRIDGE_CHAINS.includes(from) || !BRIDGE_CHAINS.includes(to)) return { result: { error: 'unsupported chain' } }
   if (from === to) return { result: { error: 'from_chain and to_chain must differ' } }
-  if (!AMOUNT.test(amount) || toRaw(amount) === 0n) return { result: { error: 'amount must be a positive decimal number' } }
+  const maxDec = BRIDGE_TOKEN_DECIMALS[token]
+  if (!new RegExp(`^\\d+(\\.\\d{1,${maxDec}})?$`).test(amount) || Number(amount) <= 0) {
+    return { result: { error: 'amount must be a positive decimal number' } }
+  }
   return {
     result: { status: 'card_shown', note: 'The user must review the fees and sign on the Bridge page.' },
     proposal: {
       kind: 'bridge',
-      title: `Bridge ${amount} USDC`,
+      title: `Bridge ${amount} ${token}`,
       lines: [`From ${CHAIN_LABEL(from)}`, `To ${CHAIN_LABEL(to)} (your own wallet)`, 'Fees are shown before you sign', ...walletLine(ctx)],
-      url: `/bridge?from=${from}&to=${to}&amount=${amount}`,
+      url: `/bridge?token=${token}&from=${from}&to=${to}&amount=${amount}`,
       cta: 'Review bridge',
-      inline: { kind: 'bridge', from: from as BridgeChainName, to: to as BridgeChainName, amount },
+      inline: { kind: 'bridge', from: from as BridgeChainName, to: to as BridgeChainName, token, amount },
     },
   }
 }

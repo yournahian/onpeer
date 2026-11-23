@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
@@ -176,6 +177,8 @@ contract P2PEscrow is Ownable2Step {
     mapping(address => uint256) public partyOpenOrders;
 
     IERC20 public immutable usdc;
+    uint64 internal immutable DOLLAR_UNIT;
+    uint64 internal immutable TOKEN_UNIT;
     uint256 private _reentrancyStatus = 1;
     address public arbiter;
     address public backupArbiter;
@@ -319,13 +322,21 @@ contract P2PEscrow is Ownable2Step {
             revert InvalidAddress();
         }
         usdc = IERC20(usdc_);
+        uint8 dec = 6;
+        try IERC20Metadata(usdc_).decimals() returns (uint8 d) {
+            if (d > 0 && d <= 18) dec = d;
+        } catch {}
+        uint64 du = dec == 8 ? 1_000 : (dec == 18 ? 400_000_000_000_000 : 1_000_000);
+        DOLLAR_UNIT = du;
+        TOKEN_UNIT = uint64(10 ** uint256(dec));
+        uint256 defaultFee = uint256(du) / 20;
         arbiter = initialArbiter;
         backupArbiter = initialBackupArbiter;
-        listingFee = DEFAULT_LISTING_FEE;
+        listingFee = defaultFee;
         feeRecipient = initialOwner;
         emit ArbiterUpdated(address(0), initialArbiter);
         emit BackupArbiterUpdated(address(0), initialBackupArbiter);
-        emit ListingFeeUpdated(0, DEFAULT_LISTING_FEE);
+        emit ListingFeeUpdated(0, defaultFee);
         emit FeeRecipientUpdated(address(0), initialOwner);
         _setCurrency("INR", true);
         _setCurrency("PKR", true);
@@ -516,7 +527,7 @@ contract P2PEscrow is Ownable2Step {
         order.amount = amount;
         order.priceE6 = ad.priceE6;
         unchecked {
-            order.fiatAmountE6 = uint256(amount) * uint256(ad.priceE6) / 1e6;
+            order.fiatAmountE6 = uint256(amount) * uint256(ad.priceE6) / uint256(TOKEN_UNIT);
         }
         order.taker = msg.sender;
         order.bond = computeBond(amount);
@@ -613,7 +624,7 @@ contract P2PEscrow is Ownable2Step {
             if (st != OrderStatus.Pending && st != OrderStatus.Paid) revert InvalidStatus(st);
             _finish(order, OrderStatus.Completed);
             unchecked {
-                if (order.amount >= QUALIFY_MIN) {
+                if (order.amount >= uint256(DOLLAR_UNIT) * 10) {
                     (address lo, address hi) =
                         order.buyer < order.seller ? (order.buyer, order.seller) : (order.seller, order.buyer);
                     bytes32 pairKey = keccak256(abi.encodePacked(lo, hi));
@@ -706,36 +717,22 @@ contract P2PEscrow is Ownable2Step {
         }
         _checkClearWaiver(loser, s, oldEff);
 
-        uint256 bondFromMargin;
-        if (applyBond) {
-            uint256 bond = order.bond;
-            uint256 free = effectiveMargin(loser);
-            bondFromMargin = free < bond ? free : bond;
-            uint256 bondDebt;
-            unchecked {
-                bondDebt = bond - bondFromMargin;
-                if (bondFromMargin != 0) margin[loser] -= bondFromMargin;
-            }
-            if (bondDebt != 0) {
-                _recordDebt(loser, recipient, uint128(bondDebt));
-                emit DebtCreated(orderId, loser, recipient, uint128(bondDebt));
-            }
-        }
-
-        uint256 slash;
-        if (slashLoser) {
-            slash = margin[loser] < order.amount ? margin[loser] : order.amount;
-            unchecked {
-                margin[loser] -= slash;
-            }
-            MarginWithdrawal storage pending = marginWithdrawal[loser];
-            if (pending.amount > margin[loser]) pending.amount = uint128(margin[loser]);
-            emit MarginSlashed(orderId, loser, recipient, slash);
-        }
+        uint256 extra = P2PEscrowDebtLib.applyRuling(
+            orderId,
+            order,
+            loser,
+            recipient,
+            slashLoser,
+            applyBond,
+            margin,
+            marginWithdrawal,
+            _debts,
+            totalDebt
+        );
 
         emit DisputeResolved(orderId, toBuyer, recipient, order.amount);
         unchecked {
-            _payout(recipient, uint256(order.amount) + bondFromMargin + slash);
+            _payout(recipient, uint256(order.amount) + extra);
         }
     }
 
@@ -885,7 +882,9 @@ contract P2PEscrow is Ownable2Step {
 
     /// @notice Governance sets the flat per-ad listing fee (capped at 0.50 USDC); affects future ads only.
     function setListingFee(uint256 newFee) external onlyOwner {
-        if (newFee > MAX_LISTING_FEE) revert InvalidFee();
+        unchecked {
+            if (newFee > uint256(DOLLAR_UNIT) / 2) revert InvalidFee();
+        }
         uint256 oldFee = listingFee;
         listingFee = newFee;
         emit ListingFeeUpdated(oldFee, newFee);
@@ -979,11 +978,14 @@ contract P2PEscrow is Ownable2Step {
     }
 
     /// @notice Dispute bond for an order size: min(5 USDC, max(2 USDC, 5% of amount)).
-    function computeBond(uint128 amount) public pure returns (uint128) {
+    function computeBond(uint128 amount) public view returns (uint128) {
         unchecked {
+            uint256 du = DOLLAR_UNIT;
+            uint256 bMin = du * 2;
+            uint256 bMax = du * 5;
             uint256 pct = uint256(amount) * BOND_BPS / 10_000;
-            uint256 b = pct > BOND_MIN ? pct : BOND_MIN;
-            if (b > BOND_MAX) b = BOND_MAX;
+            uint256 b = pct > bMin ? pct : bMin;
+            if (b > bMax) b = bMax;
             return uint128(b);
         }
     }
@@ -1006,7 +1008,7 @@ contract P2PEscrow is Ownable2Step {
     }
 
     /// @notice Return one ad; invalid IDs revert.
-    function getAd(uint256 id) external view returns (Ad memory) { return _copyAd(_getAd(id)); }
+    function getAd(uint256 id) external view returns (Ad memory) { return _getAd(id); }
 
     /// @notice Return one order; invalid IDs revert.
     function getOrder(uint256 id) external view returns (Order memory) { return _copyOrder(_getOrder(id)); }
@@ -1016,7 +1018,7 @@ contract P2PEscrow is Ownable2Step {
         unchecked {
             uint256 size = _pageSize(adCount, offset, limit);
             result = new Ad[](size);
-            for (uint256 i; i < size; ++i) result[i] = _copyAd(_ads[offset + i + 1]);
+            for (uint256 i; i < size; ++i) result[i] = _ads[offset + i + 1];
         }
     }
 
@@ -1060,7 +1062,9 @@ contract P2PEscrow is Ownable2Step {
 
     /// @notice Whether unqueued margin meets the merchant threshold; not an eligibility guarantee.
     function isMerchant(address account) public view returns (bool) {
-        return effectiveMargin(account) >= MERCHANT_MARGIN;
+        unchecked {
+            return effectiveMargin(account) >= uint256(DOLLAR_UNIT) * 100;
+        }
     }
 
     /// @notice Return combined trading, margin, safety, tier, debt and claimable-payout state.
@@ -1075,10 +1079,13 @@ contract P2PEscrow is Ownable2Step {
         result.disputesLost = s.disputesLost;
         result.volume = s.volume;
         result.margin = margin[account];
-        result.effectiveMargin = effectiveMargin(account);
+        unchecked {
+            result.effectiveMargin =
+                result.margin - (pending.amount < result.margin ? pending.amount : result.margin);
+            result.merchant = result.effectiveMargin >= uint256(DOLLAR_UNIT) * 100;
+        }
         result.pendingWithdrawal = pending.amount;
         result.withdrawalUnlockAt = pending.unlockAt;
-        result.merchant = result.effectiveMargin >= MERCHANT_MARGIN;
         result.restricted = restricted[account];
         result.bannedUntil = penalty.bannedUntil;
         result.strikes = penalty.strikes;
@@ -1215,10 +1222,14 @@ contract P2PEscrow is Ownable2Step {
                 tier = 1;
             }
         }
-        if (tier == 3) cap = type(uint256).max;
-        else if (tier == 2) cap = TIER2_CAP;
-        else if (tier == 1) cap = TIER1_CAP;
-        else cap = TIER0_CAP;
+        if (tier == 3) {
+            cap = type(uint256).max;
+        } else {
+            unchecked {
+                uint256 du = DOLLAR_UNIT;
+                cap = tier == 2 ? du * 2_000 : (tier == 1 ? du * 500 : du * 200);
+            }
+        }
     }
 
     function _touchFirstSeen(address account) private {
@@ -1227,56 +1238,8 @@ contract P2PEscrow is Ownable2Step {
         }
     }
 
-    function _recordDebt(address debtor, address creditor, uint128 amount) private {
-        Debt[] storage debts = _debts[debtor];
-        unchecked {
-            totalDebt[debtor] += amount;
-            uint256 len = debts.length;
-            if (len < MAX_DEBTS_PER_ACCOUNT) {
-                debts.push(Debt({creditor: creditor, amount: amount}));
-                return;
-            }
-            for (uint256 i = len; i > 0; --i) {
-                if (debts[i - 1].creditor == creditor) {
-                    debts[i - 1].amount += amount;
-                    return;
-                }
-            }
-            debts[0].amount += amount;
-        }
-    }
-
     function _repayDebtFromEscrow(address debtor, uint256 budget) private {
-        Debt[] storage debts = _debts[debtor];
-        uint256 len = debts.length;
-        uint256 spent;
-        uint256 popped;
-        unchecked {
-            while (popped < len && spent < budget) {
-                address cred = debts[popped].creditor;
-                uint128 owed = debts[popped].amount;
-                uint256 rem = budget - spent;
-                uint128 pay = rem >= owed ? owed : uint128(rem);
-                spent += pay;
-                totalDebt[debtor] -= pay;
-                if (pay == owed) {
-                    ++popped;
-                } else {
-                    debts[popped].amount = owed - pay;
-                }
-                emit DebtRepaid(debtor, cred, pay);
-                _payout(cred, pay);
-            }
-            if (popped != 0) {
-                uint256 remaining = len - popped;
-                for (uint256 i; i < remaining; ++i) {
-                    debts[i] = debts[i + popped];
-                }
-                for (uint256 i; i < popped; ++i) {
-                    debts.pop();
-                }
-            }
-        }
+        P2PEscrowDebtLib.repay(debtor, budget, address(usdc), _debts, totalDebt, claimable);
     }
 
     /// @dev Buyer cancellations in Pending (when buyer == taker and detailsReady) add a strike.
@@ -1299,10 +1262,6 @@ contract P2PEscrow is Ownable2Step {
 
     function _validatePrice(uint128 priceE6) private pure {
         if (priceE6 == 0 || priceE6 > 1e15) revert InvalidPrice();
-    }
-
-    function _copyAd(Ad storage ad) private pure returns (Ad memory m) {
-        m = ad;
     }
 
     function _copyOrder(Order storage order) private view returns (Order memory m) {
@@ -1385,5 +1344,137 @@ contract P2PEscrow is Ownable2Step {
     function _setCurrency(bytes3 currency, bool supported) private {
         supportedCurrency[currency] = supported;
         emit CurrencyUpdated(currency, supported);
+    }
+}
+
+library P2PEscrowDebtLib {
+    event MarginSlashed(uint256 indexed orderId, address indexed loser, address indexed winner, uint256 amount);
+    event DebtCreated(uint256 indexed orderId, address indexed debtor, address indexed creditor, uint128 amount);
+    event DebtRepaid(address indexed debtor, address indexed creditor, uint256 amount);
+    event PayoutDeferred(address indexed to, uint256 amount);
+
+    function applyRuling(
+        uint256 orderId,
+        P2PEscrow.Order storage order,
+        address loser,
+        address recipient,
+        bool slashLoser,
+        bool applyBond,
+        mapping(address => uint256) storage margin,
+        mapping(address => P2PEscrow.MarginWithdrawal) storage marginWithdrawal,
+        mapping(address => P2PEscrow.Debt[]) storage debtsMap,
+        mapping(address => uint256) storage totalDebt
+    ) external returns (uint256 extra) {
+        uint256 bondFromMargin;
+        if (applyBond) {
+            uint256 bond = order.bond;
+            uint256 bal = margin[loser];
+            uint256 pend = marginWithdrawal[loser].amount;
+            uint256 free;
+            unchecked {
+                free = bal - (pend < bal ? pend : bal);
+            }
+            bondFromMargin = free < bond ? free : bond;
+            uint256 bondDebt;
+            unchecked {
+                bondDebt = bond - bondFromMargin;
+                if (bondFromMargin != 0) margin[loser] -= bondFromMargin;
+            }
+            if (bondDebt != 0) {
+                _recordDebt(loser, recipient, uint128(bondDebt), debtsMap, totalDebt);
+                emit DebtCreated(orderId, loser, recipient, uint128(bondDebt));
+            }
+        }
+
+        uint256 slash;
+        if (slashLoser) {
+            slash = margin[loser] < order.amount ? margin[loser] : order.amount;
+            unchecked {
+                margin[loser] -= slash;
+            }
+            P2PEscrow.MarginWithdrawal storage pending = marginWithdrawal[loser];
+            if (pending.amount > margin[loser]) pending.amount = uint128(margin[loser]);
+            emit MarginSlashed(orderId, loser, recipient, slash);
+        }
+
+        unchecked {
+            extra = bondFromMargin + slash;
+        }
+    }
+
+    function _recordDebt(
+        address debtor,
+        address creditor,
+        uint128 amount,
+        mapping(address => P2PEscrow.Debt[]) storage debtsMap,
+        mapping(address => uint256) storage totalDebt
+    ) private {
+        P2PEscrow.Debt[] storage debts = debtsMap[debtor];
+        unchecked {
+            totalDebt[debtor] += amount;
+            uint256 len = debts.length;
+            if (len < 8) {
+                debts.push(P2PEscrow.Debt({creditor: creditor, amount: amount}));
+                return;
+            }
+            for (uint256 i = len; i > 0; --i) {
+                if (debts[i - 1].creditor == creditor) {
+                    debts[i - 1].amount += amount;
+                    return;
+                }
+            }
+            debts[0].amount += amount;
+        }
+    }
+
+    function repay(
+        address debtor,
+        uint256 budget,
+        address token,
+        mapping(address => P2PEscrow.Debt[]) storage debtsMap,
+        mapping(address => uint256) storage totalDebt,
+        mapping(address => uint256) storage claimable
+    ) external {
+        P2PEscrow.Debt[] storage debts = debtsMap[debtor];
+        uint256 len = debts.length;
+        uint256 spent;
+        uint256 popped;
+        unchecked {
+            while (popped < len && spent < budget) {
+                address cred = debts[popped].creditor;
+                uint128 owed = debts[popped].amount;
+                uint256 rem = budget - spent;
+                uint128 pay = rem >= owed ? owed : uint128(rem);
+                spent += pay;
+                totalDebt[debtor] -= pay;
+                if (pay == owed) {
+                    ++popped;
+                } else {
+                    debts[popped].amount = owed - pay;
+                }
+                emit DebtRepaid(debtor, cred, pay);
+                bool ok;
+                assembly ("memory-safe") {
+                    let ptr := mload(0x40)
+                    mstore(ptr, 0xa9059cbb00000000000000000000000000000000000000000000000000000000)
+                    mstore(add(ptr, 0x04), and(cred, 0xffffffffffffffffffffffffffffffffffffffff))
+                    mstore(add(ptr, 0x24), pay)
+                    let s := call(gas(), token, 0, ptr, 0x44, 0x00, 0x20)
+                    ok := and(s, and(gt(returndatasize(), 0x1f), eq(mload(0x00), 1)))
+                }
+                if (!ok) {
+                    claimable[cred] += pay;
+                    emit PayoutDeferred(cred, pay);
+                }
+            }
+            if (popped != 0) {
+                uint256 remaining = len - popped;
+                for (uint256 i; i < remaining; ++i) debts[i] = debts[i + popped];
+                while (popped != 0) {
+                    debts.pop();
+                    --popped;
+                }
+            }
+        }
     }
 }

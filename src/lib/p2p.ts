@@ -1,6 +1,6 @@
 import { stringToHex, hexToString, type Address, type Hex } from 'viem'
 import { arcTestnet } from 'viem/chains'
-import { formatUnitsFixed } from '@/onchain-money'
+import { formatUnitsExact, formatUnitsFixed } from '@/onchain-money'
 
 export const CHAIN_ID = arcTestnet.id
 
@@ -8,13 +8,30 @@ const DEFAULT_ESCROW_ADDRESS = '0xf719ebbc5080aee09e38909764b897e0bf01a9b0' as A
 const DEFAULT_DEPLOY_BLOCK = 72902228n
 const DEFAULT_EURC_ESCROW_ADDRESS = '0x0db2fbf8357617172a3b852bc2ac3054dba1d402' as Address
 const DEFAULT_EURC_DEPLOY_BLOCK = 73721819n
+const DEFAULT_CIRBTC_ESCROW_ADDRESS = '0x6ba3b81833b6354f08483740211af3ddda396b39' as Address
+const DEFAULT_CIRBTC_DEPLOY_BLOCK = 73734225n
+const DEFAULT_WETH_ESCROW_ADDRESS = '0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3' as Address
+const DEFAULT_WETH_DEPLOY_BLOCK = 73734238n
+
 const DEFAULT_USDC_TOKEN_ADDRESS = '0x3600000000000000000000000000000000000000' as Address
 const DEFAULT_EURC_TOKEN_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as Address
+const DEFAULT_CIRBTC_TOKEN_ADDRESS = '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF' as Address
+const DEFAULT_WETH_TOKEN_ADDRESS = '0x2c4047028a72803939b6fb674D01bC059B5C4961' as Address
+
 const DEPRECATED_ESCROWS = new Set([
   '0x271b519275380f60fa100d0cff101800893a8fa0', // v1 (deprecated)
   '0x22f28c481f2842c5a68028944a4f3fa7ebdf58de', // v2.0 (deprecated)
   '0xb257939153215ae7eb5a02057877b1ae5f5b04e5', // earlier draft (deprecated)
 ])
+
+const validAddr = (raw: string | undefined, fallback: Address): Address =>
+  raw && /^0x[0-9a-fA-F]{40}$/.test(raw.trim()) ? (raw.trim() as Address) : fallback
+
+const validBlock = (raw: string | undefined, fallback: bigint): bigint => {
+  const s = raw?.trim()
+  const parsed = s && /^\d+$/.test(s) ? BigInt(s) : 0n
+  return parsed >= fallback ? parsed : fallback
+}
 
 const rawAddress = (import.meta.env.VITE_P2P_ESCROW_ADDRESS as string | undefined)?.trim()
 export const ESCROW_ADDRESS: Address | undefined =
@@ -22,36 +39,55 @@ export const ESCROW_ADDRESS: Address | undefined =
     ? (rawAddress as Address)
     : DEFAULT_ESCROW_ADDRESS
 
-const rawBlock = (import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined)?.trim()
-const parsedBlock = rawBlock && /^\d+$/.test(rawBlock) ? BigInt(rawBlock) : 0n
-export const DEPLOY_BLOCK = parsedBlock >= DEFAULT_DEPLOY_BLOCK ? parsedBlock : DEFAULT_DEPLOY_BLOCK
+export const DEPLOY_BLOCK = validBlock(import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined, DEFAULT_DEPLOY_BLOCK)
 
-const rawEurcEscrow = (import.meta.env.VITE_P2P_EURC_ESCROW_ADDRESS as string | undefined)?.trim()
-export const EURC_ESCROW_ADDRESS: Address =
-  rawEurcEscrow && /^0x[0-9a-fA-F]{40}$/.test(rawEurcEscrow)
-    ? (rawEurcEscrow as Address)
-    : DEFAULT_EURC_ESCROW_ADDRESS
+export const EURC_ESCROW_ADDRESS: Address = validAddr(
+  import.meta.env.VITE_P2P_EURC_ESCROW_ADDRESS as string | undefined,
+  DEFAULT_EURC_ESCROW_ADDRESS,
+)
+export const EURC_DEPLOY_BLOCK = validBlock(
+  import.meta.env.VITE_P2P_EURC_DEPLOY_BLOCK as string | undefined,
+  DEFAULT_EURC_DEPLOY_BLOCK,
+)
+export const EURC_TOKEN_ADDRESS: Address = validAddr(
+  import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined,
+  DEFAULT_EURC_TOKEN_ADDRESS,
+)
 
-const rawEurcBlock = (import.meta.env.VITE_P2P_EURC_DEPLOY_BLOCK as string | undefined)?.trim()
-const parsedEurcBlock = rawEurcBlock && /^\d+$/.test(rawEurcBlock) ? BigInt(rawEurcBlock) : 0n
-export const EURC_DEPLOY_BLOCK =
-  parsedEurcBlock >= DEFAULT_EURC_DEPLOY_BLOCK ? parsedEurcBlock : DEFAULT_EURC_DEPLOY_BLOCK
+export const CIRBTC_ESCROW_ADDRESS: Address = validAddr(
+  import.meta.env.VITE_P2P_CIRBTC_ESCROW_ADDRESS as string | undefined,
+  DEFAULT_CIRBTC_ESCROW_ADDRESS,
+)
+export const CIRBTC_DEPLOY_BLOCK = validBlock(
+  import.meta.env.VITE_P2P_CIRBTC_DEPLOY_BLOCK as string | undefined,
+  DEFAULT_CIRBTC_DEPLOY_BLOCK,
+)
+export const CIRBTC_TOKEN_ADDRESS: Address = DEFAULT_CIRBTC_TOKEN_ADDRESS
 
-const rawEurcToken = (import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined)?.trim()
-export const EURC_TOKEN_ADDRESS: Address =
-  rawEurcToken && /^0x[0-9a-fA-F]{40}$/.test(rawEurcToken)
-    ? (rawEurcToken as Address)
-    : DEFAULT_EURC_TOKEN_ADDRESS
+export const WETH_ESCROW_ADDRESS: Address = validAddr(
+  import.meta.env.VITE_P2P_WETH_ESCROW_ADDRESS as string | undefined,
+  DEFAULT_WETH_ESCROW_ADDRESS,
+)
+export const WETH_DEPLOY_BLOCK = validBlock(
+  import.meta.env.VITE_P2P_WETH_DEPLOY_BLOCK as string | undefined,
+  DEFAULT_WETH_DEPLOY_BLOCK,
+)
+export const WETH_TOKEN_ADDRESS: Address = DEFAULT_WETH_TOKEN_ADDRESS
 
-export const P2P_ASSETS = ['USDC', 'EURC'] as const
+export const P2P_ASSETS = ['USDC', 'EURC', 'cirBTC', 'WETH'] as const
 export type P2pAsset = (typeof P2P_ASSETS)[number]
+
 export const EURC_ID_OFFSET = 1_000_000_000_000n
+export const CIRBTC_ID_OFFSET = 2_000_000_000_000n
+export const WETH_ID_OFFSET = 3_000_000_000_000n
 
 export function getEscrowConfig(asset: P2pAsset = 'USDC'): {
   asset: P2pAsset
   escrowAddress: Address
   deployBlock: bigint
   tokenAddress: Address
+  decimals: number
+  dollarUnit: bigint
 } {
   if (asset === 'EURC') {
     return {
@@ -59,6 +95,28 @@ export function getEscrowConfig(asset: P2pAsset = 'USDC'): {
       escrowAddress: EURC_ESCROW_ADDRESS,
       deployBlock: EURC_DEPLOY_BLOCK,
       tokenAddress: EURC_TOKEN_ADDRESS,
+      decimals: 6,
+      dollarUnit: 1_000_000n,
+    }
+  }
+  if (asset === 'cirBTC') {
+    return {
+      asset: 'cirBTC',
+      escrowAddress: CIRBTC_ESCROW_ADDRESS,
+      deployBlock: CIRBTC_DEPLOY_BLOCK,
+      tokenAddress: CIRBTC_TOKEN_ADDRESS,
+      decimals: 8,
+      dollarUnit: 1_000n,
+    }
+  }
+  if (asset === 'WETH') {
+    return {
+      asset: 'WETH',
+      escrowAddress: WETH_ESCROW_ADDRESS,
+      deployBlock: WETH_DEPLOY_BLOCK,
+      tokenAddress: WETH_TOKEN_ADDRESS,
+      decimals: 18,
+      dollarUnit: 400_000_000_000_000n,
     }
   }
   return {
@@ -66,17 +124,22 @@ export function getEscrowConfig(asset: P2pAsset = 'USDC'): {
     escrowAddress: ESCROW_ADDRESS ?? DEFAULT_ESCROW_ADDRESS,
     deployBlock: DEPLOY_BLOCK,
     tokenAddress: DEFAULT_USDC_TOKEN_ADDRESS,
+    decimals: 6,
+    dollarUnit: 1_000_000n,
   }
 }
 
 export function encodeScopedId(asset: P2pAsset, rawId: bigint): bigint {
-  return asset === 'EURC' ? EURC_ID_OFFSET + rawId : rawId
+  if (asset === 'WETH') return WETH_ID_OFFSET + rawId
+  if (asset === 'cirBTC') return CIRBTC_ID_OFFSET + rawId
+  if (asset === 'EURC') return EURC_ID_OFFSET + rawId
+  return rawId
 }
 
 export function decodeScopedId(scopedId: bigint): { asset: P2pAsset; rawId: bigint } {
-  if (scopedId >= EURC_ID_OFFSET) {
-    return { asset: 'EURC', rawId: scopedId - EURC_ID_OFFSET }
-  }
+  if (scopedId >= WETH_ID_OFFSET) return { asset: 'WETH', rawId: scopedId - WETH_ID_OFFSET }
+  if (scopedId >= CIRBTC_ID_OFFSET) return { asset: 'cirBTC', rawId: scopedId - CIRBTC_ID_OFFSET }
+  if (scopedId >= EURC_ID_OFFSET) return { asset: 'EURC', rawId: scopedId - EURC_ID_OFFSET }
   return { asset: 'USDC', rawId: scopedId }
 }
 
@@ -115,13 +178,28 @@ export const TIER_TABLE = [
   { tier: 3, label: 'Trusted', requirement: '20+ trades & 14d+ age (or Established + KYC L2)', cap: null },
 ] as const
 
-export function computeBond(amountRaw: bigint): bigint {
-  const pct = (amountRaw * BOND_BPS) / 10_000n
-  const lo = pct > BOND_MIN ? pct : BOND_MIN
-  return lo > BOND_MAX ? BOND_MAX : lo
+export function tier0CapFor(asset: P2pAsset = 'USDC'): bigint {
+  return getEscrowConfig(asset).dollarUnit * 200n
 }
 
-export const isUncapped = (cap: bigint) => cap > 1_000_000_000_000_000_000n
+export function merchantMarginFor(asset: P2pAsset = 'USDC'): bigint {
+  return getEscrowConfig(asset).dollarUnit * 100n
+}
+
+export function defaultListingFeeFor(asset: P2pAsset = 'USDC'): bigint {
+  return getEscrowConfig(asset).dollarUnit / 20n
+}
+
+export function computeBond(amountRaw: bigint, asset: P2pAsset = 'USDC'): bigint {
+  const du = getEscrowConfig(asset).dollarUnit
+  const bMin = du * 2n
+  const bMax = du * 5n
+  const pct = (amountRaw * BOND_BPS) / 10_000n
+  const lo = pct > bMin ? pct : bMin
+  return lo > bMax ? bMax : lo
+}
+
+export const isUncapped = (cap: bigint) => cap > 10n ** 36n
 export const isAdExpired = (expiresAt: bigint, nowSec: number) => Number(expiresAt) <= nowSec
 
 export type Country = {
@@ -232,19 +310,36 @@ export function formatFiat(e6: bigint, digits = 2): string {
   return f ? `${group(i)}.${f}` : group(i)
 }
 
-/** Format a raw 6-decimal USDC amount with US grouping. */
-export function formatUsdcAmount(raw: bigint, digits = 2): string {
-  const fixed = formatUnitsFixed(raw, 6, digits)
-  const [i, f] = fixed.split('.')
+/** Format a raw token amount (USDC/EURC 6d, cirBTC 8d, WETH 18d) with US grouping. */
+export function formatUsdcAmount(raw: bigint, digits?: number, asset: P2pAsset = 'USDC'): string {
+  const dec = getEscrowConfig(asset).decimals
+  if (dec === 6) {
+    const d = digits ?? 2
+    const fixed = formatUnitsFixed(raw, 6, d)
+    const [i, f] = fixed.split('.')
+    const g = BigInt(i).toLocaleString('en-US')
+    return f ? `${g}.${f}` : g
+  }
+  const exact = formatUnitsExact(raw, dec)
+  const [i, rawFrac = ''] = exact.split('.')
   const g = BigInt(i).toLocaleString('en-US')
-  return f ? `${g}.${f}` : g
+  const maxShow = digits !== undefined ? Math.max(digits, 4) : dec === 8 ? 6 : 6
+  const minShow = digits === 0 ? 0 : 4
+  const clipped = rawFrac.slice(0, maxShow).replace(/0+$/, '')
+  const padded = clipped.length < minShow && rawFrac.length === 0 ? ''.padEnd(minShow > 2 ? 2 : minShow, '0') : clipped
+  if (raw === 0n) return '0.00'
+  if (!padded && rawFrac.length > 0) {
+    // Very small amount such as 0.00000050 cirBTC listing fee — show exact non-zero tail!
+    return `${g}.${rawFrac}`
+  }
+  return padded ? `${g}.${padded}` : g
 }
 
-export function formatOrderCap(cap: bigint): string {
-  return isUncapped(cap) ? 'Uncapped' : `${formatUsdcAmount(cap, 0)} USDC`
+export function formatOrderCap(cap: bigint, asset: P2pAsset = 'USDC'): string {
+  return isUncapped(cap) ? 'Uncapped' : `${formatUsdcAmount(cap, 0, asset)} ${asset}`
 }
 
-/** Price (fiat per USDC) shown with up to 4 decimals, trimmed. */
+/** Price (fiat per token) shown with up to 4 decimals, trimmed. */
 export function formatPrice(e6: bigint): string {
   const fixed = formatUnitsFixed(e6, 6, 4)
   const [i, f] = fixed.split('.')
@@ -253,9 +348,11 @@ export function formatPrice(e6: bigint): string {
   return `${group(i)}.${padded}`
 }
 
-export const fiatFor = (usdcRaw: bigint, priceE6: bigint) => (usdcRaw * priceE6) / 1_000_000n
-export const usdcFor = (fiatE6: bigint, priceE6: bigint) =>
-  priceE6 === 0n ? 0n : (fiatE6 * 1_000_000n) / priceE6
+export const fiatFor = (tokenRaw: bigint, priceE6: bigint, asset: P2pAsset = 'USDC') =>
+  (tokenRaw * priceE6) / 10n ** BigInt(getEscrowConfig(asset).decimals)
+
+export const usdcFor = (fiatE6: bigint, priceE6: bigint, asset: P2pAsset = 'USDC') =>
+  priceE6 === 0n ? 0n : (fiatE6 * 10n ** BigInt(getEscrowConfig(asset).decimals)) / priceE6
 
 export function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
@@ -274,15 +371,15 @@ const ERROR_COPY: Record<string, string> = {
   ArbiterIsParty: 'The arbiter cannot resolve an order they are part of.',
   DeadlinePassed: 'The payment deadline has ended.',
   InvalidAmount: 'That amount is outside the ad limits.',
-  InvalidFee: 'Listing fee cannot exceed 0.50 USDC.',
+  InvalidFee: 'Listing fee exceeds the maximum allowed cap.',
   InvalidDetailsMode: 'Invalid payment details mode.',
   InvalidTtl: 'Ad expiry must be between 1 and 168 hours.',
   Restricted: 'This account is restricted from opening new trades.',
-  DebtOutstanding: 'Repay your unpaid dispute bond on the Trust & margin tab before opening new ads or orders.',
+  DebtOutstanding: 'Repay your unpaid dispute bond on the Restrictions Removal tab before opening new ads or orders.',
   CooldownActive: 'A cooldown is active after repeated cancellations. Try again later.',
   RequirementNotMet: 'The advertiser requires more completed trades than you have.',
   AboveCap: 'That amount is above your current per-order account tier limit.',
-  BuyAdNotAllowed: 'Posting a buy ad requires a Merchant badge (100+ USDC margin) or at least 3 completed trades.',
+  BuyAdNotAllowed: 'Posting a buy ad requires a Merchant badge or at least 3 completed trades.',
   SealedDisabled: 'Sealed payment details are currently disabled.',
   PayerProofRequired: 'Enter your transfer ID and payer details to mark this order as paid.',
   LateMarkLimit: 'Late payment marking is disabled for 30 days after more than 2 late marks.',
@@ -309,7 +406,7 @@ const ERROR_COPY: Record<string, string> = {
   TooEarly: 'Too early for that action. Wait for the timer.',
   Unauthorized: 'Your wallet is not allowed to do that on this order.',
   UnsupportedCurrency: 'That currency is not supported.',
-  SafeERC20FailedOperation: 'USDC transfer failed. Check your balance and approval.',
+  SafeERC20FailedOperation: 'Token transfer failed. Check your balance and approval.',
 }
 
 export function parseTxError(error: unknown): string | null {
@@ -322,7 +419,7 @@ export function parseTxError(error: unknown): string | null {
   }
   if (lower.includes('insufficient funds')) return 'Not enough USDC for gas. Use "Get test USDC" in the sidebar.'
   if (lower.includes('exceeds balance') || lower.includes('transfer amount exceeds'))
-    return 'Insufficient USDC balance.'
+    return 'Insufficient token balance.'
   if (lower.includes('network') || lower.includes('timeout')) return 'Network issue. Please try again.'
   if (lower.includes('reverted')) return 'The transaction was rejected by the contract.'
   return 'Something went wrong. Please try again.'

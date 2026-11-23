@@ -1,6 +1,7 @@
 import { ExternalLink, Mail, ShieldAlert } from 'lucide-react'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import { CHAIN_ID, COUNTRIES, ESCROW_ADDRESS } from '@/lib/p2p'
+import { DOCS_URL, isAppSubdomain, isLandingDomain } from '@/lib/router'
 import { useAdminRoles } from '@/hooks/useAdmin'
 import { AppLink } from '@/components/AppLink'
 import { Brand } from '@/components/Logo'
@@ -95,9 +96,15 @@ export function Footer() {
 
           <Col title="Resources">
             <li>
-              <AppLink to="/docs" className={linkClass}>
-                Documentation
-              </AppLink>
+              {isLandingDomain() || isAppSubdomain() ? (
+                <a className={linkClass} href={DOCS_URL} target="_blank" rel="noopener noreferrer">
+                  Documentation <ExternalLink className="size-3" />
+                </a>
+              ) : (
+                <AppLink to="/docs" className={linkClass}>
+                  Documentation
+                </AppLink>
+              )}
             </li>
             <li>
               <AppLink to="/brand-kit" className={linkClass}>

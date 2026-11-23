@@ -8,6 +8,10 @@
     "VITE_P2P_DEPLOY_BLOCK": "72902228",
     "VITE_P2P_EURC_ESCROW_ADDRESS": "0x0db2fbf8357617172a3b852bc2ac3054dba1d402",
     "VITE_P2P_EURC_DEPLOY_BLOCK": "73721819",
+    "VITE_P2P_CIRBTC_ESCROW_ADDRESS": "0x6ba3b81833b6354f08483740211af3ddda396b39",
+    "VITE_P2P_CIRBTC_DEPLOY_BLOCK": "73734225",
+    "VITE_P2P_WETH_ESCROW_ADDRESS": "0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3",
+    "VITE_P2P_WETH_DEPLOY_BLOCK": "73734238",
     "VITE_ARC_TESTNET_EURC_ADDRESS": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
     "DIDIT_MODE": "sandbox",
     "PUBLIC_APP_URL": "https://app.onpeer.xyz",
@@ -34,6 +38,16 @@
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application"
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/*",
+      "!/assets/*",
+      "!/brand/*",
+      "!/flags/*",
+      "!/hero/*",
+      "!/logos/*",
+      "!/favicon.ico",
+      "!/theme-init.js"
+    ]
   }
 }

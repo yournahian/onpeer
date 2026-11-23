@@ -265,9 +265,9 @@ function ProposalCard({
         style={{ background: 'var(--fill-1)', border: '1px solid var(--border-strong)' }}
       >
         {inline.kind === 'swap' ? (
-          <SwapCard tokenIn={inline.tokenIn} amount={inline.amount} onSettled={onReport} />
+          <SwapCard tokenIn={inline.tokenIn} tokenOut={inline.tokenOut} amount={inline.amount} onSettled={onReport} />
         ) : (
-          <BridgeCard from={inline.from} to={inline.to} amount={inline.amount} onSettled={onReport} />
+          <BridgeCard from={inline.from} to={inline.to} token={inline.token} amount={inline.amount} onSettled={onReport} />
         )}
       </div>
     )

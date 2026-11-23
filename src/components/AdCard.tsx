@@ -113,14 +113,14 @@ export function AdCard({
             <p className="truncate pt-1 text-xs text-[var(--p2p-muted)]">
               Limit{' '}
               <span className="p2p-mono text-[var(--p2p-ink)]">
-                {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {formatFiat(fiatFor(cap, ad.priceE6), 0)}{' '}
+                {formatFiat(fiatFor(floor, ad.priceE6, ad.asset), 0)} - {formatFiat(fiatFor(cap, ad.priceE6, ad.asset), 0)}{' '}
                 {country.currency}
               </span>
             </p>
             <p className="truncate text-xs text-[var(--p2p-muted)]">
               Available{' '}
               <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">
-                {formatUsdcAmount(ad.available)} {ad.asset}
+                {formatUsdcAmount(ad.available, undefined, ad.asset)} {ad.asset}
               </span>
             </p>
 
@@ -133,7 +133,7 @@ export function AdCard({
                 )}
                 {viewerCapped && viewerAccount && (
                   <span className="p2p-mono inline-block rounded bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-semibold text-[#FF5A00]">
-                    Cap: {formatOrderCap(viewerAccount.orderCap)}
+                    Cap: {formatOrderCap(viewerAccount.orderCap, ad.asset)}
                   </span>
                 )}
               </div>
@@ -258,16 +258,16 @@ export function AdCard({
           {/* Column 3: Available & Order Limits */}
           <div className="space-y-1 text-xs">
             <p className="p2p-mono font-bold text-[var(--p2p-ink)]">
-              {formatUsdcAmount(ad.available)} {ad.asset}
+              {formatUsdcAmount(ad.available, undefined, ad.asset)} {ad.asset}
             </p>
             <p className="p2p-mono text-[var(--p2p-muted)]">
               {country.symbol}
-              {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {country.symbol}
-              {formatFiat(fiatFor(cap, ad.priceE6), 0)}
+              {formatFiat(fiatFor(floor, ad.priceE6, ad.asset), 0)} - {country.symbol}
+              {formatFiat(fiatFor(cap, ad.priceE6, ad.asset), 0)}
             </p>
             {viewerCapped && viewerAccount && (
               <span className="p2p-mono inline-block rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-medium text-[#FF5A00]">
-                Tier cap: {formatOrderCap(viewerAccount.orderCap)}
+                Tier cap: {formatOrderCap(viewerAccount.orderCap, ad.asset)}
               </span>
             )}
           </div>

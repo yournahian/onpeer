@@ -5,13 +5,13 @@ import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   BACKUP_ARBITER_DELAY_SECONDS,
   CHAIN_ID,
-  ESCROW_ADDRESS,
   STATUS,
   countryByCurrency,
   formatDuration,
   formatFiat,
   formatPrice,
   formatUsdcAmount,
+  getEscrowConfig,
   hexToCurrency,
   sameAddr,
   shortAddr,
@@ -61,7 +61,9 @@ export function DisputeCard({
   viewer?: string
 }) {
   const now = useNow()
-  const { run, writeContractAsync, pendingKey } = useTx()
+  const asset = order.asset
+  const escrowAddress = getEscrowConfig(asset).escrowAddress
+  const { run, writeContractAsync, pendingKey } = useTx(asset)
   const [open, setOpen] = useState(false)
   const [toBuyer, setToBuyer] = useState<boolean | null>(null)
   const [applyBond, setApplyBond] = useState(true)
@@ -92,26 +94,26 @@ export function DisputeCard({
   const takeKey = `take-${order.id}`
 
   const take = async () => {
-    if (!ESCROW_ADDRESS) return
+    if (!escrowAddress) return
     await run(takeKey, 'Take case into review', () =>
       writeContractAsync({
-        address: ESCROW_ADDRESS!,
+        address: escrowAddress,
         abi: p2pEscrowAbi,
         functionName: 'takeCase',
-        args: [order.id],
+        args: [order.rawId],
         chainId: CHAIN_ID,
       }),
     )
   }
 
   const rule = async () => {
-    if (toBuyer === null || !ESCROW_ADDRESS) return
+    if (toBuyer === null || !escrowAddress) return
     await run(key, 'Rule on dispute', () =>
       writeContractAsync({
-        address: ESCROW_ADDRESS!,
+        address: escrowAddress,
         abi: p2pEscrowAbi,
         functionName: 'resolveDispute',
-        args: [order.id, toBuyer, slash, applyBond],
+        args: [order.rawId, toBuyer, slash, applyBond],
         chainId: CHAIN_ID,
       }),
     )
@@ -125,8 +127,8 @@ export function DisputeCard({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
-            Order #{order.id.toString()}
-            <span className="tabular-nums">{formatUsdcAmount(order.amount)} USDC</span>
+            Order #{order.rawId.toString()} ({asset})
+            <span className="tabular-nums">{formatUsdcAmount(order.amount, undefined, asset)} {asset}</span>
             <StatusBadge status={order.status} />
             {inReview && (
               <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--accent)' }}>
@@ -137,7 +139,7 @@ export function DisputeCard({
           <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
             {country && <CountryFlag code={country.code} size={16} />}
             {country?.symbol} {formatFiat(order.fiatAmountE6)} {currency}
-            <span>Bond {formatUsdcAmount(order.bond)} USDC</span>
+            <span>Bond {formatUsdcAmount(order.bond, undefined, asset)} {asset}</span>
             {order.paidLate && (
               <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--warn)' }}>
                 Marked paid late
@@ -177,7 +179,7 @@ export function DisputeCard({
                 {order.paymentDetails || 'Sealed payment details'}
               </p>
               <p className="mt-2 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
-                Price {formatPrice(order.priceE6)} {currency} per USDC · opened {new Date(Number(order.createdAt) * 1000).toLocaleString()}
+                Price {formatPrice(order.priceE6)} {currency} per {asset} · opened {new Date(Number(order.createdAt) * 1000).toLocaleString()}
                 {order.paidAt > 0n && ` · marked paid ${new Date(Number(order.paidAt) * 1000).toLocaleString()}`}
                 {inReview && ` · review started ${new Date(Number(order.reviewStartedAt) * 1000).toLocaleString()}`}
               </p>
@@ -193,7 +195,7 @@ export function DisputeCard({
                 seller={order.seller}
                 orderStatus={order.status}
                 disputedAt={order.disputedAt}
-                amountText={formatUsdcAmount(order.amount)}
+                amountText={`${formatUsdcAmount(order.amount, undefined, asset)} ${asset}`}
                 canPost={canRule && !isParty && order.status === STATUS.DISPUTED}
               />
             </div>
@@ -211,7 +213,7 @@ export function DisputeCard({
                   )}
                 </div>
                 <p className="mt-1.5 text-xs" style={{ color: 'var(--subtle)' }}>
-                  Taking the case marks <span className="mono">reviewStartedAt</span> onchain (settling after review starts counts as a lost dispute with 0 bond). When ruling, choose whether the loser owes the {formatUsdcAmount(order.bond)} USDC bond. Escrowed order USDC is never reduced.
+                  Taking the case marks <span className="mono">reviewStartedAt</span> onchain (settling after review starts counts as a lost dispute with 0 bond). When ruling, choose whether the loser owes the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond. Escrowed order {asset} is never reduced.
                 </p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Ruling">
                   {[
@@ -237,7 +239,7 @@ export function DisputeCard({
                 <label className="mt-3 flex items-start gap-2 text-sm">
                   <input type="checkbox" checked={applyBond} onChange={(e) => setApplyBond(e.target.checked)} className="mt-1 size-4" />
                   <span>
-                    Charge {formatUsdcAmount(order.bond)} USDC dispute bond to the losing party
+                    Charge {formatUsdcAmount(order.bond, undefined, asset)} {asset} dispute bond to the losing party
                     <span className="block text-xs" style={{ color: 'var(--subtle)' }}>
                       Paid from free margin first; any shortfall becomes debt blocking new ads/orders.
                     </span>
@@ -249,7 +251,7 @@ export function DisputeCard({
                     Also slash extra margin from the losing party
                     {loserAcc && (
                       <span className="block text-xs" style={{ color: 'var(--subtle)' }}>
-                        Up to {formatUsdcAmount(maxExtraSlash)} USDC goes to the winner.
+                        Up to {formatUsdcAmount(maxExtraSlash, undefined, asset)} {asset} goes to the winner.
                       </span>
                     )}
                   </span>

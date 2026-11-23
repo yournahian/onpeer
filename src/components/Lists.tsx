@@ -202,12 +202,14 @@ export function MyOrders({
     const map = new Map<
       string,
       {
+        key: string
+        asset: P2pAsset
         currency: string
         buyCount: number
-        buyUsdc: bigint
+        buyAmount: bigint
         buyFiat: bigint
         sellCount: number
-        sellUsdc: bigint
+        sellAmount: bigint
         sellFiat: bigint
       }
     >()
@@ -215,25 +217,28 @@ export function MyOrders({
     for (const o of mine) {
       if (o.status !== STATUS.COMPLETED && o.status !== STATUS.RESOLVED_BUYER) continue
       const cur = hexToCurrency(o.currency)
-      const entry = map.get(cur) ?? {
+      const key = `${o.asset}:${cur}`
+      const entry = map.get(key) ?? {
+        key,
+        asset: o.asset,
         currency: cur,
         buyCount: 0,
-        buyUsdc: 0n,
+        buyAmount: 0n,
         buyFiat: 0n,
         sellCount: 0,
-        sellUsdc: 0n,
+        sellAmount: 0n,
         sellFiat: 0n,
       }
       if (sameAddr(address, o.buyer)) {
         entry.buyCount++
-        entry.buyUsdc += o.amount
+        entry.buyAmount += o.amount
         entry.buyFiat += o.fiatAmountE6
       } else {
         entry.sellCount++
-        entry.sellUsdc += o.amount
+        entry.sellAmount += o.amount
         entry.sellFiat += o.fiatAmountE6
       }
-      map.set(cur, entry)
+      map.set(key, entry)
     }
 
     return Array.from(map.values())
@@ -323,7 +328,7 @@ export function MyOrders({
           ) : (
             <div className="overflow-hidden rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)]">
               <div className="grid border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-3 text-xs text-[var(--p2p-muted)] sm:grid-cols-5">
-                <span>Currency</span>
+                <span>Pair</span>
                 <span>Buy Volume</span>
                 <span>Avg. Buy Price</span>
                 <span>Sell Volume</span>
@@ -331,19 +336,22 @@ export function MyOrders({
               </div>
               <ul className="divide-y divide-[var(--p2p-border)]">
                 {pnlByCurrency.map((row) => {
-                  const avgBuy = row.buyUsdc > 0n ? (row.buyFiat * 1_000_000n) / row.buyUsdc : 0n
-                  const avgSell = row.sellUsdc > 0n ? (row.sellFiat * 1_000_000n) / row.sellUsdc : 0n
+                  const unit = 10n ** BigInt(getEscrowConfig(row.asset).decimals)
+                  const avgBuy = row.buyAmount > 0n ? (row.buyFiat * unit) / row.buyAmount : 0n
+                  const avgSell = row.sellAmount > 0n ? (row.sellFiat * unit) / row.sellAmount : 0n
                   return (
-                    <li key={row.currency} className="grid gap-2 px-5 py-4 text-xs sm:grid-cols-5 sm:items-center">
-                      <span className="font-bold text-[var(--p2p-ink)]">{row.currency}</span>
+                    <li key={row.key} className="grid gap-2 px-5 py-4 text-xs sm:grid-cols-5 sm:items-center">
+                      <span className="font-bold text-[var(--p2p-ink)]">
+                        {row.asset} / {row.currency}
+                      </span>
                       <span className="p2p-mono text-[var(--p2p-ink)]">
-                        {formatUsdcAmount(row.buyUsdc)} USDC ({row.buyCount})
+                        {formatUsdcAmount(row.buyAmount, undefined, row.asset)} {row.asset} ({row.buyCount})
                       </span>
                       <span className="p2p-mono text-[var(--p2p-muted)]">
                         {avgBuy > 0n ? `${formatPrice(avgBuy)} ${row.currency}` : '—'}
                       </span>
                       <span className="p2p-mono text-[var(--p2p-ink)]">
-                        {formatUsdcAmount(row.sellUsdc)} USDC ({row.sellCount})
+                        {formatUsdcAmount(row.sellAmount, undefined, row.asset)} {row.asset} ({row.sellCount})
                       </span>
                       <span className="p2p-mono text-[var(--p2p-muted)]">
                         {avgSell > 0n ? `${formatPrice(avgSell)} ${row.currency}` : '—'}
@@ -386,7 +394,13 @@ export function MyOrders({
               <span className="text-[var(--p2p-muted)]">Coins</span>
               <select
                 value={assetFilter}
-                onChange={(e) => setAssetFilter(e.target.value === 'USDC' || e.target.value === 'EURC' ? e.target.value : 'ALL')}
+                onChange={(e) =>
+                  setAssetFilter(
+                    (P2P_ASSETS as readonly string[]).includes(e.target.value)
+                      ? (e.target.value as P2pAsset)
+                      : 'ALL',
+                  )
+                }
                 className="bg-transparent font-bold text-[var(--p2p-ink)] outline-none"
               >
                 <option value="ALL">All coins</option>
@@ -547,7 +561,7 @@ export function MyOrders({
                             {formatFiat(o.fiatAmountE6, 0)} {currency}
                           </p>
                           <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                            {formatUsdcAmount(o.amount)} {o.asset}
+                            {formatUsdcAmount(o.amount, undefined, o.asset)} {o.asset}
                           </p>
                         </div>
 
@@ -638,7 +652,7 @@ export function MyOrders({
                         <span>Amount</span>
                         <span className="p2p-mono font-bold text-[var(--p2p-ink)]">
                           {country?.symbol}
-                          {formatFiat(o.fiatAmountE6, 0)} {currency} ({formatUsdcAmount(o.amount)} {o.asset})
+                          {formatFiat(o.fiatAmountE6, 0)} {currency} ({formatUsdcAmount(o.amount, undefined, o.asset)} {o.asset})
                         </span>
                       </div>
 
@@ -724,7 +738,7 @@ function ArbiterOrderRow({
         <div>
           <span className="block text-[11px] text-[var(--p2p-muted)]">Crypto Amount</span>
           <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
-            {formatUsdcAmount(order.amount)} {order.asset}
+            {formatUsdcAmount(order.amount, undefined, order.asset)} {order.asset}
           </span>
         </div>
 
@@ -883,14 +897,14 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                       {sell ? `SELL ${ad.asset}` : `BUY ${ad.asset}`}
                     </span>
                     <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
-                      {formatUsdcAmount(ad.available)} {ad.asset} remaining
+                      {formatUsdcAmount(ad.available, undefined, ad.asset)} {ad.asset} remaining
                     </span>
                     <span className="p2p-mono text-xs text-[var(--p2p-muted)]">Ad #{ad.rawId.toString()}</span>
                   </div>
 
                   <p className="p2p-mono text-xs text-[var(--p2p-muted)]">
                     Rate: <strong className="text-[var(--p2p-ink)]">{formatPrice(ad.priceE6)} {currency}</strong> • Limits:{' '}
-                    {formatUsdcAmount(ad.minAmount)} - {formatUsdcAmount(ad.maxAmount)} {ad.asset}
+                    {formatUsdcAmount(ad.minAmount, undefined, ad.asset)} - {formatUsdcAmount(ad.maxAmount, undefined, ad.asset)} {ad.asset}
                     {!ad.closed && (
                       <>
                         {' '}•{' '}

@@ -1,9 +1,9 @@
 export const SYSTEM_PROMPT = `You are the assistant inside "OnPeer", a testnet app with these features:
-- P2P (/p2p): peer-to-peer trading of USDC against South Asian currencies (INR, PKR, BDT, LKR, NPR, BTN, MVR, AFN) on Arc Testnet. USDC is held in escrow by a smart contract. Fiat is paid outside the app.
+- P2P (/p2p): peer-to-peer trading of USDC, EURC, cirBTC, and WETH against South Asian currencies (INR, PKR, BDT, LKR, NPR, BTN, MVR, AFN) on Arc Testnet. Tokens are held in escrow by dedicated non-custodial smart contracts. Fiat is paid outside the app.
 - Buy USDC (/buy): Circle's hosted Onramp widget in SANDBOX mode only (dummy data only, no real money). Availability depends on Circle's payment partner and country — South Asia (India, Pakistan, Bangladesh, Sri Lanka, Nepal, Bhutan, Maldives, Afghanistan) is NOT guaranteed; for UPI, bKash, Raast or eSewa, recommend P2P.
-- Cash out (/p2p?mode=sell): sell USDC for local currency via OnPeer P2P escrow (sell against Buy ads or post a sell ad). Direct third-party bank withdrawal providers are not integrated yet — never promise or name any third-party off-ramp provider.
-- Swap (/swap): USDC and EURC on Arc Testnet.
-- Bridge (/bridge): USDC between Arc Testnet and Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia, Avalanche Fuji and Polygon Amoy.
+- Cash out (/p2p?mode=sell): sell crypto for local currency via OnPeer P2P escrow (sell against Buy ads or post a sell ad). Direct third-party bank withdrawal providers are not integrated yet — never promise or name any third-party off-ramp provider.
+- Swap (/swap): USDC, EURC, cirBTC, and WETH on Arc Testnet.
+- Bridge (/bridge): USDC across all 7 EVM testnets (Arc Testnet, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia, Avalanche Fuji, Polygon Amoy) via Circle CCTP, plus EURC, cirBTC, and WETH via Circle CCTPx.
 
 How you work:
 - You search, explain and prepare actions. You cannot sign or send transactions and you never hold keys. For any action, call a propose_* tool: it shows the user a card; for swaps and bridges they can finish right in the chat (quote, confirm, sign) or open the page, and for P2P orders they review and sign on the page. Never say an action is done, sent or completed. Say it is ready for their review.
@@ -59,24 +59,26 @@ export const TOOLS = [
     },
     ['action', 'currency'],
   ),
-  fn('get_wallet_summary', 'Get the connected wallet address and its USDC and EURC balances on Arc Testnet.', {}, []),
+  fn('get_wallet_summary', 'Get the connected wallet address and its USDC, EURC, cirBTC, and WETH balances on Arc Testnet.', {}, []),
   fn('get_my_orders', "List the connected wallet's most recent P2P orders with status, role, amount and deadline.", {}, []),
   fn(
     'propose_swap',
     'Prepare a swap on Arc Testnet. The user reviews the quote and signs on the Swap page.',
     {
-      token_in: { type: 'string', enum: ['USDC', 'EURC'] },
+      token_in: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'] },
+      token_out: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Optional output token' },
       amount: { type: 'string', description: 'Amount of token_in, decimal string' },
     },
     ['token_in', 'amount'],
   ),
   fn(
     'propose_bridge',
-    'Prepare a USDC bridge. The user reviews fees and signs on the Bridge page.',
+    'Prepare a token bridge (USDC via CCTP, or EURC / cirBTC / WETH via CCTPx). The user reviews fees and signs on the Bridge page.',
     {
       from_chain: { type: 'string', enum: CHAINS },
       to_chain: { type: 'string', enum: CHAINS },
-      amount: { type: 'string', description: 'USDC amount, decimal string' },
+      token: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Token to bridge (default USDC)' },
+      amount: { type: 'string', description: 'Token amount, decimal string' },
     },
     ['from_chain', 'to_chain', 'amount'],
   ),

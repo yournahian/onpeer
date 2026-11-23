@@ -120,22 +120,23 @@ export function computeTraderOrderMetrics(
 
     const createdSec = Number(o.createdAt)
     const isCompleted = o.status === STATUS.COMPLETED || o.status === STATUS.RESOLVED_BUYER
+    const usdcEquiv = o.asset === 'USDC' || o.asset === 'EURC' ? o.amount : 0n
     if (createdSec >= cutoff30d) {
       created30d++
       if (isCompleted) {
         completed30d++
-        volume30dUsdc += o.amount
+        volume30dUsdc += usdcEquiv
       }
     }
 
     if (isCompleted) {
       if (isBuyer) {
         buyCompleted++
-        buyVolumeUsdc += o.amount
+        buyVolumeUsdc += usdcEquiv
         counterparties.add(o.seller.toLowerCase())
       } else {
         sellCompleted++
-        sellVolumeUsdc += o.amount
+        sellVolumeUsdc += usdcEquiv
         counterparties.add(o.buyer.toLowerCase())
       }
       if (earliestSec === null || createdSec < earliestSec) {

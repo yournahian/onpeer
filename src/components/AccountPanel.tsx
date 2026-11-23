@@ -837,11 +837,13 @@ export function AccountPanel({
                 className="flex items-center justify-between rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-4 py-3.5 text-xs"
               >
                 <div>
-                  <p className="font-bold text-[var(--p2p-ink)]">Escrow Order #{o.id.toString()}</p>
+                  <p className="font-bold text-[var(--p2p-ink)]">
+                    Escrow Order #{o.rawId.toString()} ({o.asset})
+                  </p>
                   <p className="mt-0.5 text-[var(--p2p-muted)]">{STATUS_META[o.status]?.label ?? 'Active'}</p>
                 </div>
                 <span className="p2p-mono text-sm font-bold text-[#FF5A00]">
-                  {formatUsdcAmount(o.amount)} USDC
+                  {formatUsdcAmount(o.amount, undefined, o.asset)} {o.asset}
                 </span>
               </div>
             ))}

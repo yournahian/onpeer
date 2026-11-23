@@ -325,12 +325,12 @@ export function TraderProfileView({
                 </span>
                 <div className="space-y-0.5 text-xs">
                   <p className="p2p-mono font-semibold text-[var(--p2p-ink)]">
-                    {formatUsdcAmount(ad.available)} {ad.asset}
+                    {formatUsdcAmount(ad.available, undefined, ad.asset)} {ad.asset}
                   </p>
                   <p className="p2p-mono text-[var(--p2p-muted)]">
                     {c?.symbol}
-                    {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {c?.symbol}
-                    {formatFiat(fiatFor(cap, ad.priceE6), 0)}
+                    {formatFiat(fiatFor(floor, ad.priceE6, ad.asset), 0)} - {c?.symbol}
+                    {formatFiat(fiatFor(cap, ad.priceE6, ad.asset), 0)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -612,13 +612,13 @@ export function TraderProfileView({
                         <p>
                           Limit{' '}
                           <span className="p2p-mono text-[var(--p2p-ink)]">
-                            {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {formatFiat(fiatFor(cap, ad.priceE6), 0)} {cur}
+                            {formatFiat(fiatFor(floor, ad.priceE6, ad.asset), 0)} - {formatFiat(fiatFor(cap, ad.priceE6, ad.asset), 0)} {cur}
                           </span>
                         </p>
                         <p>
                           Available{' '}
                           <span className="p2p-mono text-[var(--p2p-ink)]">
-                            {formatUsdcAmount(ad.available)} {ad.asset}
+                            {formatUsdcAmount(ad.available, undefined, ad.asset)} {ad.asset}
                           </span>
                         </p>
                       </div>

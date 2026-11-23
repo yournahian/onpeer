@@ -14,7 +14,6 @@ import {
   DEFAULT_TTL_HOURS,
   DETAILS_MAX_BYTES,
   DETAILS_MODE,
-  MERCHANT_MARGIN,
   MIN_TAKER_OPTIONS,
   P2P_ASSETS,
   SIDE_BUY,
@@ -26,6 +25,7 @@ import {
   encodeScopedId,
   formatUsdcAmount,
   getEscrowConfig,
+  merchantMarginFor,
   methodsForCountry,
   type P2pAsset,
 } from '@/lib/p2p'
@@ -49,9 +49,9 @@ import {
 } from '@/hooks/useAccount'
 import { useVaultActions } from '@/hooks/useVault'
 
-const safe = (v: string): bigint => {
+const safe = (v: string, decimals = 6): bigint => {
   try {
-    return v ? parseUnitsExact(v, 6) : 0n
+    return v ? parseUnitsExact(v, decimals) : 0n
   } catch {
     return 0n
   }
@@ -177,10 +177,12 @@ function PostAdForm({
 
   const country = COUNTRIES.find((c) => c.code === countryCode) ?? COUNTRIES[0]
   const methods = methodsForCountry(country.code)
-  const priceE6 = safe(price)
-  const totalRaw = safe(total)
-  const minRaw = safe(min)
-  const maxRaw = safe(max)
+  const tokenDecimals = getEscrowConfig(asset).decimals
+  const minMerchantMargin = merchantMarginFor(asset)
+  const priceE6 = safe(price, 6)
+  const totalRaw = safe(total, tokenDecimals)
+  const minRaw = safe(min, tokenDecimals)
+  const maxRaw = safe(max, tokenDecimals)
   const isSell = side === SIDE_SELL
   const useSealedVault = sealedEnabled && isSell
   const onchainText = useSealedVault ? publicTerms : details
@@ -196,14 +198,14 @@ function PostAdForm({
 
   let problem: string | null = null
   if (buyAdBlocked) {
-    problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(MERCHANT_MARGIN, 0)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
+    problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
   } else if (!isSell && isConnected && balance !== undefined && listingFee > balance) {
-    problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee)} ${asset} listing fee (${formatUsdcAmount(balance)} ${asset} available).`
+    problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
   } else if (totalRaw > 0n && minRaw > 0n && maxRaw > 0n) {
     if (minRaw > maxRaw) problem = 'Minimum order cannot exceed maximum order.'
     else if (maxRaw > totalRaw) problem = 'Maximum order cannot exceed total amount.'
     else if (balance !== undefined && requiredUsdc > balance)
-      problem = `Insufficient wallet balance (${formatUsdcAmount(balance)} ${asset} available; ${formatUsdcAmount(requiredUsdc)} ${asset} needed with listing fee).`
+      problem = `Insufficient wallet balance (${formatUsdcAmount(balance, undefined, asset)} ${asset} available; ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} needed with listing fee).`
   }
   if (!problem && detailBytes > DETAILS_MAX_BYTES) {
     problem = useSealedVault ? 'Public maker terms exceed 200 bytes.' : 'Payment details exceed 200 bytes.'
@@ -429,14 +431,21 @@ function PostAdForm({
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
               Cryptocurrency Asset
             </span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {P2P_ASSETS.map((a) => {
                 const active = asset === a
                 return (
                   <button
                     key={a}
                     type="button"
-                    onClick={() => setAsset(a)}
+                    onClick={() => {
+                      if (a !== asset) {
+                        setAsset(a)
+                        setTotal('')
+                        setMin('')
+                        setMax('')
+                      }
+                    }}
                     className={`inline-flex items-center justify-center gap-2 rounded-lg border py-2 text-xs font-bold transition-colors ${
                       active
                         ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
@@ -501,15 +510,17 @@ function PostAdForm({
               <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
                 <span>{isSell ? `${asset} to Lock` : 'Total Buy Target'}</span>
                 {balance !== undefined && (
-                  <span className="p2p-mono normal-case text-[#FF5A00]">Bal: {formatUsdcAmount(balance)}</span>
+                  <span className="p2p-mono normal-case text-[#FF5A00]">
+                    Bal: {formatUsdcAmount(balance, undefined, asset)}
+                  </span>
                 )}
               </span>
               <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
                 <input
                   inputMode="decimal"
                   value={total}
-                  onChange={decimalInput(setTotal, 6)}
-                  placeholder="100.00"
+                  onChange={decimalInput(setTotal, tokenDecimals)}
+                  placeholder={asset === 'cirBTC' ? '0.01' : asset === 'WETH' ? '0.1' : '100.00'}
                   className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
                 />
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
@@ -527,8 +538,8 @@ function PostAdForm({
               <input
                 inputMode="decimal"
                 value={min}
-                onChange={decimalInput(setMin, 6)}
-                placeholder="10"
+                onChange={decimalInput(setMin, tokenDecimals)}
+                placeholder={asset === 'cirBTC' ? '0.001' : asset === 'WETH' ? '0.01' : '10'}
                 className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
               />
             </label>
@@ -539,8 +550,8 @@ function PostAdForm({
               <input
                 inputMode="decimal"
                 value={max}
-                onChange={decimalInput(setMax, 6)}
-                placeholder="500"
+                onChange={decimalInput(setMax, tokenDecimals)}
+                placeholder={asset === 'cirBTC' ? '0.01' : asset === 'WETH' ? '0.1' : '500'}
                 className="p2p-input p2p-mono w-full rounded-lg px-3 py-2.5 text-sm font-semibold"
               />
             </label>
@@ -812,7 +823,7 @@ function PostAdForm({
             <div className="flex items-center justify-between">
               <span className="text-[var(--p2p-muted)]">Listing fee (per ad, non-refundable)</span>
               <span className="p2p-mono font-bold text-[#FF5A00]">
-                Listing fee {formatUsdcAmount(listingFee)} {asset}
+                Listing fee {formatUsdcAmount(listingFee, undefined, asset)} {asset}
               </span>
             </div>
             <div className="flex items-start gap-2.5 border-t border-[var(--p2p-border)] pt-2 text-[var(--p2p-muted)]">
@@ -823,10 +834,10 @@ function PostAdForm({
               )}
               <span>
                 {isSell
-                  ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc)} ${asset} (${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} ${asset} escrow + ${formatUsdcAmount(listingFee)} ${asset} listing fee). Refreshing ads & trading are free.`
+                  ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} (${totalRaw > 0n ? formatUsdcAmount(totalRaw, undefined, asset) : '0.00'} ${asset} escrow + ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee). Refreshing ads & trading are free.`
                   : account?.merchant
-                    ? `Verified Merchant active — ${formatUsdcAmount(listingFee)} ${asset} listing fee pulled on creation; refreshing & trades are free.`
-                    : `Buy Ads require Merchant Margin >= 100 ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee)} ${asset} listing fee.`}
+                    ? `Verified Merchant active — ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee pulled on creation; refreshing & trades are free.`
+                    : `Buy Ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee.`}
               </span>
             </div>
           </div>
@@ -862,8 +873,8 @@ function PostAdForm({
                     : busy
                       ? 'Confirming in Wallet...'
                       : isSell
-                        ? `Lock ${totalRaw > 0n ? formatUsdcAmount(totalRaw) : '0.00'} ${asset} (+${formatUsdcAmount(listingFee)} Fee) & Post`
-                        : `Post Buy Ad (${formatUsdcAmount(listingFee)} ${asset} Fee)`}
+                        ? `Lock ${totalRaw > 0n ? formatUsdcAmount(totalRaw, undefined, asset) : '0.00'} ${asset} (+${formatUsdcAmount(listingFee, undefined, asset)} Fee) & Post`
+                        : `Post Buy Ad (${formatUsdcAmount(listingFee, undefined, asset)} ${asset} Fee)`}
               </button>
             ) : (
               <ConnectKitButton.Custom>

@@ -287,7 +287,7 @@ export function Header({
             {isConnected && balance !== undefined && (
               <span className="p2p-mono ml-1 inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
                 <CoinLogo symbol={activeAsset} size={14} />
-                {formatUsdcAmount(balance)} {activeAsset}
+                {formatUsdcAmount(balance, undefined, activeAsset)} {activeAsset}
               </span>
             )}
 
@@ -307,7 +307,7 @@ export function Header({
                 }
                 className="p2p-mono inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                Claim {formatUsdcAmount(claimable)} {activeAsset}
+                Claim {formatUsdcAmount(claimable, undefined, activeAsset)} {activeAsset}
               </button>
             )}
 
@@ -330,7 +330,7 @@ export function Header({
         <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-2 backdrop-blur-xl md:hidden">
           <span className="p2p-mono inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
             <CoinLogo symbol={activeAsset} size={14} />
-            {balance !== undefined ? `${formatUsdcAmount(balance)} ${activeAsset}` : 'Arc Escrow'}
+            {balance !== undefined ? `${formatUsdcAmount(balance, undefined, activeAsset)} ${activeAsset}` : 'Arc Escrow'}
           </span>
           <div className="flex items-center gap-2">
             {showArbiter && disputeCount > 0 && (
@@ -358,7 +358,7 @@ export function Header({
                 }
                 className="p2p-mono rounded-lg bg-[#FF5A00] px-2.5 py-1 text-xs font-bold text-[#FFFFFF]"
               >
-                Claim {formatUsdcAmount(claimable)}
+                Claim {formatUsdcAmount(claimable, undefined, activeAsset)}
               </button>
             )}
             {chainId !== CHAIN_ID && (

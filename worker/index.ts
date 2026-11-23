@@ -18,6 +18,7 @@ import { handleVaultRoutes } from './vault'
 import { handleDisputeRoutes } from './disputes'
 import { handleSocialRoutes } from './social'
 import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
+import { handleSeoFileRequest, injectSeoIntoHtmlResponse } from './seo'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
 import { checkRateLimit } from './db'
@@ -644,9 +645,34 @@ export function createWorkerApp(deps?: WorkerDependencies) {
         return withSecurityHeaders(res, true, env)
       }
 
+      // Redirect www.onpeer.xyz canonical traffic to apex onpeer.xyz (except /api/* handled above)
+      if (url.hostname === 'www.onpeer.xyz') {
+        const dest =
+          url.pathname === '/docs' || url.pathname.startsWith('/docs/')
+            ? `https://docs.onpeer.xyz${url.pathname.slice('/docs'.length) || '/'}${url.search}`
+            : APP_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`)) ||
+                url.searchParams.has('order')
+              ? `https://app.onpeer.xyz${url.pathname}${url.search}`
+              : `https://onpeer.xyz${url.pathname}${url.search}`
+        return withSecurityHeaders(Response.redirect(dest, 301), false, env)
+      }
+
+      // Redirect /docs from landing or app domain to dedicated docs.onpeer.xyz subdomain
+      if (
+        (url.hostname === 'onpeer.xyz' || url.hostname === 'app.onpeer.xyz') &&
+        (url.pathname === '/docs' || url.pathname.startsWith('/docs/'))
+      ) {
+        const subPath = url.pathname.slice('/docs'.length) || '/'
+        return withSecurityHeaders(
+          Response.redirect(`https://docs.onpeer.xyz${subPath}${url.search}`, 302),
+          false,
+          env,
+        )
+      }
+
       // Redirect app routes from landing domain to app.onpeer.xyz (keep /privacy public on both)
       if (
-        (url.hostname === 'onpeer.xyz' || url.hostname === 'www.onpeer.xyz') &&
+        url.hostname === 'onpeer.xyz' &&
         (APP_PATHS.some((p) => url.pathname === p || url.pathname.startsWith(`${p}/`)) ||
           url.searchParams.has('order'))
       ) {
@@ -657,8 +683,17 @@ export function createWorkerApp(deps?: WorkerDependencies) {
         )
       }
 
+      // Serve SEO & GEO discovery files (/robots.txt, /sitemap.xml, /llms.txt, /llms-full.txt)
+      if (request.method === 'GET' || request.method === 'HEAD') {
+        const seoFileRes = handleSeoFileRequest(url)
+        if (seoFileRes) {
+          return withSecurityHeaders(seoFileRes, false, env)
+        }
+      }
+
       const assetRes = await env.ASSETS.fetch(request)
-      return withSecurityHeaders(assetRes, false, env)
+      const enrichedRes = await injectSeoIntoHtmlResponse(assetRes, url)
+      return withSecurityHeaders(enrichedRes, false, env)
     },
 
     async scheduled(

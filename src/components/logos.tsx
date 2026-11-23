@@ -8,6 +8,8 @@ import {
   NetworkEthereum,
   NetworkOptimism,
   NetworkPolygon,
+  TokenBTC,
+  TokenETH,
   TokenEURC,
   TokenUSDC,
 } from '@web3icons/react'
@@ -136,8 +138,21 @@ export function ChainLogo({ chain, size = 18 }: { chain: string; size?: number }
   }
 }
 
-/** Original branded coin logo for USDC and EURC. */
-export function CoinLogo({ symbol, size = 18 }: { symbol: 'USDC' | 'EURC' | string; size?: number }) {
-  if (symbol === 'EURC') return <TokenEURC variant="branded" size={size} className="shrink-0" />
+/** Original branded coin logo for USDC, EURC, cirBTC, and WETH. */
+export function CoinLogo({
+  symbol,
+  size = 18,
+}: {
+  symbol: 'USDC' | 'EURC' | 'cirBTC' | 'WETH' | 'wETH' | string
+  size?: number
+}) {
+  const s = symbol.toUpperCase()
+  if (s === 'EURC') return <TokenEURC variant="branded" size={size} className="shrink-0" />
+  if (s === 'CIRBTC' || s === 'WBTC' || s === 'BTC') {
+    return <TokenBTC variant="branded" size={size} className="shrink-0" />
+  }
+  if (s === 'WETH' || s === 'ETH') {
+    return <TokenETH variant="branded" size={size} className="shrink-0" />
+  }
   return <TokenUSDC variant="branded" size={size} className="shrink-0" />
 }

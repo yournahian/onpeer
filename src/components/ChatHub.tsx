@@ -46,7 +46,7 @@ function formatThreadTime(createdSec: bigint, nowSec: number): string {
 }
 
 function formatThreadSubtitle(o: OrderWithId, isBuyer: boolean): string {
-  const amt = formatUsdcAmount(o.amount)
+  const amt = formatUsdcAmount(o.amount, undefined, o.asset)
   const sym = o.asset
   if (o.status === STATUS.COMPLETED || o.status === STATUS.RESOLVED_BUYER) {
     return isBuyer ? `You received ${amt} ${sym}.` : `You sent ${amt} ${sym}.`
@@ -389,7 +389,7 @@ export function ChatHub({
                         <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">({shortAddr(peer)})</span>
                       </div>
                       <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                        Order #{selectedOrder.rawId.toString()} • {formatUsdcAmount(selectedOrder.amount)}{' '}
+                        Order #{selectedOrder.rawId.toString()} • {formatUsdcAmount(selectedOrder.amount, undefined, selectedOrder.asset)}{' '}
                         {selectedOrder.asset} ({formatFiat(selectedOrder.fiatAmountE6, 0)} {cur}) •{' '}
                         <span className="text-[#FF5A00]">
                           {STATUS_META[selectedOrder.status]?.label ?? 'Order'}
@@ -420,7 +420,7 @@ export function ChatHub({
                 canPost={isActiveStatus(selectedOrder.status)}
                 orderStatus={selectedOrder.status}
                 disputedAt={selectedOrder.disputedAt}
-                amountText={`${formatUsdcAmount(selectedOrder.amount)} USDC`}
+                amountText={`${formatUsdcAmount(selectedOrder.amount, undefined, selectedOrder.asset)} ${selectedOrder.asset}`}
               />
             </div>
           </div>

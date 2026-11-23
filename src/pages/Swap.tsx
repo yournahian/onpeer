@@ -1,15 +1,23 @@
-import { useMemo, useState } from 'react'
-import { motion } from 'framer-motion'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
 import { ConnectKitButton } from 'connectkit'
 import { erc20Abi, type Address } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import type { SwapEstimate } from '@circle-fin/app-kit'
-import { ArrowDownUp, ExternalLink, Info } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info } from 'lucide-react'
 import { toast } from 'sonner'
-import { getUsdc } from '@/onchain-facts'
-import { formatUsdc, parseUsdc } from '@/onchain-money'
+import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import {
+  SLIPPAGE_OPTIONS,
+  SWAP_TOKENS,
+  SWAP_TOKEN_ADDRESS,
+  SWAP_TOKEN_DECIMALS,
+  defaultSwapCounterpart,
+  toSwapKitToken,
+  type SwapToken,
+} from '@/hooks/useSwapFlow'
 import { SiteBar } from '@/components/SiteBar'
 import { AppLink } from '@/components/AppLink'
 import { Button } from '@/components/ui'
@@ -23,46 +31,52 @@ const PCT_PRESETS = [
   { label: 'MAX', num: 100n },
 ] as const
 
-const TOKENS = ['USDC', 'EURC'] as const
-type Token = (typeof TOKENS)[number]
-const SLIPPAGE_OPTIONS = [50, 100, 300] as const
-
-const rawEurc = (import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined)?.trim()
-const TOKEN_ADDRESS: Record<Token, Address | undefined> = {
-  USDC: getUsdc(arcTestnet.id)?.address as Address | undefined,
-  EURC: rawEurc && /^0x[0-9a-fA-F]{40}$/.test(rawEurc) ? (rawEurc as Address) : undefined,
-}
-
-function useTokenBalance(token: Token) {
+function useTokenBalance(token: SwapToken) {
   const { address } = useAccount()
+  const tokenAddress = SWAP_TOKEN_ADDRESS[token]
   const res = useReadContract({
-    address: TOKEN_ADDRESS[token],
+    address: tokenAddress,
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [address as Address],
     chainId: arcTestnet.id,
-    query: { enabled: !!address && !!TOKEN_ADDRESS[token], refetchInterval: 10_000 },
+    query: { enabled: !!address && !!tokenAddress, refetchInterval: 10_000 },
   })
   return res.data
 }
 
+function normalizeSwapToken(raw: string | null): SwapToken | null {
+  if (!raw) return null
+  const upper = raw.trim().toUpperCase()
+  if (upper === 'USDC') return 'USDC'
+  if (upper === 'EURC') return 'EURC'
+  if (upper === 'CIRBTC') return 'cirBTC'
+  if (upper === 'WETH') return 'WETH'
+  return null
+}
+
 type Reviewed = { key: string; estimate: SwapEstimate }
-type Done = { amountOut?: string; tokenOut: Token; explorerUrl?: string; status: string }
+type Done = { amountOut?: string; tokenOut: SwapToken; explorerUrl?: string; status: string }
 
 const initial = () => {
   const q = new URLSearchParams(window.location.search)
-  const t = q.get('tokenIn')
+  const tIn = normalizeSwapToken(q.get('tokenIn')) ?? 'USDC'
+  const rawOut = normalizeSwapToken(q.get('tokenOut'))
+  const tOut = rawOut && rawOut !== tIn ? rawOut : defaultSwapCounterpart(tIn)
+  const maxDec = SWAP_TOKEN_DECIMALS[tIn]
   const a = q.get('amount')
   return {
-    tokenIn: (TOKENS as readonly string[]).includes(t ?? '') ? (t as Token) : 'USDC',
-    amount: a && /^\d+(\.\d{1,6})?$/.test(a) ? a : '',
+    tokenIn: tIn,
+    tokenOut: tOut,
+    amount: a && new RegExp(`^\\d+(\\.\\d{1,${maxDec}})?$`).test(a) ? a : '',
   }
 }
 
 export default function SwapPage() {
   const { address, isConnected, connector, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
-  const [tokenIn, setTokenIn] = useState<Token>(() => initial().tokenIn)
+  const [tokenIn, setTokenIn] = useState<SwapToken>(() => initial().tokenIn)
+  const [tokenOut, setTokenOut] = useState<SwapToken>(() => initial().tokenOut)
   const [amount, setAmount] = useState(() => initial().amount)
   const [slippage, setSlippage] = useState<number>(100)
   const [reviewed, setReviewed] = useState<Reviewed | null>(null)
@@ -71,19 +85,20 @@ export default function SwapPage() {
   const [error, setError] = useState<string | null>(null)
   const [flips, setFlips] = useState(0)
 
-  const tokenOut: Token = tokenIn === 'USDC' ? 'EURC' : 'USDC'
+  const decimalsIn = SWAP_TOKEN_DECIMALS[tokenIn]
+  const decimalsOut = SWAP_TOKEN_DECIMALS[tokenOut]
   const balIn = useTokenBalance(tokenIn)
   const balOut = useTokenBalance(tokenOut)
 
   const amountRaw = useMemo(() => {
     try {
-      return amount ? parseUsdc(amount) : 0n
+      return amount ? parseUnitsExact(amount, decimalsIn) : 0n
     } catch {
       return 0n
     }
-  }, [amount])
+  }, [amount, decimalsIn])
 
-  const key = `${address}|${tokenIn}|${amount}|${slippage}`
+  const key = `${address}|${tokenIn}|${tokenOut}|${amount}|${slippage}`
   const isReviewed = reviewed?.key === key
   const insufficient = balIn !== undefined && amountRaw > balIn
 
@@ -101,8 +116,8 @@ export default function SwapPage() {
       const adapter = await prepare()
       const estimate = await appKit.estimateSwap({
         from: { adapter, chain: 'Arc_Testnet' },
-        tokenIn,
-        tokenOut,
+        tokenIn: toSwapKitToken(tokenIn),
+        tokenOut: toSwapKitToken(tokenOut),
         amountIn: amount,
         config: { slippageBps: slippage },
       })
@@ -123,8 +138,8 @@ export default function SwapPage() {
       const adapter = await prepare()
       const result = await appKit.swap({
         from: { adapter, chain: 'Arc_Testnet' },
-        tokenIn,
-        tokenOut,
+        tokenIn: toSwapKitToken(tokenIn),
+        tokenOut: toSwapKitToken(tokenOut),
         amountIn: amount,
         config: { slippageBps: slippage },
       })
@@ -144,20 +159,48 @@ export default function SwapPage() {
     }
   }
 
-  const fmt = (v?: bigint) => (v === undefined ? '...' : formatUsdc(v))
+  const fmt = (v: bigint | undefined, dec: number) => (v === undefined ? '...' : formatUnitsExact(v, dec))
 
   const applyPct = (num: bigint) => {
     if (balIn === undefined) return
     // On Arc, USDC is also the gas token: keep 1 USDC back for fees.
     const spendable = tokenIn === 'USDC' ? (balIn > 1_000_000n ? balIn - 1_000_000n : 0n) : balIn
-    setAmount(formatUsdc((spendable * num) / 100n))
+    setAmount(formatUnitsExact((spendable * num) / 100n, decimalsIn))
+    setReviewed(null)
+  }
+
+  const handleSelectIn = (next: SwapToken) => {
+    if (next === tokenOut) {
+      setTokenOut(tokenIn)
+    }
+    setTokenIn(next)
+    setAmount('')
+    setReviewed(null)
+    setError(null)
+  }
+
+  const handleSelectOut = (next: SwapToken) => {
+    if (next === tokenIn) {
+      setTokenIn(tokenOut)
+    }
+    setTokenOut(next)
+    setReviewed(null)
+    setError(null)
+  }
+
+  const flipPair = () => {
+    setTokenIn(tokenOut)
+    setTokenOut(tokenIn)
+    setAmount('')
+    setReviewed(null)
+    setError(null)
+    setFlips((n) => n + 1)
   }
 
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip">
       <SiteBar />
       <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
-
         <motion.section
           className="relative z-20 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
           style={{
@@ -173,34 +216,24 @@ export default function SwapPage() {
           <div>
             <div className="flex items-center justify-between text-xs font-medium" style={{ color: 'var(--muted)' }}>
               <span>You&apos;re swapping</span>
-              <span>Balance: {fmt(balIn)}</span>
+              <span>Balance: {fmt(balIn, decimalsIn)}</span>
             </div>
             <div className="mt-2 flex items-center justify-between gap-3">
               <input
                 inputMode="decimal"
                 value={amount}
-                onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setAmount(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value
+                  if (new RegExp(`^\\d*\\.?\\d{0,${decimalsIn}}$`).test(val)) {
+                    setAmount(val)
+                    setReviewed(null)
+                  }
+                }}
                 placeholder="0.00"
                 aria-label="Amount to swap"
                 className="no-focus-ring display w-full min-w-0 bg-transparent text-2xl font-bold tabular-nums outline-none sm:text-3xl"
               />
-              <button
-                type="button"
-                onClick={() => {
-                  setTokenIn(tokenOut)
-                  setReviewed(null)
-                  setFlips((n) => n + 1)
-                }}
-                aria-label="Switch swap token"
-                className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold transition-transform hover:scale-[1.03] active:scale-[0.98]"
-                style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
-              >
-                <CoinLogo symbol={tokenIn} size={18} />
-                <span>{tokenIn}</span>
-                <motion.span animate={{ rotate: flips * 180 }} transition={{ type: 'spring', stiffness: 300, damping: 20 }}>
-                  <ArrowDownUp className="size-3.5 opacity-70" />
-                </motion.span>
-              </button>
+              <SwapTokenSelect value={tokenIn} onChange={handleSelectIn} label="Select input token" />
             </div>
 
             {/* 25% 50% 75% MAX pills */}
@@ -220,14 +253,30 @@ export default function SwapPage() {
             </div>
           </div>
 
-          {/* Middle: Protocol, Slippage, Fees */}
-          <div className="mt-3.5 space-y-2 border-y py-3 text-xs" style={{ borderColor: 'var(--border)' }}>
+          {/* Middle: Flip + Protocol, Slippage, Fees */}
+          <div className="relative mt-3.5 space-y-2 border-y py-3 text-xs" style={{ borderColor: 'var(--border)' }}>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Network</span>
-              <span className="inline-flex items-center gap-1.5 font-semibold">
-                <ChainLogo chain="Arc_Testnet" size={16} />
-                Arc Testnet
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 font-semibold">
+                  <ChainLogo chain="Arc_Testnet" size={16} />
+                  Arc Testnet
+                </span>
+                <motion.button
+                  type="button"
+                  onClick={flipPair}
+                  animate={{ rotate: flips * 180 }}
+                  whileHover={{ scale: 1.12 }}
+                  whileTap={{ scale: 0.92 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  aria-label="Switch swap direction"
+                  title="Flip direction"
+                  className="flex size-6 items-center justify-center rounded-full border"
+                  style={{ background: 'var(--fill-2)', borderColor: 'var(--border-strong)' }}
+                >
+                  <ArrowDownUp className="size-3.5" />
+                </motion.button>
+              </div>
             </div>
             <div className="flex items-center justify-between">
               <span style={{ color: 'var(--subtle)' }}>Max slippage</span>
@@ -256,13 +305,17 @@ export default function SwapPage() {
               <>
                 {(reviewed.estimate.fees ?? []).map((f, i) => (
                   <div key={i} className="flex items-center justify-between">
-                    <span className="capitalize" style={{ color: 'var(--subtle)' }}>{f.type} fee</span>
-                    <span className="font-medium tabular-nums">{f.amount ?? '0'} {f.token}</span>
+                    <span className="capitalize" style={{ color: 'var(--subtle)' }}>
+                      {f.type} fee
+                    </span>
+                    <span className="font-medium tabular-nums">
+                      {f.amount ?? '0'} {f.token}
+                    </span>
                   </div>
                 ))}
                 <p className="flex items-start gap-1.5 pt-1 text-[11px] leading-relaxed" style={{ color: 'var(--subtle)' }}>
                   <Info className="mt-0.5 size-3 shrink-0" />
-                  Final output can vary within your slippage tolerance.
+                  Routed via Circle Swap aggregator subject to provider terms. Final output can vary within your slippage tolerance.
                 </p>
               </>
             )}
@@ -272,19 +325,13 @@ export default function SwapPage() {
           <div className="mt-3">
             <div className="flex items-center justify-between text-xs" style={{ color: 'var(--subtle)' }}>
               <span>To receive</span>
-              <span>Balance: {fmt(balOut)}</span>
+              <span>Balance: {fmt(balOut, decimalsOut)}</span>
             </div>
             <div className="mt-1.5 flex items-center justify-between gap-3">
               <p className="display w-full min-w-0 truncate text-2xl font-bold tabular-nums sm:text-3xl" style={{ opacity: isReviewed ? 1 : 0.65 }}>
                 <RollingNumber value={isReviewed ? String(reviewed.estimate.estimatedOutput.amount) : '0.00'} />
               </p>
-              <span
-                className="flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold"
-                style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
-              >
-                <CoinLogo symbol={tokenOut} size={18} />
-                <span>{tokenOut}</span>
-              </span>
+              <SwapTokenSelect value={tokenOut} onChange={handleSelectOut} label="Select output token" />
             </div>
           </div>
 
@@ -295,7 +342,7 @@ export default function SwapPage() {
           )}
           {insufficient && (
             <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }}>
-              Not enough {tokenIn}. Use &quot;Get test USDC&quot; in the Arc Studio sidebar.
+              Not enough {tokenIn}.{tokenIn === 'USDC' ? ' Use "Get test USDC" in the Arc Studio sidebar.' : ''}
             </p>
           )}
 
@@ -368,10 +415,106 @@ export default function SwapPage() {
             •
           </span>
           <AppLink to="/p2p?mode=sell" className="underline hover:opacity-85" style={{ color: 'var(--muted)' }}>
-            Cash out USDC
+            Cash out via P2P
           </AppLink>
         </div>
       </div>
+    </div>
+  )
+}
+
+function SwapTokenSelect({
+  value,
+  onChange,
+  label,
+}: {
+  value: SwapToken
+  onChange: (next: SwapToken) => void
+  label: string
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={wrapRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold transition-all hover:bg-[var(--fill-3)]"
+        style={{
+          background: 'var(--fill-2)',
+          border: `1px solid ${open ? 'var(--accent)' : 'var(--border-strong)'}`,
+        }}
+      >
+        <CoinLogo symbol={value} size={18} />
+        <span>{value}</span>
+        <ChevronDown className={`size-3.5 opacity-70 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.ul
+            role="listbox"
+            initial={{ opacity: 0, y: 6, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-2xl p-1.5 backdrop-blur-2xl"
+            style={{
+              background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
+              border: '1px solid var(--border-strong)',
+              boxShadow: '0 18px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border)',
+            }}
+          >
+            {SWAP_TOKENS.map((tok) => {
+              const selected = tok === value
+              return (
+                <li key={tok}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => {
+                      onChange(tok)
+                      setOpen(false)
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[var(--fill-2)]"
+                    style={{
+                      background: selected ? 'var(--fill-3)' : undefined,
+                      color: selected ? 'var(--ink)' : 'var(--ink-2)',
+                    }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <CoinLogo symbol={tok} size={16} />
+                      {tok}
+                    </span>
+                    {selected && <Check className="size-3.5" style={{ color: 'var(--accent)' }} />}
+                  </button>
+                </li>
+              )
+            })}
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
