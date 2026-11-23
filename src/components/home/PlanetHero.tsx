@@ -2,10 +2,18 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { AppLink } from '@/components/AppLink'
 
-const PLANET_VIDEO_URL =
+const LOCAL_PLANET_VIDEO = '/hero/planet-rim.mp4'
+const FALLBACK_PLANET_VIDEO_URL =
   'https://d2ol7oe51mr4n9.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/e859f229-8ebd-43fb-a5a0-58006ba75327.mp4'
 
 const ease = [0.22, 1, 0.36, 1] as const
+
+function shouldPlayDesktopVideo(): boolean {
+  if (typeof window === 'undefined') return false
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const desktop = window.innerWidth >= 900 && window.innerWidth >= window.innerHeight * 0.85
+  return !reduced && desktop
+}
 
 function createStarRand(initial = 4219) {
   let s = initial
@@ -24,17 +32,12 @@ export function PlanetHero() {
   const starCanvasRef = useRef<HTMLCanvasElement>(null)
   const rimCanvasRef = useRef<HTMLCanvasElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [videoSrc, setVideoSrc] = useState(PLANET_VIDEO_URL)
+  const [videoSrc, setVideoSrc] = useState(LOCAL_PLANET_VIDEO)
   const [videoReady, setVideoReady] = useState(false)
-  const [allowVideo, setAllowVideo] = useState(false)
+  const [allowVideo, setAllowVideo] = useState<boolean>(() => shouldPlayDesktopVideo())
 
   useEffect(() => {
-    const check = () => {
-      const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      const desktop = window.innerWidth >= 900 && window.innerWidth >= window.innerHeight * 0.85
-      setAllowVideo(!reduced && desktop)
-    }
-    check()
+    const check = () => setAllowVideo(shouldPlayDesktopVideo())
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
@@ -156,19 +159,19 @@ export function PlanetHero() {
       {/* Procedural white starfield */}
       <canvas ref={starCanvasRef} aria-hidden className="pointer-events-none absolute inset-0 z-0 size-full" />
 
-      {/* Fallback planet rim canvas (always behind video; stays visible on mobile / reduced motion) */}
+      {/* Fallback planet rim canvas ONLY on mobile / reduced motion — never flashes on PC */}
       <canvas
         ref={rimCanvasRef}
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[72vh] w-full transition-opacity duration-700"
-        style={{ opacity: allowVideo && videoReady ? 0.12 : 1 }}
+        className={`pointer-events-none absolute inset-x-0 top-0 z-[1] h-[72vh] w-full ${allowVideo ? 'hidden' : 'block'}`}
       />
 
-      {/* Desktop glowing orange planet-rim video with screen blend so black stays transparent */}
+      {/* Desktop glowing orange planet-rim video served directly from same-origin edge CDN */}
       {allowVideo && (
         <video
           ref={videoRef}
           src={videoSrc}
+          preload="auto"
           autoPlay
           loop
           muted
@@ -178,12 +181,12 @@ export function PlanetHero() {
           onCanPlay={() => setVideoReady(true)}
           onPlaying={() => setVideoReady(true)}
           onError={() => {
-            if (videoSrc !== '/hero/hero-bg.mp4') {
+            if (videoSrc !== FALLBACK_PLANET_VIDEO_URL) {
               setVideoReady(false)
-              setVideoSrc('/hero/hero-bg.mp4')
+              setVideoSrc(FALLBACK_PLANET_VIDEO_URL)
             }
           }}
-          className="pointer-events-none absolute inset-0 z-[2] size-full object-cover object-top transition-opacity duration-[800ms]"
+          className="pointer-events-none absolute inset-0 z-[2] size-full object-cover object-top transition-opacity duration-300"
           style={{
             mixBlendMode: 'screen',
             filter: 'hue-rotate(96deg) saturate(1.25) brightness(0.9)',
