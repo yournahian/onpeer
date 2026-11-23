@@ -200,9 +200,9 @@ export default function SwapPage() {
   return (
     <div className="flex min-h-dvh flex-col overflow-x-clip">
       <SiteBar />
-      <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-hidden px-4 py-3 sm:py-4">
+      <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-visible px-4 py-3 sm:py-4">
         <motion.section
-          className="relative z-20 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
+          className="relative z-30 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
           style={{
             background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
             border: '1px solid var(--border-strong)',
@@ -404,10 +404,10 @@ export default function SwapPage() {
           </motion.section>
         )}
 
-        <p className="relative z-20 mt-3 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
+        <p className="relative z-10 mt-3 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
           USDC is also the gas token on Arc. Keep some USDC in your wallet for transaction fees.
         </p>
-        <div className="relative z-20 mt-1.5 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold">
+        <div className="relative z-10 mt-1.5 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold">
           <AppLink to="/buy" className="underline hover:opacity-85" style={{ color: 'var(--accent)' }}>
             Buy USDC (sandbox)
           </AppLink>
@@ -452,7 +452,7 @@ function SwapTokenSelect({
   }, [open])
 
   return (
-    <div ref={wrapRef} className="relative shrink-0">
+    <div ref={wrapRef} className={`relative shrink-0 ${open ? 'z-50' : 'z-10'}`}>
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -478,11 +478,11 @@ function SwapTokenSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.96 }}
             transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute right-0 z-40 mt-2 w-44 overflow-hidden rounded-2xl p-1.5 backdrop-blur-2xl"
+            className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-2xl p-1.5"
             style={{
-              background: 'color-mix(in srgb, var(--panel-solid) 96%, transparent)',
+              backgroundColor: 'var(--panel-solid)',
               border: '1px solid var(--border-strong)',
-              boxShadow: '0 18px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border)',
+              boxShadow: '0 24px 60px rgba(0, 0, 0, 0.88), 0 0 0 1px rgba(255, 90, 0, 0.25)',
             }}
           >
             {SWAP_TOKENS.map((tok) => {
@@ -497,15 +497,15 @@ function SwapTokenSelect({
                       onChange(tok)
                       setOpen(false)
                     }}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[var(--fill-2)]"
+                    className="flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-left text-xs font-bold transition-colors hover:bg-[var(--fill-3)]"
                     style={{
-                      background: selected ? 'var(--fill-3)' : undefined,
-                      color: selected ? 'var(--ink)' : 'var(--ink-2)',
+                      backgroundColor: selected ? 'var(--fill-3)' : 'transparent',
+                      color: 'var(--ink)',
                     }}
                   >
-                    <span className="flex items-center gap-2">
-                      <CoinLogo symbol={tok} size={16} />
-                      {tok}
+                    <span className="flex items-center gap-2.5">
+                      <CoinLogo symbol={tok} size={18} />
+                      <span>{tok}</span>
                     </span>
                     {selected && <Check className="size-3.5" style={{ color: 'var(--accent)' }} />}
                   </button>

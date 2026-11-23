@@ -614,7 +614,7 @@ function resolveHttpsOrigin(raw: string | undefined, fallback: string): string {
 export function buildAppCsp(env: Env): string {
   const widgetOrigin = resolveHttpsOrigin(env.ONRAMP_WIDGET_BASE_URL, SANDBOX_WIDGET_BASE_URL)
   const apiOrigin = resolveHttpsOrigin(env.ONRAMP_API_BASE_URL, SANDBOX_API_BASE_URL)
-  return `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' ${widgetOrigin} ${apiOrigin} https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${widgetOrigin}; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
+  return `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; worker-src 'self' blob:; connect-src 'self' ${widgetOrigin} ${apiOrigin} https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${widgetOrigin}; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
 }
 
 function withSecurityHeaders(res: Response, isApi: boolean, env: Env): Response {

@@ -1162,41 +1162,47 @@ export default function DocsPage() {
                   navigate('/')
                 }
               }}
-              className="flex items-center gap-2.5"
+              aria-label="OnPeer home"
+              className="group flex items-center gap-3"
             >
-              <LogoMark size={32} />
-              <div className="flex items-baseline gap-1.5">
-                <span className="brand-mark text-lg leading-none">OnPeer</span>
+              <span className="glow-accent rounded-xl transition-transform duration-500 group-hover:rotate-[-8deg] group-hover:scale-105">
+                <LogoMark size={40} />
+              </span>
+              <span className="leading-tight">
                 <span
-                  className="rounded-md px-1.5 py-0.5 text-[11px] font-bold tracking-tight"
-                  style={{ background: 'var(--fill-2)', color: 'var(--muted)' }}
+                  className="script block text-2xl leading-tight"
+                  style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
                 >
-                  Docs
+                  OnPeer
                 </span>
-              </div>
+                <span className="block text-xs" style={{ color: 'var(--subtle)' }}>
+                  USDC for South Asia
+                </span>
+              </span>
             </a>
 
-            {/* Version Selector Pill */}
-            <div ref={versionRef} className="relative hidden sm:block">
+            {/* Docs + Version Selector Pill */}
+            <div ref={versionRef} className="relative z-50 hidden sm:block">
               <button
                 type="button"
                 onClick={() => setVersionOpen((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[11px] font-semibold transition-colors hover:bg-[var(--fill-3)]"
+                className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] font-semibold transition-colors hover:bg-[var(--fill-3)]"
                 style={{
                   background: 'var(--fill-2)',
                   borderColor: 'var(--border-strong)',
                   color: 'var(--ink)',
                 }}
               >
-                <span>v2.1</span>
+                <span>Docs · v2.1</span>
                 <ChevronDown className="size-3 opacity-70" />
               </button>
               {versionOpen && (
                 <div
-                  className="absolute left-0 mt-2 w-60 rounded-2xl border p-1.5 shadow-2xl"
+                  className="absolute left-0 z-50 mt-2 w-60 rounded-2xl border p-1.5"
                   style={{
-                    background: 'var(--panel-solid)',
+                    backgroundColor: 'var(--panel-solid)',
                     borderColor: 'var(--border-strong)',
+                    boxShadow: '0 24px 60px rgba(0, 0, 0, 0.85)',
                   }}
                 >
                   <button
@@ -1692,9 +1698,21 @@ export default function DocsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <LogoMark size={28} />
-                <span className="brand-mark text-base">OnPeer Docs</span>
+              <div className="flex items-center gap-3">
+                <span className="glow-accent rounded-xl">
+                  <LogoMark size={36} />
+                </span>
+                <span className="leading-tight">
+                  <span
+                    className="script block text-xl leading-tight"
+                    style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
+                  >
+                    OnPeer
+                  </span>
+                  <span className="block text-[11px]" style={{ color: 'var(--subtle)' }}>
+                    USDC for South Asia
+                  </span>
+                </span>
               </div>
               <button
                 type="button"

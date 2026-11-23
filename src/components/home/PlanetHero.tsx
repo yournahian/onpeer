@@ -23,6 +23,8 @@ function createStarRand(initial = 4219) {
 export function PlanetHero() {
   const starCanvasRef = useRef<HTMLCanvasElement>(null)
   const rimCanvasRef = useRef<HTMLCanvasElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const [videoSrc, setVideoSrc] = useState(PLANET_VIDEO_URL)
   const [videoReady, setVideoReady] = useState(false)
   const [allowVideo, setAllowVideo] = useState(false)
 
@@ -36,6 +38,21 @@ export function PlanetHero() {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [])
+
+  useEffect(() => {
+    if (!allowVideo) return
+    const v = videoRef.current
+    if (!v) return
+    let raf = 0
+    if (v.readyState >= 2) {
+      raf = requestAnimationFrame(() => setVideoReady(true))
+    }
+    void v
+      .play()
+      .then(() => setVideoReady(true))
+      .catch(() => undefined)
+    return () => cancelAnimationFrame(raf)
+  }, [allowVideo, videoSrc])
 
   // Procedural static white starfield on canvas
   useEffect(() => {
@@ -150,13 +167,22 @@ export function PlanetHero() {
       {/* Desktop glowing orange planet-rim video with screen blend so black stays transparent */}
       {allowVideo && (
         <video
-          src={PLANET_VIDEO_URL}
+          ref={videoRef}
+          src={videoSrc}
           autoPlay
           loop
           muted
           playsInline
           aria-hidden
+          onLoadedData={() => setVideoReady(true)}
           onCanPlay={() => setVideoReady(true)}
+          onPlaying={() => setVideoReady(true)}
+          onError={() => {
+            if (videoSrc !== '/hero/hero-bg.mp4') {
+              setVideoReady(false)
+              setVideoSrc('/hero/hero-bg.mp4')
+            }
+          }}
           className="pointer-events-none absolute inset-0 z-[2] size-full object-cover object-top transition-opacity duration-[800ms]"
           style={{
             mixBlendMode: 'screen',

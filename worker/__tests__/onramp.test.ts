@@ -349,6 +349,7 @@ describe('POST /api/onramp/session', () => {
     const csp = buildAppCsp(makeSandboxEnv())
     expect(csp).toContain(`frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${SANDBOX_WIDGET_BASE_URL}`)
     expect(csp).toContain(`connect-src 'self' ${SANDBOX_WIDGET_BASE_URL} ${SANDBOX_API_BASE_URL}`)
+    expect(csp).toContain("media-src 'self' blob: https:")
   })
 
   it('src/lib/appkit.ts does not throw at module load when VITE_ONRAMP_WIDGET_BASE_URL is missing', async () => {
