@@ -4,7 +4,7 @@ import { ConnectKitButton } from 'connectkit'
 import { AlertTriangle, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { ESCROW_ADDRESS, SIDE_BUY, SIDE_SELL, sameAddr } from '@/lib/p2p'
-import { useAds, useArbiter, useBackupArbiter } from '@/hooks/useEscrow'
+import { useAllAds, useArbiter, useBackupArbiter } from '@/hooks/useEscrow'
 import { replaceQuery, useSearch } from '@/lib/router'
 import { unsubscribeEmailToken, useP2pAccount, verifyEmailToken } from '@/hooks/useAccount'
 import { SiteBar } from '@/components/SiteBar'
@@ -61,8 +61,8 @@ export default function P2PPage() {
   const deepCurrency = (params.get('currency') ?? '').trim().toUpperCase() || undefined
   const rawPost = params.get('post')
   const deepPostSide = rawPost === 'sell' ? SIDE_SELL : rawPost === 'buy' ? SIDE_BUY : undefined
-  const { ads } = useAds()
-  const deepAd = deepTradeId !== null ? ads.find((a) => a.id === deepTradeId) : undefined
+  const { ads } = useAllAds()
+  const deepAd = deepTradeId !== null ? ads.find((a) => a.id === deepTradeId || a.rawId === deepTradeId) : undefined
 
   const openOrder = (id: bigint | null) =>
     replaceQuery((p) => {

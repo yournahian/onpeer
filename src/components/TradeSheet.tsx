@@ -18,14 +18,12 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import {
   CHAIN_ID,
   DETAILS_MAX_BYTES,
   DETAILS_MODE,
-  ESCROW_ADDRESS,
   MAX_OPEN_ORDERS,
   SIDE_SELL,
   TIER0_CAP,
@@ -33,12 +31,14 @@ import {
   ZERO_BYTES32,
   computeBond,
   countryByCurrency,
+  encodeScopedId,
   fiatFor,
   formatDuration,
   formatFiat,
   formatOrderCap,
   formatPrice,
   formatUsdcAmount,
+  getEscrowConfig,
   hexToCurrency,
   isAdExpired,
   isUncapped,
@@ -59,7 +59,7 @@ import {
 import { useTx } from '@/hooks/useTx'
 import { useEligibility } from '@/hooks/useEligibility'
 import { Sheet } from '@/components/ui'
-import { MethodLogo } from '@/components/logos'
+import { CoinLogo, MethodLogo } from '@/components/logos'
 import { toast } from 'sonner'
 import { BackendApiError } from '@/lib/api'
 import { formatSavedMethodLine, useSavedPaymentMethods, type SavedPaymentMethod } from '@/hooks/useAccount'
@@ -76,13 +76,15 @@ const safeParse = (v: string, d: number): bigint => {
 
 function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const { address, isConnected } = useAccount()
+  const asset = ad.asset
+  const escrowCfg = getEscrowConfig(asset)
   const publicClient = usePublicClient({ chainId: CHAIN_ID })
-  const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx()
-  const balance = useUsdcBalance()
-  const allowance = useUsdcAllowance()
-  const openCount = useOpenOrderCount()
+  const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx(asset)
+  const balance = useUsdcBalance(asset)
+  const allowance = useUsdcAllowance(asset)
+  const openCount = useOpenOrderCount(asset)
   const now = useNow()
-  const { blocked, account, kycRequired } = useEligibility()
+  const { blocked, account, kycRequired } = useEligibility(asset)
   const makerKyc = useVerification(ad.maker)
   const { sealDetails } = useVaultActions()
   const { methods: savedMethods } = useSavedPaymentMethods()
@@ -218,7 +220,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const ready = usdcRaw > 0n && !problem && (userBuys || sellerInputsReady)
 
   const submit = async (onOpened: (orderId: bigint) => void) => {
-    const escrow = ESCROW_ADDRESS
+    const escrow = escrowCfg.escrowAddress
     if (!ready || !escrow || !address) return
     if (!userBuys && (allowance ?? 0n) < usdcRaw) {
       const ok = await approveUsdc(usdcRaw)
@@ -251,7 +253,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
         address: escrow,
         abi: p2pEscrowAbi,
         functionName: 'openOrder',
-        args: [ad.id, usdcRaw, ad.priceE6, detailsHashArg, plainDetailsArg],
+        args: [ad.rawId, usdcRaw, ad.priceE6, detailsHashArg, plainDetailsArg],
         chainId: CHAIN_ID,
       }),
     )
@@ -263,10 +265,12 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
       args: [address],
     })
     const last = ids[ids.length - 1]
-    if (last !== undefined) onOpened(last)
+    if (last !== undefined) onOpened(encodeScopedId(asset, last))
   }
 
   return {
+    asset,
+    escrowAddress: escrowCfg.escrowAddress,
     isConnected,
     balance,
     now,
@@ -449,8 +453,8 @@ function MobileOrderScreen({
 
         <div className="text-center">
           <div className="inline-flex items-center gap-1.5 text-base font-extrabold text-[var(--p2p-ink)]">
-            <TokenUSDC variant="branded" size={20} />
-            <span>{s.userBuys ? 'Buy USDC' : 'Sell USDC'}</span>
+            <CoinLogo symbol={s.asset} size={20} />
+            <span>{s.userBuys ? `Buy ${s.asset}` : `Sell ${s.asset}`}</span>
           </div>
           <p className="p2p-mono mt-0.5 flex items-center justify-center gap-1 text-xs text-[var(--p2p-muted)]">
             Price {s.country?.symbol} {formatPrice(ad.priceE6)} <RefreshCw className="size-3" />
@@ -484,7 +488,7 @@ function MobileOrderScreen({
                 s.edited === 'usdc' ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)]'
               }`}
             >
-              By USDC
+              By {s.asset}
               {s.edited === 'usdc' && (
                 <span className="absolute inset-x-0 bottom-0 mx-auto h-[3px] w-6 rounded-full bg-[#FF5A00]" />
               )}
@@ -517,7 +521,7 @@ function MobileOrderScreen({
             )}
 
             <div className="flex shrink-0 items-center gap-2.5 text-sm font-bold">
-              <span className="text-[var(--p2p-ink)]">{s.edited === 'fiat' ? s.currency : 'USDC'}</span>
+              <span className="text-[var(--p2p-ink)]">{s.edited === 'fiat' ? s.currency : s.asset}</span>
               <button
                 type="button"
                 onClick={() => s.setMaxAmount(s.edited)}
@@ -531,14 +535,14 @@ function MobileOrderScreen({
           <p className="p2p-mono text-xs text-[var(--p2p-muted)]">
             {s.edited === 'fiat'
               ? `Limit ${formatFiat(fiatFor(s.adLow, ad.priceE6), 0)} - ${formatFiat(fiatFor(s.effectiveHigh, ad.priceE6), 0)} ${s.currency}`
-              : `Limit ${formatUsdcAmount(s.adLow)} - ${formatUsdcAmount(s.effectiveHigh)} USDC`}
+              : `Limit ${formatUsdcAmount(s.adLow)} - ${formatUsdcAmount(s.effectiveHigh)} ${s.asset}`}
           </p>
 
           <div className="flex items-center justify-between pt-1 text-xs">
-            <span className="text-[var(--p2p-muted)]">{s.userBuys ? 'You Receive' : 'You Receive'}</span>
+            <span className="text-[var(--p2p-muted)]">You Receive</span>
             <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
               {s.userBuys
-                ? `${s.usdcRaw > 0n ? formatUsdcAmount(s.usdcRaw, 4) : '0'} USDC`
+                ? `${s.usdcRaw > 0n ? formatUsdcAmount(s.usdcRaw, 4) : '0'} ${s.asset}`
                 : `${s.country?.symbol ?? ''}${s.fiatRaw > 0n ? formatFiat(s.fiatRaw) : '0.00'} ${s.currency}`}
             </span>
           </div>
@@ -664,7 +668,7 @@ function MobileOrderScreen({
           >
             {s.busy && <Loader2 className="size-4 animate-spin" />}
             {s.pendingKey === 'approve'
-              ? 'Approve USDC...'
+              ? `Approve ${s.asset}...`
               : s.busy
                 ? 'Confirming...'
                 : 'Place Order'}
@@ -763,13 +767,13 @@ export function InlineOrderDrawer({
               <div>
                 <span className="block text-[var(--p2p-muted)]">Available Escrow</span>
                 <span className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
-                  {formatUsdcAmount(ad.available)} USDC
+                  {formatUsdcAmount(ad.available)} {s.asset}
                 </span>
               </div>
               <div>
                 <span className="block text-[var(--p2p-muted)]">Asymmetric Dispute Bond</span>
                 <span className="p2p-mono mt-0.5 font-semibold text-[#FF5A00]">
-                  {formatUsdcAmount(previewBond)} USDC (loser pays)
+                  {formatUsdcAmount(previewBond)} {s.asset} (loser pays)
                 </span>
               </div>
             </div>
@@ -806,18 +810,16 @@ export function InlineOrderDrawer({
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[var(--p2p-muted)]">
             <span className="inline-flex items-center gap-1.5">
               <Lock className="size-3.5 text-[#FF5A00]" />
-              {s.userBuys ? 'Seller USDC locked in smart contract' : 'Your USDC locks in escrow on open'}
+              {s.userBuys ? `Seller ${s.asset} locked in smart contract` : `Your ${s.asset} locks in escrow on open`}
             </span>
-            {ESCROW_ADDRESS && (
-              <a
-                href={buildAddressExplorerUrl(CHAIN_ID, ESCROW_ADDRESS)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] hover:underline"
-              >
-                Verify Escrow <ExternalLink className="size-3" />
-              </a>
-            )}
+            <a
+              href={buildAddressExplorerUrl(CHAIN_ID, s.escrowAddress)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] hover:underline"
+            >
+              Verify Escrow <ExternalLink className="size-3" />
+            </a>
           </div>
         </div>
 
@@ -891,7 +893,7 @@ export function InlineOrderDrawer({
                     className="p2p-mono w-full bg-transparent text-lg font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]"
                   />
                   <span className="inline-flex items-center gap-1.5 border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
-                    <TokenUSDC variant="branded" size={14} /> USDC
+                    <CoinLogo symbol={s.asset} size={14} /> {s.asset}
                   </span>
                 </div>
               </div>
@@ -903,8 +905,8 @@ export function InlineOrderDrawer({
                   <span className="font-medium text-[var(--p2p-muted)]">I want to sell</span>
                   <span className="p2p-mono text-[var(--p2p-muted)]">
                     {s.balance !== undefined
-                      ? `Wallet: ${formatUsdcAmount(s.balance)} USDC`
-                      : `Max: ${formatUsdcAmount(s.effectiveHigh)} USDC`}
+                      ? `Wallet: ${formatUsdcAmount(s.balance)} ${s.asset}`
+                      : `Max: ${formatUsdcAmount(s.effectiveHigh)} ${s.asset}`}
                   </span>
                 </div>
                 <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
@@ -929,7 +931,7 @@ export function InlineOrderDrawer({
                     Max
                   </button>
                   <span className="inline-flex items-center gap-1.5 border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
-                    <TokenUSDC variant="branded" size={14} /> USDC
+                    <CoinLogo symbol={s.asset} size={14} /> {s.asset}
                   </span>
                 </div>
               </div>
@@ -1068,12 +1070,12 @@ export function InlineOrderDrawer({
               >
                 {s.busy && <Loader2 className="size-4 animate-spin" />}
                 {s.pendingKey === 'approve'
-                  ? 'Approve USDC...'
+                  ? `Approve ${s.asset}...`
                   : s.busy
                     ? 'Confirming...'
                     : s.userBuys
-                      ? 'Buy USDC'
-                      : 'Sell USDC'}
+                      ? `Buy ${s.asset}`
+                      : `Sell ${s.asset}`}
               </button>
             ) : (
               <ConnectKitButton.Custom>
@@ -1162,13 +1164,13 @@ function TradePopupStage({
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-3.5 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <TokenUSDC variant="branded" size={22} />
+            <CoinLogo symbol={s.asset} size={22} />
             <div>
               <h3 className="text-base font-bold text-[var(--p2p-ink)]">
-                {s.userBuys ? 'Buy USDC' : 'Sell USDC'} with {s.currency}
+                {s.userBuys ? `Buy ${s.asset}` : `Sell ${s.asset}`} with {s.currency}
               </h3>
               <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                Rate {formatPrice(ad.priceE6)} {s.currency}/USDC • Escrow Protected
+                Rate {formatPrice(ad.priceE6)} {s.currency}/{s.asset} • Escrow Protected
               </p>
             </div>
           </div>
@@ -1264,7 +1266,7 @@ export function TradeSheet({
   onOpened: (orderId: bigint) => void
 }) {
   return (
-    <Sheet open={!!ad} onClose={onClose} title={ad ? (ad.side === SIDE_SELL ? 'Buy USDC' : 'Sell USDC') : ''}>
+    <Sheet open={!!ad} onClose={onClose} title={ad ? (ad.side === SIDE_SELL ? `Buy ${ad.asset}` : `Sell ${ad.asset}`) : ''}>
       {ad && (
         <div className="p2p-terminal rounded-xl">
           <InlineOrderDrawer

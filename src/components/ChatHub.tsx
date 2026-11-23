@@ -47,19 +47,20 @@ function formatThreadTime(createdSec: bigint, nowSec: number): string {
 
 function formatThreadSubtitle(o: OrderWithId, isBuyer: boolean): string {
   const amt = formatUsdcAmount(o.amount)
+  const sym = o.asset
   if (o.status === STATUS.COMPLETED || o.status === STATUS.RESOLVED_BUYER) {
-    return isBuyer ? `You received ${amt} USDC.` : `You sent ${amt} USDC.`
+    return isBuyer ? `You received ${amt} ${sym}.` : `You sent ${amt} ${sym}.`
   }
   if (o.status === STATUS.CANCELLED || o.status === STATUS.RESOLVED_SELLER) {
-    return `Order #${o.id.toString()} canceled.`
+    return `Order #${o.rawId.toString()} canceled.`
   }
   if (o.status === STATUS.DISPUTED) {
-    return `Dispute open on Order #${o.id.toString()} (${amt} USDC)`
+    return `Dispute open on Order #${o.rawId.toString()} (${amt} ${sym})`
   }
   if (o.status === STATUS.PAID) {
-    return `Payment marked • ${amt} USDC awaiting release`
+    return `Payment marked • ${amt} ${sym} awaiting release`
   }
-  return `Active Order #${o.id.toString()} • ${amt} USDC`
+  return `Active Order #${o.rawId.toString()} • ${amt} ${sym}`
 }
 
 export function ChatHub({
@@ -388,8 +389,8 @@ export function ChatHub({
                         <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">({shortAddr(peer)})</span>
                       </div>
                       <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                        Order #{selectedOrder.id.toString()} • {formatUsdcAmount(selectedOrder.amount)} USDC (
-                        {formatFiat(selectedOrder.fiatAmountE6, 0)} {cur}) •{' '}
+                        Order #{selectedOrder.rawId.toString()} • {formatUsdcAmount(selectedOrder.amount)}{' '}
+                        {selectedOrder.asset} ({formatFiat(selectedOrder.fiatAmountE6, 0)} {cur}) •{' '}
                         <span className="text-[#FF5A00]">
                           {STATUS_META[selectedOrder.status]?.label ?? 'Order'}
                         </span>

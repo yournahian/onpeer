@@ -17,6 +17,8 @@ import { CHAIN_ID, type Env } from './env'
 export const BACKUP_ARBITER_DELAY_SECONDS = 7 * 24 * 60 * 60 // 7 days (matches contract BACKUP_ARBITER_DELAY)
 export const ARBITER_PAID_DELAY_SECONDS = 15 * 60 // 15 minutes after paidAt
 export const ORDER_RETENTION_SECONDS = 90 * 24 * 60 * 60 // 90 days post-completion for chat & vault
+export const EURC_ID_OFFSET = 1_000_000_000_000n
+const DEFAULT_EURC_ESCROW = '0x0db2fbf8357617172a3b852bc2ac3054dba1d402' as Address
 
 export const ORDER_STATUS = {
   NONE: 0,
@@ -125,6 +127,11 @@ export function requireEscrowAddress(env: Env): Address {
   return raw
 }
 
+export function resolveEurcEscrowAddress(env: Env): Address {
+  const raw = env.VITE_P2P_EURC_ESCROW_ADDRESS?.trim()
+  return raw && isAddress(raw) ? raw : DEFAULT_EURC_ESCROW
+}
+
 export function createArcPublicClient() {
   const rpcUrl = requireChain(CHAIN_ID).rpcUrls[0]
   return createPublicClient({
@@ -139,6 +146,7 @@ export function createArcPublicClient() {
  */
 export function createChainReader(env: Env): ChainReader {
   const escrow = requireEscrowAddress(env)
+  const eurcEscrow = resolveEurcEscrowAddress(env)
   const client = createArcPublicClient()
   let rolesPromise: Promise<ChainRoles> | null = null
 
@@ -168,17 +176,21 @@ export function createChainReader(env: Env): ChainReader {
 
     async getOrder(orderId: bigint): Promise<ChainOrder | null> {
       if (orderId <= 0n) return null
+      const isEurc = orderId >= EURC_ID_OFFSET
+      const rawId = isEurc ? orderId - EURC_ID_OFFSET : orderId
+      if (rawId <= 0n) return null
+      const targetEscrow = isEurc ? eurcEscrow : escrow
       try {
         const o = await client.readContract({
-          address: escrow,
+          address: targetEscrow,
           abi: p2pEscrowAbi,
           functionName: 'getOrder',
-          args: [orderId],
+          args: [rawId],
         })
         if (Number(o.status) === ORDER_STATUS.NONE) return null
         return {
           id: orderId,
-          adId: o.adId,
+          adId: isEurc ? o.adId + EURC_ID_OFFSET : o.adId,
           buyer: lowerAddr(o.buyer),
           seller: lowerAddr(o.seller),
           taker: lowerAddr(o.taker),
@@ -202,12 +214,16 @@ export function createChainReader(env: Env): ChainReader {
 
     async getAd(adId: bigint): Promise<ChainAd | null> {
       if (adId <= 0n) return null
+      const isEurc = adId >= EURC_ID_OFFSET
+      const rawId = isEurc ? adId - EURC_ID_OFFSET : adId
+      if (rawId <= 0n) return null
+      const targetEscrow = isEurc ? eurcEscrow : escrow
       try {
         const ad = await client.readContract({
-          address: escrow,
+          address: targetEscrow,
           abi: p2pEscrowAbi,
           functionName: 'getAd',
-          args: [adId],
+          args: [rawId],
         })
         if (ad.maker === '0x0000000000000000000000000000000000000000') return null
         return {
@@ -236,21 +252,23 @@ export function createChainReader(env: Env): ChainReader {
     },
 
     async getOpenOrderCount(wallet: `0x${string}`): Promise<bigint> {
-      return client.readContract({
-        address: escrow,
-        abi: p2pEscrowAbi,
-        functionName: 'partyOpenOrders',
-        args: [wallet],
-      })
+      const [usdcOpen, eurcOpen] = await Promise.all([
+        client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'partyOpenOrders', args: [wallet] }),
+        client
+          .readContract({ address: eurcEscrow, abi: p2pEscrowAbi, functionName: 'partyOpenOrders', args: [wallet] })
+          .catch(() => 0n),
+      ])
+      return usdcOpen + eurcOpen
     },
 
     async getUserAdIds(wallet: `0x${string}`): Promise<readonly bigint[]> {
-      return client.readContract({
-        address: escrow,
-        abi: p2pEscrowAbi,
-        functionName: 'getUserAdIds',
-        args: [wallet],
-      })
+      const [usdcIds, eurcIds] = await Promise.all([
+        client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'getUserAdIds', args: [wallet] }),
+        client
+          .readContract({ address: eurcEscrow, abi: p2pEscrowAbi, functionName: 'getUserAdIds', args: [wallet] })
+          .catch(() => [] as readonly bigint[]),
+      ])
+      return [...usdcIds, ...eurcIds.map((id) => id + EURC_ID_OFFSET)]
     },
   }
 }

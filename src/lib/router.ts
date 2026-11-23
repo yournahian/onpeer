@@ -8,6 +8,7 @@ export type Route =
   | 'buy'
   | 'admin'
   | 'assistant'
+  | 'docs'
   | 'brand-kit'
   | 'privacy'
 
@@ -35,6 +36,7 @@ function currentRoute(): Route {
   if (pathname.startsWith('/cashout')) return 'p2p'
   if (pathname.startsWith('/admin')) return 'admin'
   if (pathname.startsWith('/assistant')) return 'assistant'
+  if (pathname.startsWith('/docs')) return 'docs'
   if (pathname.startsWith('/brand-kit')) return 'brand-kit'
   if (pathname.startsWith('/privacy')) return 'privacy'
   // Older order links were shared as /?order=ID

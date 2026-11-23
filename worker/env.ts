@@ -25,6 +25,9 @@ export interface Env {
   // Public / non-secret runtime vars
   VITE_P2P_ESCROW_ADDRESS?: string
   VITE_P2P_DEPLOY_BLOCK?: string
+  VITE_P2P_EURC_ESCROW_ADDRESS?: string
+  VITE_P2P_EURC_DEPLOY_BLOCK?: string
+  VITE_ARC_TESTNET_EURC_ADDRESS?: string
   DIDIT_MODE?: 'sandbox' | 'live' | string
   PUBLIC_APP_URL?: string
   ONRAMP_API_BASE_URL?: string

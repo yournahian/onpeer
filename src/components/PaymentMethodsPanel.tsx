@@ -165,13 +165,14 @@ export function PaymentMethodsPanel() {
 
   return (
     <section className="space-y-4">
-      {/* Header Row (SS 4 Style) */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="max-w-3xl text-xs leading-relaxed text-[var(--p2p-muted)]">
-          P2P payment methods: When you sell cryptocurrencies, the payment method added will be displayed to buyer as
-          options to accept payment — please ensure that the account owner&apos;s name is consistent with your verified
-          name on OnPeer. You can add up to 20 payment methods.{' '}
-          <span className="inline-flex items-center gap-1 font-semibold text-[#FF5A00]">
+      {/* Header Row (SS 4 Style — High Contrast Surface Over Ribbon Backdrop) */}
+      <div className="flex flex-col gap-3 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-4 py-3.5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <p className="max-w-3xl text-xs font-medium leading-relaxed text-[var(--p2p-ink)] sm:text-[13px]">
+          <strong className="font-bold text-[var(--p2p-ink)]">P2P payment methods:</strong> When you sell
+          cryptocurrencies, the payment method added will be displayed to buyer as options to accept payment — please
+          ensure that the account owner&apos;s name is consistent with your verified name on OnPeer. You can add up to
+          20 payment methods.{' '}
+          <span className="ml-1 inline-flex items-center gap-1 rounded bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
             <Lock className="size-3" /> AES-256 Encrypted ({methods.length}/20)
           </span>
         </p>
@@ -181,7 +182,7 @@ export function PaymentMethodsPanel() {
             type="button"
             onClick={openAddForm}
             disabled={methods.length >= 20}
-            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] transition-colors hover:border-[#FF5A00] hover:text-[#FF5A00] disabled:opacity-40"
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] transition-colors hover:border-[#FF5A00] hover:bg-[#FF5A00] hover:text-white disabled:opacity-40"
           >
             <Plus className="size-4" /> Add a payment method
           </button>

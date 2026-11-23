@@ -1159,8 +1159,8 @@ export function AccountPanel({
         </div>
       )}
 
-      {/* 6 Horizontal Underline Tabs (Exact SS 4) */}
-      <div className="flex flex-wrap items-center gap-7 border-b border-[var(--p2p-border)]">
+      {/* 6 Horizontal Underline Tabs inside High-Contrast Bar (Exact SS 4 — Readable over Ribbon) */}
+      <div className="flex flex-wrap items-center gap-6 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-5 pt-3 shadow-sm">
         {[
           { id: 'payments' as const, label: 'P2P Payment Methods' },
           { id: 'feedback' as const, label: `Feedback (${totalFeedback})` },

@@ -19,7 +19,7 @@ import {
   CHAIN_ID,
   COUNTRIES,
   DEFAULT_TTL_HOURS,
-  ESCROW_ADDRESS,
+  P2P_ASSETS,
   SIDE_SELL,
   STATUS,
   STATUS_META,
@@ -28,16 +28,18 @@ import {
   formatFiat,
   formatPrice,
   formatUsdcAmount,
+  getEscrowConfig,
   hexToCurrency,
   isActiveStatus,
   isAdExpired,
   maskToMethods,
   sameAddr,
+  type P2pAsset,
 } from '@/lib/p2p'
 import { buildShareLink } from '@/lib/share'
 import { parseUnitsExact } from '@/onchain-money'
 import {
-  useAds,
+  useAllAds,
   useNow,
   useOrderTxHashes,
   useOrders,
@@ -131,6 +133,7 @@ export function MyOrders({
 
   const [topTab, setTopTab] = useState<'processing' | 'all' | 'pnl'>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'canceled' | 'unpaid' | 'paid' | 'disputed'>('all')
+  const [assetFilter, setAssetFilter] = useState<'ALL' | P2pAsset>('ALL')
   const [currencyFilter, setCurrencyFilter] = useState<string>('ALL')
   const [sideFilter, setSideFilter] = useState<'all' | 'buy' | 'sell'>('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -173,6 +176,10 @@ export function MyOrders({
         }
       }
 
+      if (assetFilter !== 'ALL' && o.asset !== assetFilter) {
+        return false
+      }
+
       if (currencyFilter !== 'ALL' && hexToCurrency(o.currency) !== currencyFilter) {
         return false
       }
@@ -185,11 +192,11 @@ export function MyOrders({
       if (fromSec !== null && Number.isFinite(fromSec) && created < fromSec) return false
       if (toSec !== null && Number.isFinite(toSec) && created > toSec) return false
 
-      if (q && !o.id.toString().includes(q)) return false
+      if (q && !o.rawId.toString().includes(q) && !o.id.toString().includes(q)) return false
 
       return true
     })
-  }, [mine, topTab, statusFilter, currencyFilter, sideFilter, dateFrom, dateTo, searchId, address])
+  }, [mine, topTab, statusFilter, assetFilter, currencyFilter, sideFilter, dateFrom, dateTo, searchId, address])
 
   const pnlByCurrency = useMemo(() => {
     const map = new Map<
@@ -244,6 +251,7 @@ export function MyOrders({
 
   const resetFilters = () => {
     setStatusFilter('all')
+    setAssetFilter('ALL')
     setCurrencyFilter('ALL')
     setSideFilter('all')
     setDateFrom('')
@@ -261,7 +269,6 @@ export function MyOrders({
   }
 
   const processingCount = mine.filter((o) => isActiveStatus(o.status)).length
-  const fallbackExplorerUrl = ESCROW_ADDRESS ? buildAddressExplorerUrl(CHAIN_ID, ESCROW_ADDRESS) : null
 
   const subPills =
     topTab === 'processing'
@@ -377,7 +384,18 @@ export function MyOrders({
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
               <span className="text-[var(--p2p-muted)]">Coins</span>
-              <span className="font-bold text-[var(--p2p-ink)]">USDC</span>
+              <select
+                value={assetFilter}
+                onChange={(e) => setAssetFilter(e.target.value === 'USDC' || e.target.value === 'EURC' ? e.target.value : 'ALL')}
+                className="bg-transparent font-bold text-[var(--p2p-ink)] outline-none"
+              >
+                <option value="ALL">All coins</option>
+                {P2P_ASSETS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex h-10 items-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs">
@@ -471,12 +489,15 @@ export function MyOrders({
                 <ul className="divide-y divide-[var(--p2p-border)]">
                   {filteredOrders.map((o) => {
                     const idStr = o.id.toString()
+                    const displayIdStr = o.rawId.toString()
                     const currency = hexToCurrency(o.currency)
                     const isBuyer = sameAddr(address, o.buyer)
                     const peerWallet = (isBuyer ? o.seller : o.buyer).toLowerCase()
                     const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet))
                     const txHash = txHashes[idStr]
-                    const txUrl = txHash ? buildTxExplorerUrl(CHAIN_ID, txHash) : fallbackExplorerUrl
+                    const txUrl = txHash
+                      ? buildTxExplorerUrl(CHAIN_ID, txHash)
+                      : buildAddressExplorerUrl(CHAIN_ID, getEscrowConfig(o.asset).escrowAddress)
 
                     return (
                       <li
@@ -489,7 +510,7 @@ export function MyOrders({
                             <span className={isBuyer ? 'text-[#FF5A00]' : 'text-red-400'}>
                               {isBuyer ? 'Buy' : 'Sell'}
                             </span>{' '}
-                            <span className="text-[var(--p2p-ink)]">USDC</span>
+                            <span className="text-[var(--p2p-ink)]">{o.asset}</span>
                           </p>
                           <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
                             {formatOrderTimestamp(o.createdAt)}
@@ -503,12 +524,12 @@ export function MyOrders({
                             onClick={() => onOpen(o.id)}
                             className="p2p-mono font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
                           >
-                            {idStr}
+                            {displayIdStr}
                           </button>
                           <button
                             type="button"
-                            onClick={() => void copyOrderNumber(idStr)}
-                            aria-label={`Copy order ${idStr}`}
+                            onClick={() => void copyOrderNumber(displayIdStr)}
+                            aria-label={`Copy order ${displayIdStr}`}
                             className="rounded p-1 text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
                           >
                             <Copy className="size-3.5" />
@@ -526,7 +547,7 @@ export function MyOrders({
                             {formatFiat(o.fiatAmountE6, 0)} {currency}
                           </p>
                           <p className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                            {formatUsdcAmount(o.amount)} USDC
+                            {formatUsdcAmount(o.amount)} {o.asset}
                           </p>
                         </div>
 
@@ -581,13 +602,16 @@ export function MyOrders({
               <ul className="space-y-2.5 md:hidden">
                 {filteredOrders.map((o) => {
                   const idStr = o.id.toString()
+                  const displayIdStr = o.rawId.toString()
                   const currency = hexToCurrency(o.currency)
                   const country = countryByCurrency(currency)
                   const isBuyer = sameAddr(address, o.buyer)
                   const peerWallet = (isBuyer ? o.seller : o.buyer).toLowerCase()
                   const peerLabel = traderLabel(peerWallet, profilesMap.get(peerWallet))
                   const txHash = txHashes[idStr]
-                  const txUrl = txHash ? buildTxExplorerUrl(CHAIN_ID, txHash) : fallbackExplorerUrl
+                  const txUrl = txHash
+                    ? buildTxExplorerUrl(CHAIN_ID, txHash)
+                    : buildAddressExplorerUrl(CHAIN_ID, getEscrowConfig(o.asset).escrowAddress)
 
                   return (
                     <li
@@ -599,7 +623,7 @@ export function MyOrders({
                           <span className={isBuyer ? 'text-[#FF5A00]' : 'text-red-400'}>
                             {isBuyer ? 'Buy' : 'Sell'}
                           </span>{' '}
-                          <span className="text-[var(--p2p-ink)]">USDC</span>
+                          <span className="text-[var(--p2p-ink)]">{o.asset}</span>
                         </span>
                         <button
                           type="button"
@@ -614,12 +638,12 @@ export function MyOrders({
                         <span>Amount</span>
                         <span className="p2p-mono font-bold text-[var(--p2p-ink)]">
                           {country?.symbol}
-                          {formatFiat(o.fiatAmountE6, 0)} {currency} ({formatUsdcAmount(o.amount)} USDC)
+                          {formatFiat(o.fiatAmountE6, 0)} {currency} ({formatUsdcAmount(o.amount)} {o.asset})
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between text-[var(--p2p-muted)]">
-                        <span>Order #{idStr}</span>
+                        <span>Order #{displayIdStr}</span>
                         <span className="p2p-mono">{formatOrderTimestamp(o.createdAt)}</span>
                       </div>
 
@@ -700,7 +724,7 @@ function ArbiterOrderRow({
         <div>
           <span className="block text-[11px] text-[var(--p2p-muted)]">Crypto Amount</span>
           <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
-            {formatUsdcAmount(order.amount)} USDC
+            {formatUsdcAmount(order.amount)} {order.asset}
           </span>
         </div>
 
@@ -764,7 +788,7 @@ export function ArbiterPanel({ onOpen }: { onOpen: (id: bigint) => void }) {
 
 export function MyAds({ onPostAd }: { onPostAd: () => void }) {
   const { address, isConnected } = useAccount()
-  const { ads, isLoading } = useAds()
+  const { ads, isLoading } = useAllAds()
   const now = useNow()
   const { run, writeContractAsync, pendingKey } = useTx()
   const [editing, setEditing] = useState<bigint | null>(null)
@@ -792,21 +816,28 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
     )
   }
 
-  const base = { address: ESCROW_ADDRESS!, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
-  const updatePrice = (id: bigint, priceE6: bigint) =>
-    run(`price-${id}`, 'Update price', () =>
-      writeContractAsync({ ...base, functionName: 'setAdPrice', args: [id, priceE6] }),
+  const baseFor = (asset: P2pAsset) => ({
+    address: getEscrowConfig(asset).escrowAddress,
+    abi: p2pEscrowAbi,
+    chainId: CHAIN_ID,
+  }) as const
+
+  const updatePrice = (ad: (typeof mine)[number], priceE6: bigint) =>
+    run(`price-${ad.id}`, 'Update price', () =>
+      writeContractAsync({ ...baseFor(ad.asset), functionName: 'setAdPrice', args: [ad.rawId, priceE6] }),
     )
-  const setPaused = (id: bigint, paused: boolean) =>
-    run(`pause-${id}`, paused ? 'Pause ad' : 'Resume ad', () =>
-      writeContractAsync({ ...base, functionName: 'setAdPaused', args: [id, paused] }),
+  const setPaused = (ad: (typeof mine)[number], paused: boolean) =>
+    run(`pause-${ad.id}`, paused ? 'Pause ad' : 'Resume ad', () =>
+      writeContractAsync({ ...baseFor(ad.asset), functionName: 'setAdPaused', args: [ad.rawId, paused] }),
     )
-  const refreshAd = (id: bigint) =>
-    run(`refresh-${id}`, 'Refresh ad expiry', () =>
-      writeContractAsync({ ...base, functionName: 'refreshAd', args: [id, DEFAULT_TTL_HOURS] }),
+  const refreshAd = (ad: (typeof mine)[number]) =>
+    run(`refresh-${ad.id}`, 'Refresh ad expiry', () =>
+      writeContractAsync({ ...baseFor(ad.asset), functionName: 'refreshAd', args: [ad.rawId, DEFAULT_TTL_HOURS] }),
     )
-  const closeAd = (id: bigint) =>
-    run(`close-${id}`, 'Close ad', () => writeContractAsync({ ...base, functionName: 'closeAd', args: [id] }))
+  const closeAd = (ad: (typeof mine)[number]) =>
+    run(`close-${ad.id}`, 'Close ad', () =>
+      writeContractAsync({ ...baseFor(ad.asset), functionName: 'closeAd', args: [ad.rawId] }),
+    )
 
   const copyAdShare = async (adId: string) => {
     try {
@@ -849,17 +880,17 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                 <div className="space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded bg-[var(--p2p-tint)] px-2 py-0.5 text-xs font-bold text-[#FF5A00]">
-                      {sell ? 'SELL USDC' : 'BUY USDC'}
+                      {sell ? `SELL ${ad.asset}` : `BUY ${ad.asset}`}
                     </span>
                     <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
-                      {formatUsdcAmount(ad.available)} USDC remaining
+                      {formatUsdcAmount(ad.available)} {ad.asset} remaining
                     </span>
-                    <span className="p2p-mono text-xs text-[var(--p2p-muted)]">Ad #{id}</span>
+                    <span className="p2p-mono text-xs text-[var(--p2p-muted)]">Ad #{ad.rawId.toString()}</span>
                   </div>
 
                   <p className="p2p-mono text-xs text-[var(--p2p-muted)]">
                     Rate: <strong className="text-[var(--p2p-ink)]">{formatPrice(ad.priceE6)} {currency}</strong> • Limits:{' '}
-                    {formatUsdcAmount(ad.minAmount)} - {formatUsdcAmount(ad.maxAmount)} USDC
+                    {formatUsdcAmount(ad.minAmount)} - {formatUsdcAmount(ad.maxAmount)} {ad.asset}
                     {!ad.closed && (
                       <>
                         {' '}•{' '}
@@ -912,7 +943,7 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                         type="button"
                         disabled={!newPrice || pendingKey === `price-${id}`}
                         onClick={() =>
-                          void updatePrice(ad.id, parseUnitsExact(newPrice, 6)).then((ok) => ok && setEditing(null))
+                          void updatePrice(ad, parseUnitsExact(newPrice, 6)).then((ok) => ok && setEditing(null))
                         }
                         className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
                       >
@@ -932,7 +963,7 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                       <button
                         type="button"
                         disabled={pendingKey === `refresh-${id}`}
-                        onClick={() => void refreshAd(ad.id)}
+                        onClick={() => void refreshAd(ad)}
                         className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3.5 text-xs font-bold transition-colors ${
                           expired
                             ? 'bg-[#FF5A00] text-[#FFFFFF]'
@@ -962,7 +993,7 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                       <button
                         type="button"
                         disabled={pendingKey === `pause-${id}`}
-                        onClick={() => void setPaused(ad.id, !ad.paused)}
+                        onClick={() => void setPaused(ad, !ad.paused)}
                         className="min-h-9 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)]"
                       >
                         {ad.paused ? 'Resume Ad' : 'Pause Ad'}
@@ -971,10 +1002,10 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                       <button
                         type="button"
                         disabled={pendingKey === `close-${id}`}
-                        onClick={() => void closeAd(ad.id)}
+                        onClick={() => void closeAd(ad)}
                         className="min-h-9 rounded-lg border border-[#FF5A00] bg-transparent px-3.5 text-xs font-bold text-[#FF5A00] hover:bg-[var(--p2p-tint)]"
                       >
-                        {sell ? 'Close & Withdraw USDC' : 'Close Ad'}
+                        {sell ? `Close & Withdraw ${ad.asset}` : 'Close Ad'}
                       </button>
                     </div>
                   )}

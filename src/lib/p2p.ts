@@ -6,6 +6,10 @@ export const CHAIN_ID = arcTestnet.id
 
 const DEFAULT_ESCROW_ADDRESS = '0xf719ebbc5080aee09e38909764b897e0bf01a9b0' as Address
 const DEFAULT_DEPLOY_BLOCK = 72902228n
+const DEFAULT_EURC_ESCROW_ADDRESS = '0x0db2fbf8357617172a3b852bc2ac3054dba1d402' as Address
+const DEFAULT_EURC_DEPLOY_BLOCK = 73721819n
+const DEFAULT_USDC_TOKEN_ADDRESS = '0x3600000000000000000000000000000000000000' as Address
+const DEFAULT_EURC_TOKEN_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as Address
 const DEPRECATED_ESCROWS = new Set([
   '0x271b519275380f60fa100d0cff101800893a8fa0', // v1 (deprecated)
   '0x22f28c481f2842c5a68028944a4f3fa7ebdf58de', // v2.0 (deprecated)
@@ -21,6 +25,64 @@ export const ESCROW_ADDRESS: Address | undefined =
 const rawBlock = (import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined)?.trim()
 const parsedBlock = rawBlock && /^\d+$/.test(rawBlock) ? BigInt(rawBlock) : 0n
 export const DEPLOY_BLOCK = parsedBlock >= DEFAULT_DEPLOY_BLOCK ? parsedBlock : DEFAULT_DEPLOY_BLOCK
+
+const rawEurcEscrow = (import.meta.env.VITE_P2P_EURC_ESCROW_ADDRESS as string | undefined)?.trim()
+export const EURC_ESCROW_ADDRESS: Address =
+  rawEurcEscrow && /^0x[0-9a-fA-F]{40}$/.test(rawEurcEscrow)
+    ? (rawEurcEscrow as Address)
+    : DEFAULT_EURC_ESCROW_ADDRESS
+
+const rawEurcBlock = (import.meta.env.VITE_P2P_EURC_DEPLOY_BLOCK as string | undefined)?.trim()
+const parsedEurcBlock = rawEurcBlock && /^\d+$/.test(rawEurcBlock) ? BigInt(rawEurcBlock) : 0n
+export const EURC_DEPLOY_BLOCK =
+  parsedEurcBlock >= DEFAULT_EURC_DEPLOY_BLOCK ? parsedEurcBlock : DEFAULT_EURC_DEPLOY_BLOCK
+
+const rawEurcToken = (import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined)?.trim()
+export const EURC_TOKEN_ADDRESS: Address =
+  rawEurcToken && /^0x[0-9a-fA-F]{40}$/.test(rawEurcToken)
+    ? (rawEurcToken as Address)
+    : DEFAULT_EURC_TOKEN_ADDRESS
+
+export const P2P_ASSETS = ['USDC', 'EURC'] as const
+export type P2pAsset = (typeof P2P_ASSETS)[number]
+export const EURC_ID_OFFSET = 1_000_000_000_000n
+
+export function getEscrowConfig(asset: P2pAsset = 'USDC'): {
+  asset: P2pAsset
+  escrowAddress: Address
+  deployBlock: bigint
+  tokenAddress: Address
+} {
+  if (asset === 'EURC') {
+    return {
+      asset: 'EURC',
+      escrowAddress: EURC_ESCROW_ADDRESS,
+      deployBlock: EURC_DEPLOY_BLOCK,
+      tokenAddress: EURC_TOKEN_ADDRESS,
+    }
+  }
+  return {
+    asset: 'USDC',
+    escrowAddress: ESCROW_ADDRESS ?? DEFAULT_ESCROW_ADDRESS,
+    deployBlock: DEPLOY_BLOCK,
+    tokenAddress: DEFAULT_USDC_TOKEN_ADDRESS,
+  }
+}
+
+export function encodeScopedId(asset: P2pAsset, rawId: bigint): bigint {
+  return asset === 'EURC' ? EURC_ID_OFFSET + rawId : rawId
+}
+
+export function decodeScopedId(scopedId: bigint): { asset: P2pAsset; rawId: bigint } {
+  if (scopedId >= EURC_ID_OFFSET) {
+    return { asset: 'EURC', rawId: scopedId - EURC_ID_OFFSET }
+  }
+  return { asset: 'USDC', rawId: scopedId }
+}
+
+export function formatRawId(scopedId: bigint): string {
+  return decodeScopedId(scopedId).rawId.toString()
+}
 
 export const MAX_OPEN_ORDERS = 5
 export const GRACE_SECONDS = 5 * 60

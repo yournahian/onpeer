@@ -14,9 +14,9 @@ import {
   UserCheck,
   UserPlus,
 } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import { toast } from 'sonner'
 import type { Address } from 'viem'
+import { CoinLogo } from '@/components/logos'
 import {
   SIDE_BUY,
   SIDE_SELL,
@@ -37,7 +37,7 @@ import { BackendApiError } from '@/lib/api'
 import { useP2pAccount } from '@/hooks/useAccount'
 import {
   useAccounts,
-  useAds,
+  useAllAds,
   useNow,
   useOrders,
   useVerification,
@@ -191,7 +191,7 @@ export function TraderProfileView({
 }) {
   const { address } = useAccount()
   const { isSignedIn, signIn } = useP2pAccount()
-  const { ads } = useAds()
+  const { ads } = useAllAds()
   const { orders } = useOrders()
   const now = useNow()
 
@@ -318,13 +318,15 @@ export function TraderProfileView({
                 className="grid items-center gap-4 px-5 py-4 md:grid-cols-[150px_1fr_1.3fr_1.1fr_140px]"
               >
                 <span className="inline-flex items-center gap-2 text-sm font-bold text-[var(--p2p-ink)]">
-                  <TokenUSDC variant="branded" size={20} /> USDC
+                  <CoinLogo symbol={ad.asset} size={20} /> {ad.asset}
                 </span>
                 <span className="p2p-mono text-base font-bold text-[var(--p2p-ink)]">
                   {formatPrice(ad.priceE6)} <span className="text-xs font-semibold">{cur}</span>
                 </span>
                 <div className="space-y-0.5 text-xs">
-                  <p className="p2p-mono font-semibold text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</p>
+                  <p className="p2p-mono font-semibold text-[var(--p2p-ink)]">
+                    {formatUsdcAmount(ad.available)} {ad.asset}
+                  </p>
                   <p className="p2p-mono text-[var(--p2p-muted)]">
                     {c?.symbol}
                     {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {c?.symbol}
@@ -353,7 +355,7 @@ export function TraderProfileView({
                       onClick={() => setSelectedAd(ad)}
                       className="inline-flex min-h-9 min-w-[116px] items-center justify-center rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white transition-opacity hover:opacity-90"
                     >
-                      {viewerMode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+                      {viewerMode === 'buy' ? `Buy ${ad.asset}` : `Sell ${ad.asset}`}
                     </button>
                   )}
                 </div>
@@ -597,13 +599,13 @@ export function TraderProfileView({
                   >
                     <div className="flex items-center justify-between">
                       <span className="rounded bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
-                        {viewerMode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+                        {viewerMode === 'buy' ? `Buy ${ad.asset}` : `Sell ${ad.asset}`}
                       </span>
                       <span className="p2p-mono text-xs text-[var(--p2p-muted)]">⏱ {ad.windowMinutes} min</span>
                     </div>
                     <p className="p2p-mono text-xl font-bold text-[var(--p2p-ink)]">
                       {c?.symbol} {formatPrice(ad.priceE6)}{' '}
-                      <span className="text-xs font-normal text-[var(--p2p-muted)]">/USDC</span>
+                      <span className="text-xs font-normal text-[var(--p2p-muted)]">/{ad.asset}</span>
                     </p>
                     <div className="flex items-end justify-between gap-2 text-xs">
                       <div className="space-y-0.5 text-[var(--p2p-muted)]">
@@ -614,7 +616,10 @@ export function TraderProfileView({
                           </span>
                         </p>
                         <p>
-                          Available <span className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</span>
+                          Available{' '}
+                          <span className="p2p-mono text-[var(--p2p-ink)]">
+                            {formatUsdcAmount(ad.available)} {ad.asset}
+                          </span>
                         </p>
                       </div>
                       {!isSelf && (

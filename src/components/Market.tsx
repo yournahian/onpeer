@@ -2,19 +2,20 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { ChevronDown, Filter, Plus, RefreshCw, X } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import {
   useAccounts,
   useAds,
   useMyAccount,
   useNow,
   useOrders,
+  useP2pAsset,
   useUsdcBalance,
   useVerifications,
   type AdWithId,
 } from '@/hooks/useEscrow'
 import {
   COUNTRIES,
+  P2P_ASSETS,
   SIDE_BUY,
   SIDE_SELL,
   STATUS,
@@ -28,7 +29,7 @@ import {
   sameAddr,
 } from '@/lib/p2p'
 import { parseUnitsExact } from '@/onchain-money'
-import { CountryFlag } from '@/components/logos'
+import { CoinLogo, CountryFlag } from '@/components/logos'
 import { AdCard } from '@/components/AdCard'
 import { MarketFilterSheet } from '@/components/MarketFilterSheet'
 import { TradePopupModal } from '@/components/TradeSheet'
@@ -70,10 +71,12 @@ export function Market({
 }) {
   const { address } = useAccount()
   const queryClient = useQueryClient()
-  const { ads, isLoading } = useAds()
+  const [selectedAsset, setSelectedAsset] = useP2pAsset()
+  const activeAsset = deepAd ? deepAd.asset : selectedAsset
+  const { ads, isLoading } = useAds(activeAsset)
   const { orders } = useOrders()
-  const viewerAccount = useMyAccount()
-  const viewerBalance = useUsdcBalance()
+  const viewerAccount = useMyAccount(activeAsset)
+  const viewerBalance = useUsdcBalance(activeAsset)
   const { followingSet, blockedSet } = useMyRelations()
   const now = useNow()
 
@@ -90,7 +93,7 @@ export function Market({
   const [currencyOpen, setCurrencyOpen] = useState(false)
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
-  const [mobileQuickPanel, setMobileQuickPanel] = useState<'currency' | 'amount' | 'payment' | null>(null)
+  const [mobileQuickPanel, setMobileQuickPanel] = useState<'asset' | 'currency' | 'amount' | 'payment' | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
   const currencyRef = useRef<HTMLDivElement>(null)
@@ -155,7 +158,7 @@ export function Market({
 
   const makerAddresses = useMemo(() => hereAds.map((a) => a.maker), [hereAds])
   const verifications = useVerifications(makerAddresses)
-  const accounts = useAccounts(makerAddresses)
+  const accounts = useAccounts(makerAddresses, activeAsset)
   const traderProfiles = useTraderProfiles(makerAddresses)
 
   const fiatFilter = parseFiatFilter(amount)
@@ -313,12 +316,18 @@ export function Market({
           </div>
         </div>
 
-        {/* Row 2: [USDC]  [Amount ▾]  [Payment ▾]  .......... [▽ Funnel] */}
+        {/* Row 2: [USDC/EURC ▾]  [Amount ▾]  [Payment ▾]  .......... [▽ Funnel] */}
         <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] pb-2.5">
           <div className="flex items-center gap-4 text-xs font-semibold">
-            <span className="inline-flex items-center gap-1.5 font-bold text-[var(--p2p-ink)]">
-              <TokenUSDC variant="branded" size={16} /> USDC
-            </span>
+            <button
+              type="button"
+              onClick={() => setMobileQuickPanel((p) => (p === 'asset' ? null : 'asset'))}
+              className="inline-flex items-center gap-1.5 font-bold text-[var(--p2p-ink)]"
+            >
+              <CoinLogo symbol={activeAsset} size={16} />
+              <span>{activeAsset}</span>
+              <ChevronDown className="size-3.5 text-[var(--p2p-muted)]" />
+            </button>
 
             <button
               type="button"
@@ -357,6 +366,34 @@ export function Market({
         </div>
 
         {/* Quick Mobile Inline Dropdowns */}
+        {mobileQuickPanel === 'asset' && (
+          <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
+            {P2P_ASSETS.map((a) => {
+              const active = a === activeAsset
+              return (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => {
+                    onClearDeepTrade()
+                    setSelectedAsset(a)
+                    setSelectedAd(null)
+                    setMobileQuickPanel(null)
+                  }}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs font-bold ${
+                    active
+                      ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                      : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)]'
+                  }`}
+                >
+                  <CoinLogo symbol={a} size={16} />
+                  <span>{a}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         {mobileQuickPanel === 'currency' && (
           <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
             {COUNTRIES.map((c) => {
@@ -494,31 +531,30 @@ export function Market({
               })}
             </div>
 
-            <span className="inline-flex items-center gap-1.5 border-b-2 border-[#FF5A00] pb-1 text-sm font-extrabold text-[var(--p2p-ink)]">
-              <TokenUSDC variant="branded" size={16} /> USDC
-            </span>
-
-            {/* Quick Corridor Tabs (SS 12) */}
-            <div className="flex flex-wrap items-center gap-1">
-              {COUNTRIES.map((c) => {
-                const active = c.code === country.code
+            {/* Cryptocurrency Tabs: USDC | EURC (Exact 2nd Screenshot Green-Marked Section) */}
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Cryptocurrency">
+              {P2P_ASSETS.map((a) => {
+                const active = activeAsset === a
                 return (
                   <button
-                    key={c.code}
+                    key={a}
                     type="button"
+                    role="tab"
+                    aria-selected={active}
                     onClick={() => {
                       onClearDeepTrade()
-                      setCountryCode(c.code)
-                      setMethod(null)
+                      setSelectedAsset(a)
+                      setSelectedAd(null)
                     }}
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                    className={`relative inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-extrabold transition-colors ${
                       active
                         ? 'bg-[var(--p2p-tint)] text-[#FF5A00]'
                         : 'text-[var(--p2p-muted)] hover:bg-[var(--p2p-input-bg)] hover:text-[var(--p2p-ink)]'
                     }`}
                   >
-                    <CountryFlag code={c.code} size={14} />
-                    {c.currency}
+                    <CoinLogo symbol={a} size={17} />
+                    <span>{a}</span>
+                    {active && <span className="absolute inset-x-2 bottom-0 h-[2.5px] rounded-full bg-[#FF5A00]" />}
                   </button>
                 )
               })}
@@ -740,17 +776,17 @@ export function Market({
       ) : filtered.length === 0 ? (
         <div className="p2p-card rounded-xl px-6 py-14 text-center">
           <p className="text-base font-bold text-[var(--p2p-ink)]">
-            No {activeMode === 'buy' ? 'sell' : 'buy'} offers for {country.currency} match your filters
+            No {activeMode === 'buy' ? 'sell' : 'buy'} {activeAsset} offers for {country.currency} match your filters
           </p>
           <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
-            Adjust or reset your filters, switch currency, or post a {country.currency} ad with your custom rate.
+            Adjust or reset your filters, switch currency, or post a {activeAsset}/{country.currency} ad with your custom rate.
           </p>
           <button
             type="button"
             onClick={onPostAd}
             className="mt-5 inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90"
           >
-            <Plus className="size-4" /> Post {country.currency} Ad
+            <Plus className="size-4" /> Post {activeAsset} Ad
           </button>
         </div>
       ) : (

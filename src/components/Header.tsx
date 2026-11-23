@@ -16,18 +16,18 @@ import {
   Store,
   User,
 } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
-  ESCROW_ADDRESS,
   STATUS,
   formatUsdcAmount,
+  getEscrowConfig,
   isActiveStatus,
   sameAddr,
 } from '@/lib/p2p'
-import { useClaimable, useOrders, useUsdcBalance } from '@/hooks/useEscrow'
+import { useClaimable, useOrders, useP2pAsset, useUsdcBalance } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
+import { CoinLogo } from '@/components/logos'
 
 export type TabId = 'market' | 'orders' | 'ads' | 'chat' | 'account' | 'arbiter'
 export type UserCenterQuickTarget = 'payments' | 'merchant' | 'help' | 'restrictions' | 'notifications'
@@ -48,11 +48,13 @@ export function Header({
   onUserCenterJump?: (target: UserCenterQuickTarget) => void
 }) {
   const { address, isConnected, chainId } = useAccount()
+  const [activeAsset] = useP2pAsset()
+  const escrowAddress = getEscrowConfig(activeAsset).escrowAddress
   const { switchChain, isPending } = useSwitchChain()
-  const balance = useUsdcBalance()
-  const claimable = useClaimable()
+  const balance = useUsdcBalance(activeAsset)
+  const claimable = useClaimable(activeAsset)
   const { orders } = useOrders()
-  const { run, writeContractAsync, pendingKey } = useTx()
+  const { run, writeContractAsync, pendingKey } = useTx(activeAsset)
 
   const [moreOpen, setMoreOpen] = useState(false)
   const [helpSubOpen, setHelpSubOpen] = useState(true)
@@ -284,8 +286,8 @@ export function Header({
 
             {isConnected && balance !== undefined && (
               <span className="p2p-mono ml-1 inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-2.5 py-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
-                <TokenUSDC variant="branded" size={14} />
-                {formatUsdcAmount(balance)} USDC
+                <CoinLogo symbol={activeAsset} size={14} />
+                {formatUsdcAmount(balance)} {activeAsset}
               </span>
             )}
 
@@ -294,9 +296,9 @@ export function Header({
                 type="button"
                 disabled={pendingKey === 'withdraw'}
                 onClick={() =>
-                  void run('withdraw', 'Withdraw USDC', () =>
+                  void run('withdraw', `Withdraw ${activeAsset}`, () =>
                     writeContractAsync({
-                      address: ESCROW_ADDRESS!,
+                      address: escrowAddress,
                       abi: p2pEscrowAbi,
                       functionName: 'withdrawClaimable',
                       chainId: CHAIN_ID,
@@ -305,7 +307,7 @@ export function Header({
                 }
                 className="p2p-mono inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-50"
               >
-                Claim {formatUsdcAmount(claimable)} USDC
+                Claim {formatUsdcAmount(claimable)} {activeAsset}
               </button>
             )}
 
@@ -327,8 +329,8 @@ export function Header({
       {isConnected && (claimable > 0n || chainId !== CHAIN_ID || (showArbiter && disputeCount > 0)) && (
         <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-2 backdrop-blur-xl md:hidden">
           <span className="p2p-mono inline-flex items-center gap-1.5 text-xs font-semibold text-[var(--p2p-ink)]">
-            <TokenUSDC variant="branded" size={14} />
-            {balance !== undefined ? `${formatUsdcAmount(balance)} USDC` : 'Arc Escrow'}
+            <CoinLogo symbol={activeAsset} size={14} />
+            {balance !== undefined ? `${formatUsdcAmount(balance)} ${activeAsset}` : 'Arc Escrow'}
           </span>
           <div className="flex items-center gap-2">
             {showArbiter && disputeCount > 0 && (
@@ -345,9 +347,9 @@ export function Header({
                 type="button"
                 disabled={pendingKey === 'withdraw'}
                 onClick={() =>
-                  void run('withdraw', 'Withdraw USDC', () =>
+                  void run('withdraw', `Withdraw ${activeAsset}`, () =>
                     writeContractAsync({
-                      address: ESCROW_ADDRESS!,
+                      address: escrowAddress,
                       abi: p2pEscrowAbi,
                       functionName: 'withdrawClaimable',
                       chainId: CHAIN_ID,

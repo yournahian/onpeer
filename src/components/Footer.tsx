@@ -95,6 +95,11 @@ export function Footer() {
 
           <Col title="Resources">
             <li>
+              <AppLink to="/docs" className={linkClass}>
+                Documentation
+              </AppLink>
+            </li>
+            <li>
               <AppLink to="/brand-kit" className={linkClass}>
                 Brand kit
               </AppLink>

@@ -4,15 +4,18 @@ import { useQueryClient } from '@tanstack/react-query'
 import { erc20Abi, type Hash } from 'viem'
 import { toast } from 'sonner'
 import { buildTxExplorerUrl } from '@/onchain-facts'
-import { CHAIN_ID, ESCROW_ADDRESS, parseTxError } from '@/lib/p2p'
-import { USDC_ADDRESS } from '@/hooks/useEscrow'
+import { CHAIN_ID, getEscrowConfig, parseTxError, type P2pAsset } from '@/lib/p2p'
+import { useP2pAsset } from '@/hooks/useEscrow'
 
 /**
  * Runs one onchain write: switches chain if needed, waits for the real receipt,
  * refreshes all reads, and reports honest success or failure.
  */
-export function useTx() {
+export function useTx(assetOverride?: P2pAsset) {
   const { chainId } = useAccount()
+  const [activeAsset] = useP2pAsset()
+  const targetAsset = assetOverride ?? activeAsset
+  const cfg = getEscrowConfig(targetAsset)
   const { switchChainAsync } = useSwitchChain()
   const { writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient({ chainId: CHAIN_ID })
@@ -57,16 +60,16 @@ export function useTx() {
 
   const approveUsdc = useCallback(
     (amount: bigint) =>
-      run('approve', 'Approve USDC', () =>
+      run('approve', `Approve ${cfg.asset}`, () =>
         writeContractAsync({
-          address: USDC_ADDRESS!,
+          address: cfg.tokenAddress,
           abi: erc20Abi,
           functionName: 'approve',
-          args: [ESCROW_ADDRESS!, amount],
+          args: [cfg.escrowAddress, amount],
           chainId: CHAIN_ID,
         }),
       ),
-    [run, writeContractAsync],
+    [run, writeContractAsync, cfg.asset, cfg.tokenAddress, cfg.escrowAddress],
   )
 
   return { run, approveUsdc, writeContractAsync, pendingKey, busy: pendingKey !== null }

@@ -27,7 +27,6 @@ import {
   BACKUP_ARBITER_DELAY_SECONDS,
   CHAIN_ID,
   COOLING_OFF_SECONDS,
-  ESCROW_ADDRESS,
   GRACE_SECONDS,
   STATUS,
   STATUS_META,
@@ -37,6 +36,7 @@ import {
   formatFiat,
   formatPrice,
   formatUsdcAmount,
+  getEscrowConfig,
   hexToCurrency,
   maskToMethods,
   sameAddr,
@@ -156,15 +156,17 @@ function OrderExecutionScreen({ orderId, onClose }: { orderId: bigint; onClose: 
 
 function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: () => void }) {
   const { address } = useAccount()
+  const asset = order.asset
+  const escrowAddress = getEscrowConfig(asset).escrowAddress
   const arbiter = useArbiter()
   const backupArbiter = useBackupArbiter()
-  const { payerProofRequired } = usePrivacySwitches()
+  const { payerProofRequired } = usePrivacySwitches(asset)
   const { isSignedIn, signIn, signingIn } = useP2pAccount()
   const { methods: savedMethods } = useSavedPaymentMethods()
   const { sealPayerProof } = useVaultActions()
   const { data: messages } = useOrderMessages(order.id)
   const now = useNow()
-  const { run, writeContractAsync, pendingKey, busy: txBusy } = useTx()
+  const { run, writeContractAsync, pendingKey, busy: txBusy } = useTx(asset)
 
   const [senderName, setSenderName] = useState('')
   const [last4, setLast4] = useState('')
@@ -260,10 +262,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   ) =>
     run(key, label, () =>
       writeContractAsync({
-        address: ESCROW_ADDRESS!,
+        address: escrowAddress,
         abi: p2pEscrowAbi,
         functionName: name,
-        args: [order.id],
+        args: [order.rawId],
         chainId: CHAIN_ID,
       }),
     )
@@ -280,7 +282,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
     if (mode === 'settle') {
       await callSimple('release', 'Settle & release to buyer', 'settleRelease')
     } else {
-      await callSimple('release', 'Release USDC', 'release')
+      await callSimple('release', `Release ${asset}`, 'release')
     }
   }
 
@@ -312,10 +314,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
     await run('markPaid', 'Notify seller of payment', () =>
       writeContractAsync({
-        address: ESCROW_ADDRESS!,
+        address: escrowAddress,
         abi: p2pEscrowAbi,
         functionName: 'markPaid',
-        args: [order.id, proofArg],
+        args: [order.rawId, proofArg],
         chainId: CHAIN_ID,
       }),
     )
@@ -324,10 +326,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const resolve = (toBuyer: boolean) =>
     run(toBuyer ? 'resolveBuyer' : 'resolveSeller', 'Resolve dispute', () =>
       writeContractAsync({
-        address: ESCROW_ADDRESS!,
+        address: escrowAddress,
         abi: p2pEscrowAbi,
         functionName: 'resolveDispute',
-        args: [order.id, toBuyer, slash, applyBond],
+        args: [order.rawId, toBuyer, slash, applyBond],
         chainId: CHAIN_ID,
       }),
     )
@@ -388,7 +390,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             >
               <ArrowLeft className="size-3.5" /> Market
             </button>
-            <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">Order #{order.id.toString()}</span>
+            <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">Order #{order.rawId.toString()} ({asset})</span>
             <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
               {STATUS_META[status]?.label ?? 'Unknown'}
             </span>
@@ -401,9 +403,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
         <section className="p2p-card rounded-xl p-5 space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">USDC Escrow</span>
+              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">{asset} Escrow</span>
               <span className="p2p-mono mt-1 block text-base font-bold text-[var(--p2p-ink)]">
-                {formatUsdcAmount(order.amount)} USDC
+                {formatUsdcAmount(order.amount)} {asset}
               </span>
             </div>
             <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
@@ -466,7 +468,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-[var(--p2p-ink)]">{mobileTitle}</p>
             <p className="p2p-mono truncate text-[10px] text-[var(--p2p-muted)]">
-              Order #{order.id.toString()} • {role}
+              Order #{order.rawId.toString()} ({asset}) • {role}
             </p>
           </div>
         </div>
@@ -514,7 +516,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <ArrowLeft className="size-3.5" /> Market
           </button>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">Order #{order.id.toString()}</span>
+            <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">
+              Order #{order.rawId.toString()} ({asset})
+            </span>
             <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-2.5 py-0.5 text-[11px] font-bold text-[var(--p2p-accent-ink)]">
               {STATUS_META[status]?.label ?? 'Unknown'}
             </span>
@@ -535,16 +539,14 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           <span className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2.5 py-1 text-[var(--p2p-muted)]">
             Role: <strong className="text-[var(--p2p-ink)]">{role}</strong>
           </span>
-          {ESCROW_ADDRESS && (
-            <a
-              href={buildAddressExplorerUrl(CHAIN_ID, ESCROW_ADDRESS)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] hover:underline"
-            >
-              Escrow Contract <ExternalLink className="size-3" />
-            </a>
-          )}
+          <a
+            href={buildAddressExplorerUrl(CHAIN_ID, escrowAddress)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] hover:underline"
+          >
+            Escrow Contract <ExternalLink className="size-3" />
+          </a>
         </div>
       </div>
 
@@ -664,7 +666,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   {isBuyer ? 'Receive Amount' : 'Escrowed Amount'}
                 </span>
                 <p className="p2p-mono mt-1 text-xl font-bold text-[var(--p2p-ink)] sm:text-2xl">
-                  {formatUsdcAmount(order.amount)} USDC
+                  {formatUsdcAmount(order.amount)} {asset}
                 </p>
               </div>
             </div>
@@ -1299,10 +1301,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               <div className="p2p-card flex items-center gap-3 rounded-xl !border-[var(--p2p-border-active)] p-4 text-sm font-semibold text-[var(--p2p-ink)]">
                 <Check className="size-5 shrink-0 text-[#FF5A00]" />
                 <span>
-                  {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount)} USDC released to buyer.`}
-                  {status === STATUS.CANCELLED && 'Order cancelled — escrowed USDC returned.'}
-                  {status === STATUS.RESOLVED_BUYER && 'Dispute resolved by arbiter — USDC released to buyer.'}
-                  {status === STATUS.RESOLVED_SELLER && 'Dispute resolved by arbiter — USDC returned to seller.'}
+                  {status === STATUS.COMPLETED && `Order completed — ${formatUsdcAmount(order.amount)} ${asset} released to buyer.`}
+                  {status === STATUS.CANCELLED && `Order cancelled — escrowed ${asset} returned.`}
+                  {status === STATUS.RESOLVED_BUYER && `Dispute resolved by arbiter — ${asset} released to buyer.`}
+                  {status === STATUS.RESOLVED_SELLER && `Dispute resolved by arbiter — ${asset} returned to seller.`}
                   {status === STATUS.SETTLED && 'Dispute settled directly by parties — zero bond charged.'}
                 </span>
               </div>

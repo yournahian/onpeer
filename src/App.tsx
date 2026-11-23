@@ -15,6 +15,7 @@ import BridgePage from '@/pages/Bridge'
 import BuyPage from '@/pages/Buy'
 import AdminPage from '@/pages/Admin'
 import AssistantPage from '@/pages/Assistant'
+import DocsPage from '@/pages/Docs'
 import BrandKitPage from '@/pages/BrandKit'
 import PrivacyPage from '@/pages/Privacy'
 
@@ -24,7 +25,12 @@ const RIBBON_ROUTES = new Set(['swap', 'bridge', 'buy', 'assistant', 'p2p'])
 export default function App() {
   const route = useRoute()
   const search = useSearch()
-  const redirectToApp = isLandingDomain() && route !== 'home' && route !== 'brand-kit' && route !== 'privacy'
+  const redirectToApp =
+    isLandingDomain() &&
+    route !== 'home' &&
+    route !== 'docs' &&
+    route !== 'brand-kit' &&
+    route !== 'privacy'
 
   useEffect(() => {
     if (redirectToApp) {
@@ -53,6 +59,8 @@ export default function App() {
       <AdminPage />
     ) : route === 'assistant' ? (
       <AssistantPage />
+    ) : route === 'docs' ? (
+      <DocsPage />
     ) : route === 'brand-kit' ? (
       <BrandKitPage />
     ) : route === 'privacy' ? (

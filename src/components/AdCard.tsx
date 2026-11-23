@@ -107,7 +107,7 @@ export function AdCard({
               <span className="text-2xl font-extrabold leading-none text-[var(--p2p-ink)]">
                 {formatPrice(ad.priceE6)}
               </span>
-              <span className="text-[11px] text-[var(--p2p-muted)]">/USDC</span>
+              <span className="text-[11px] text-[var(--p2p-muted)]">/{ad.asset}</span>
             </p>
 
             <p className="truncate pt-1 text-xs text-[var(--p2p-muted)]">
@@ -119,7 +119,9 @@ export function AdCard({
             </p>
             <p className="truncate text-xs text-[var(--p2p-muted)]">
               Available{' '}
-              <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</span>
+              <span className="p2p-mono font-semibold text-[var(--p2p-ink)]">
+                {formatUsdcAmount(ad.available)} {ad.asset}
+              </span>
             </p>
 
             {(ad.minTakerCompleted > 0 || viewerCapped) && (
@@ -255,7 +257,9 @@ export function AdCard({
 
           {/* Column 3: Available & Order Limits */}
           <div className="space-y-1 text-xs">
-            <p className="p2p-mono font-bold text-[var(--p2p-ink)]">{formatUsdcAmount(ad.available)} USDC</p>
+            <p className="p2p-mono font-bold text-[var(--p2p-ink)]">
+              {formatUsdcAmount(ad.available)} {ad.asset}
+            </p>
             <p className="p2p-mono text-[var(--p2p-muted)]">
               {country.symbol}
               {formatFiat(fiatFor(floor, ad.priceE6), 0)} - {country.symbol}
@@ -303,7 +307,7 @@ export function AdCard({
                 onClick={() => onSelectAd(ad)}
                 className="inline-flex min-h-10 min-w-[126px] items-center justify-center rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white transition-opacity hover:opacity-90"
               >
-                {mode === 'buy' ? 'Buy USDC' : 'Sell USDC'}
+                {mode === 'buy' ? `Buy ${ad.asset}` : `Sell ${ad.asset}`}
               </button>
             )}
           </div>
