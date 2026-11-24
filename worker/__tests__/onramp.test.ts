@@ -432,7 +432,7 @@ describe('POST /api/onramp/session', () => {
       const swapHtml = wrap(React.createElement(SwapPage))
       expect(swapHtml).toContain('swapping')
       expect(swapHtml).toContain('USDC')
-      expect(swapHtml).toContain('/p2p?mode=sell')
+      expect(swapHtml).not.toContain('Buy USDC (sandbox)')
 
       const bridgeHtml = wrap(React.createElement(BridgePage))
       expect(bridgeHtml).toContain('Bridge')

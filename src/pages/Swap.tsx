@@ -19,7 +19,6 @@ import {
   type SwapToken,
 } from '@/hooks/useSwapFlow'
 import { SiteBar } from '@/components/SiteBar'
-import { AppLink } from '@/components/AppLink'
 import { Button } from '@/components/ui'
 import { ChainLogo, CoinLogo } from '@/components/logos'
 import { RollingNumber } from '@/components/fx/RollingNumber'
@@ -433,17 +432,6 @@ export default function SwapPage() {
         <p className="relative z-10 mt-3 text-center text-xs text-pretty" style={{ color: 'var(--subtle)' }}>
           USDC is also the gas token on Arc. Keep some USDC in your wallet for transaction fees.
         </p>
-        <div className="relative z-10 mt-1.5 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold">
-          <AppLink to="/buy" className="underline hover:opacity-85" style={{ color: 'var(--accent)' }}>
-            Buy USDC (sandbox)
-          </AppLink>
-          <span aria-hidden style={{ color: 'var(--subtle)' }}>
-            •
-          </span>
-          <AppLink to="/p2p?mode=sell" className="underline hover:opacity-85" style={{ color: 'var(--muted)' }}>
-            Cash out via P2P
-          </AppLink>
-        </div>
       </div>
     </div>
   )
