@@ -138,14 +138,26 @@ export function Footer() {
                 Circle developers <ExternalLink className="size-3" />
               </a>
             </li>
-            <li>
-              <a className={linkClass} href="mailto:support@onpeer.xyz">
-                <Mail className="size-3.5" /> support@onpeer.xyz
+            <li className="pt-2">
+              <span className="block text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--subtle)' }}>
+                Support
+              </span>
+              <a
+                className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[var(--ink)]"
+                href="mailto:support@onpeer.xyz"
+              >
+                <Mail className="size-3.5 shrink-0" style={{ color: 'var(--accent)' }} /> support@onpeer.xyz
               </a>
             </li>
-            <li>
-              <a className={linkClass} href="mailto:hello@onpeer.xyz">
-                <Mail className="size-3.5" /> hello@onpeer.xyz
+            <li className="pt-2">
+              <span className="block text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--subtle)' }}>
+                Feedback, Collaboration &amp; Partnerships
+              </span>
+              <a
+                className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-[var(--ink)]"
+                href="mailto:hello@onpeer.xyz"
+              >
+                <Mail className="size-3.5 shrink-0" style={{ color: 'var(--accent)' }} /> hello@onpeer.xyz
               </a>
             </li>
           </Col>

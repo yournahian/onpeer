@@ -68,15 +68,15 @@ function BentoIcon({ Icon, large = false }: { Icon: typeof Lock; large?: boolean
 
 export function Features() {
   return (
-    <section className="mt-12 lg:mt-8" aria-labelledby="safe-title">
-      <Reveal className="text-center">
+    <section className="mt-16 lg:mt-14" aria-labelledby="safe-title">
+      <Reveal>
         <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
           Why OnPeer
         </p>
-        <h2 id="safe-title" className="display mx-auto mt-2 max-w-3xl text-balance text-4xl font-bold sm:text-5xl" style={{ color: 'var(--accent)' }}>
+        <h2 id="safe-title" className="display mt-2 max-w-3xl text-balance text-4xl font-bold sm:text-5xl" style={{ color: 'var(--accent)' }}>
           Built so both sides can trade with a stranger
         </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm sm:text-base" style={{ color: 'var(--muted)' }}>
+        <p className="mt-3 max-w-2xl text-pretty text-sm sm:text-base" style={{ color: 'var(--muted)' }}>
           The same protections people expect from the biggest P2P markets, enforced by a contract instead of a company.
         </p>
       </Reveal>
