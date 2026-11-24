@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
+import { useTheme } from '@/lib/theme'
 import { AgentChat } from '@/components/AgentChat'
 import { AgentProvider } from '@/agent/AgentContext'
 import { Backdrop } from '@/components/fx/Backdrop'
@@ -25,6 +26,13 @@ const RIBBON_ROUTES = new Set(['swap', 'bridge', 'buy', 'assistant', 'p2p'])
 export default function App() {
   const route = useRoute()
   const search = useSearch()
+  const { helixVisible, helixBlurred, setHelixBlurred } = useTheme()
+
+  useEffect(() => {
+    if (route !== 'swap' && route !== 'bridge') {
+      setHelixBlurred(false)
+    }
+  }, [route, setHelixBlurred])
   const redirectToApp =
     isLandingDomain() &&
     route !== 'home' &&
@@ -99,7 +107,15 @@ export default function App() {
         <div
           aria-hidden
           className="pointer-events-none fixed inset-x-0 bottom-0 z-0"
-          style={{ top: route === 'p2p' ? '104px' : '0' }}
+          style={{
+            top: route === 'p2p' ? '104px' : '0',
+            opacity: helixVisible ? (helixBlurred ? 0.62 : 1) : 0,
+            filter: helixBlurred ? 'blur(9px)' : 'blur(0px)',
+            transform: helixBlurred ? 'scale(1.018)' : 'scale(1)',
+            transition:
+              'opacity 320ms cubic-bezier(0.22, 1, 0.36, 1), filter 320ms cubic-bezier(0.22, 1, 0.36, 1), transform 320ms cubic-bezier(0.22, 1, 0.36, 1)',
+            visibility: helixVisible ? 'visible' : 'hidden',
+          }}
         >
           <RibbonBackdrop />
         </div>

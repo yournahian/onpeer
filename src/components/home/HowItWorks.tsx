@@ -294,6 +294,8 @@ export function HowItWorks() {
     offset: ['start 88px', 'end end'],
   })
 
+  const deckHeight = useTransform(scrollYProgress, [0, 0.75, 1], [540, 410, 380])
+
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
     if (v < 0.26) setActive(0)
     else if (v < 0.56) setActive(1)
@@ -302,25 +304,28 @@ export function HowItWorks() {
   })
 
   return (
-    <section ref={sectionRef} className="relative mt-24 lg:h-[260vh]" aria-labelledby="how-title">
+    <section ref={sectionRef} className="relative mt-24 lg:h-[235vh]" aria-labelledby="how-title">
       {/* Desktop pinned stage */}
       <div className="hidden lg:sticky lg:top-24 lg:block">
         <Reveal>
           <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
             How it works
           </p>
-          <h2 id="how-title" className="display text-gradient mt-2 text-balance text-5xl font-bold">
+          <h2 id="how-title" className="display mt-2 text-balance text-5xl font-bold" style={{ color: 'var(--accent)' }}>
             From wallet to local cash in four steps
           </h2>
         </Reveal>
 
         <div className="mt-8 grid items-start gap-10 lg:grid-cols-[1.15fr_0.85fr]">
           {/* Stacking card deck */}
-          <ol className="relative -mx-8 -mt-6 h-[580px] overflow-hidden px-8 pt-6">
+          <motion.ol
+            className="relative -mx-8 -mt-6 overflow-hidden px-8 pt-6"
+            style={{ height: deckHeight }}
+          >
             {STEPS.map((s, i) => (
               <StackingStepCard key={s.title} step={s} index={i} active={active === i} progress={scrollYProgress} />
             ))}
-          </ol>
+          </motion.ol>
 
           {/* Premium right-hand animation stage */}
           <div>
@@ -385,7 +390,7 @@ export function HowItWorks() {
           <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
             How it works
           </p>
-          <h2 className="display text-gradient mt-2 text-balance text-3xl font-bold sm:text-4xl">
+          <h2 className="display mt-2 text-balance text-3xl font-bold sm:text-4xl" style={{ color: 'var(--accent)' }}>
             From wallet to local cash in four steps
           </h2>
         </Reveal>

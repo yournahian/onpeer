@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, Repeat, ShieldCheck, Waypoints } from 'lucide-react'
+import { ArrowRight, Bot } from 'lucide-react'
 import { COUNTRIES } from '@/lib/p2p'
 import { AppLink } from '@/components/AppLink'
 import { CountryFlag } from '@/components/logos'
@@ -73,32 +73,6 @@ export function FooterCta() {
               Open the market <ArrowRight className="size-4" />
             </AppLink>
           </div>
-
-          <div
-            className="mt-6 flex items-center justify-center gap-3 text-xs font-medium lg:justify-start"
-            style={{ color: 'rgba(255,255,255,0.82)' }}
-          >
-            Or jump to
-            <AppLink
-              to="/swap"
-              aria-label="Swap"
-              className="flex size-8 items-center justify-center rounded-full bg-white text-[#12081f] transition-transform hover:scale-110"
-            >
-              <Repeat className="size-4" />
-            </AppLink>
-            <AppLink
-              to="/bridge"
-              aria-label="Bridge"
-              className="flex size-8 items-center justify-center rounded-full bg-white text-[#12081f] transition-transform hover:scale-110"
-            >
-              <Waypoints className="size-4" />
-            </AppLink>
-          </div>
-
-          <p className="mt-9 flex items-center justify-center gap-2.5 text-base font-semibold text-white lg:justify-start">
-            <ShieldCheck className="size-5" style={{ color: '#7ef1b3' }} />
-            Escrow on Arc
-          </p>
         </Reveal>
 
         {/* Mobile-only assistant card */}

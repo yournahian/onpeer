@@ -68,12 +68,12 @@ function BentoIcon({ Icon, large = false }: { Icon: typeof Lock; large?: boolean
 
 export function Features() {
   return (
-    <section className="mt-24" aria-labelledby="safe-title">
+    <section className="mt-12 lg:mt-8" aria-labelledby="safe-title">
       <Reveal className="text-center">
         <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>
           Why OnPeer
         </p>
-        <h2 id="safe-title" className="display text-gradient mx-auto mt-2 max-w-3xl text-balance text-4xl font-bold sm:text-5xl">
+        <h2 id="safe-title" className="display mx-auto mt-2 max-w-3xl text-balance text-4xl font-bold sm:text-5xl" style={{ color: 'var(--accent)' }}>
           Built so both sides can trade with a stranger
         </h2>
         <p className="mx-auto mt-3 max-w-2xl text-pretty text-sm sm:text-base" style={{ color: 'var(--muted)' }}>

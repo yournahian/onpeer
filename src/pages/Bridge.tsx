@@ -24,6 +24,7 @@ import {
 import { SiteBar } from '@/components/SiteBar'
 import { Button } from '@/components/ui'
 import { ChainLogo, CoinLogo } from '@/components/logos'
+import { useTheme } from '@/lib/theme'
 
 const PCT_PRESETS = [
   { label: '25%', num: 25n },
@@ -73,6 +74,26 @@ const initial = () => {
 export default function BridgePage() {
   const { address, isConnected, connector, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
+  const { helixBlurred, setHelixBlurred } = useTheme()
+  const cardRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const onPointerDown = (e: PointerEvent) => {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) {
+        setHelixBlurred(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHelixBlurred(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+      setHelixBlurred(false)
+    }
+  }, [setHelixBlurred])
   const [token, setToken] = useState<BridgeToken>(() => initial().token)
   const [speed, setSpeed] = useState<BridgeTransferSpeed>('FAST')
   const [fromKit, setFromKit] = useState<BridgeChainName>(() => initial().from)
@@ -293,11 +314,16 @@ export default function BridgePage() {
       <SiteBar />
       <div className="relative z-10 flex flex-1 w-full flex-col items-center justify-center overflow-visible px-4 py-3 sm:py-4">
         <motion.section
-          className="relative z-30 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl sm:rounded-[26px] sm:p-5"
+          ref={cardRef}
+          onPointerDown={() => setHelixBlurred(true)}
+          onFocusCapture={() => setHelixBlurred(true)}
+          className="relative z-30 w-full max-w-[450px] rounded-[24px] p-4 backdrop-blur-2xl transition-shadow duration-300 sm:rounded-[26px] sm:p-5"
           style={{
             background: 'color-mix(in srgb, var(--panel-solid) 95%, transparent)',
             border: '1px solid var(--border-strong)',
-            boxShadow: '0 24px 80px -20px var(--accent-glow), 0 12px 40px -12px rgba(0,0,0,0.28)',
+            boxShadow: helixBlurred
+              ? '0 28px 90px -16px var(--accent-glow), 0 16px 48px -12px rgba(0,0,0,0.45)'
+              : '0 24px 80px -20px var(--accent-glow), 0 12px 40px -12px rgba(0,0,0,0.28)',
           }}
           initial={{ opacity: 0, y: 20, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}

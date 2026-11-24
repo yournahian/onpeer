@@ -14,7 +14,7 @@ const PRIMARY: Record<Theme, [string, string, string]> = {
   light: ['#b83a00', '#e04e00', '#FF5A00'],
 }
 /** Matches `--bg` in index.css so the canvas blends into the page. */
-const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xfaf9f7 }
+const PAGE_BG: Record<Theme, number> = { dark: 0x000000, light: 0xffffff }
 
 const currentTheme = (): Theme => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
 const isHelixActive = (): boolean => document.documentElement.dataset.helix !== 'off'

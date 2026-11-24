@@ -4,10 +4,14 @@ import {
   ArrowLeftRight,
   ArrowRight,
   CreditCard,
+  Eye,
+  EyeOff,
   Menu,
-  Orbit,
+  Pause,
+  Play,
   Repeat,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Waypoints,
   X,
@@ -30,39 +34,38 @@ const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] 
   { to: '/assistant', route: 'assistant', label: 'Assistant', icon: Sparkles },
 ]
 
-function FxSwitch({
+function MenuSwitchRow({
+  label,
   active,
+  disabled = false,
+  IconOn,
+  IconOff,
   onToggle,
-  compact = false,
 }: {
+  label: string
   active: boolean
+  disabled?: boolean
+  IconOn: typeof Eye
+  IconOff: typeof EyeOff
   onToggle: () => void
-  compact?: boolean
 }) {
+  const Icon = active ? IconOn : IconOff
   return (
     <button
       type="button"
       role="switch"
       aria-checked={active}
-      aria-label={active ? 'Disable 3D background motion' : 'Enable 3D background motion'}
-      title={active ? '3D Motion: On (click to pause)' : '3D Motion: Off (click to resume)'}
+      disabled={disabled}
       onClick={onToggle}
-      className={`group inline-flex items-center rounded-full font-semibold transition-colors hover:border-[var(--border-strong)] ${compact ? 'h-8 gap-1.5 pl-2.5 pr-1 text-[11px]' : 'h-9 gap-2 pl-3 pr-1.5 text-xs'
-        }`}
-      style={{
-        background: 'var(--fill-2)',
-        border: '1px solid var(--border)',
-        color: active ? 'var(--ink)' : 'var(--muted)',
-      }}
+      className="flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors hover:bg-[var(--fill-2)] disabled:pointer-events-none disabled:opacity-40"
+      style={{ color: active ? 'var(--ink)' : 'var(--muted)' }}
     >
-      <Orbit
-        className="size-3.5 transition-colors"
-        style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }}
-      />
-      <span className="tracking-wide">FX</span>
+      <span className="flex items-center gap-2">
+        <Icon className="size-3.5 shrink-0" style={{ color: active ? 'var(--accent)' : 'var(--subtle)' }} />
+        <span>{label}</span>
+      </span>
       <span
-        className={`relative flex items-center rounded-full p-0.5 transition-colors duration-200 ${compact ? 'h-4 w-7' : 'h-5 w-9'
-          }`}
+        className="relative flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200"
         style={{
           background: active ? 'var(--accent-bg)' : 'var(--fill-3)',
           boxShadow: active ? '0 2px 10px -2px var(--accent-glow)' : 'inset 0 1px 2px rgba(0,0,0,0.25)',
@@ -71,7 +74,7 @@ function FxSwitch({
         <motion.span
           layout
           transition={{ type: 'spring', stiffness: 520, damping: 34 }}
-          className={`${compact ? 'size-3' : 'size-4'} rounded-full bg-white shadow-sm`}
+          className="size-4 rounded-full bg-white shadow-sm"
           style={{ marginLeft: active ? 'auto' : 0 }}
         />
       </span>
@@ -79,11 +82,148 @@ function FxSwitch({
   )
 }
 
+function HelixFxMenu({
+  helixVisible,
+  onToggleVisible,
+  helixMotion,
+  onToggleMotion,
+  compact = false,
+}: {
+  helixVisible: boolean
+  onToggleVisible: () => void
+  helixMotion: boolean
+  onToggleMotion: () => void
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+
+  const clearCloseTimer = () => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+  }
+
+  const handleMouseEnter = () => {
+    clearCloseTimer()
+    setOpen(true)
+  }
+
+  const handleMouseLeave = () => {
+    clearCloseTimer()
+    closeTimerRef.current = window.setTimeout(() => {
+      setOpen(false)
+    }, 150)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div
+      ref={wrapRef}
+      className="relative"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label="Backdrop display settings"
+        title="Backdrop settings"
+        onClick={() => setOpen((v) => !v)}
+        className={`relative flex items-center justify-center rounded-full transition-colors hover:border-[var(--border-strong)] ${
+          compact ? 'size-8' : 'size-9'
+        }`}
+        style={{
+          background: open ? 'var(--surface-strong)' : 'var(--fill-2)',
+          border: `1px solid ${open ? 'var(--border-strong)' : 'var(--border)'}`,
+          color: helixVisible ? 'var(--ink)' : 'var(--muted)',
+        }}
+      >
+        <SlidersHorizontal
+          className={compact ? 'size-3.5' : 'size-4'}
+          style={{ color: helixVisible ? 'var(--accent)' : 'var(--subtle)' }}
+        />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.96 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            className="absolute left-0 top-full z-50 mt-2 w-44 space-y-0.5 rounded-2xl p-1.5 md:left-auto md:right-0"
+            style={{
+              backgroundColor: 'var(--panel-solid)',
+              border: '1px solid var(--border-strong)',
+              boxShadow: 'var(--panel-shadow)',
+            }}
+          >
+            <MenuSwitchRow
+              label="Helix"
+              active={helixVisible}
+              IconOn={Eye}
+              IconOff={EyeOff}
+              onToggle={onToggleVisible}
+            />
+            <MenuSwitchRow
+              label="Motion"
+              active={helixMotion}
+              disabled={!helixVisible}
+              IconOn={Play}
+              IconOff={Pause}
+              onToggle={onToggleMotion}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
 /** Top bar across all pages: desktop single-row nav, mobile 2-row header with hamburger menu. */
-export function SiteBar({ overlay = false, sticky = true, transparent = false }: { overlay?: boolean; sticky?: boolean; transparent?: boolean }) {
+export function SiteBar({
+  overlay = false,
+  sticky = true,
+  transparent = false,
+  landing: landingProp = false,
+}: {
+  overlay?: boolean
+  sticky?: boolean
+  transparent?: boolean
+  landing?: boolean
+}) {
   const route = useRoute()
   const { isAdmin } = useAdminRoles()
-  const { helixMotion, setHelixMotion } = useTheme()
+  const { helixMotion, setHelixMotion, helixVisible, setHelixVisible } = useTheme()
   const { scrollY } = useScroll()
   const [scrolled, setScrolled] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -109,7 +249,7 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
     }
   }, [menuOpen])
 
-  const landing = isLandingDomain()
+  const landing = landingProp || isLandingDomain()
   // Landing / Home uses PlanetHero rather than RibbonBackdrop, so FX switch is omitted there.
   const showFx = !landing && route !== 'home'
   // Over the full-bleed hero the bar is transparent and always dark-styled; it turns solid once you scroll or open the menu.
@@ -129,7 +269,7 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
     >
       {/* Desktop (>= 768px): single horizontal bar */}
       <div className={`mx-auto hidden w-full ${maxW} items-center justify-between gap-3 px-6 py-3 md:flex lg:px-12`}>
-        <Brand tagline="USDC for South Asia" />
+        <Brand />
 
         {!landing && (
           <nav className="flex items-center gap-0.5 lg:gap-1" aria-label="Products">
@@ -158,7 +298,14 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
         )}
 
         <div className="flex shrink-0 items-center gap-2">
-          {showFx && <FxSwitch active={helixMotion} onToggle={() => setHelixMotion(!helixMotion)} />}
+          {showFx && (
+            <HelixFxMenu
+              helixVisible={helixVisible}
+              onToggleVisible={() => setHelixVisible(!helixVisible)}
+              helixMotion={helixMotion}
+              onToggleMotion={() => setHelixMotion(!helixMotion)}
+            />
+          )}
           <ThemeToggle />
           {landing ? (
             <AppLink
@@ -184,17 +331,20 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
       <div className={`mx-auto w-full ${maxW} px-4 py-2.5 md:hidden`}>
         <div className="flex items-center justify-between gap-2">
           <div className="shrink-0" onClick={() => setMenuOpen(false)}>
-            <Brand tagline="USDC for South Asia" />
+            <Brand />
           </div>
 
           {landing ? (
-            <AppLink
-              to="/p2p"
-              className="btn-shine inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold transition-transform active:scale-[0.98]"
-              style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
-            >
-              Open App <ArrowRight className="size-3.5" />
-            </AppLink>
+            <div className="flex shrink-0 items-center gap-2">
+              <ThemeToggle size="sm" />
+              <AppLink
+                to="/p2p"
+                className="btn-shine inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-xs font-semibold transition-transform active:scale-[0.98]"
+                style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
+              >
+                Open App <ArrowRight className="size-3.5" />
+              </AppLink>
+            </div>
           ) : (
             <ConnectKitButton.Custom>
               {({ show, isConnected, address }) => (
@@ -210,16 +360,24 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
           )}
         </div>
 
-        <div
-          className="mt-2.5 flex items-center justify-between gap-2 border-t pt-2"
-          style={{ borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-2">
-            {showFx && <FxSwitch compact active={helixMotion} onToggle={() => setHelixMotion(!helixMotion)} />}
-            <ThemeToggle size="sm" />
-          </div>
+        {!landing && (
+          <div
+            className="mt-2.5 flex items-center justify-between gap-2 border-t pt-2"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <div className="flex items-center gap-1.5">
+              {showFx && (
+                <HelixFxMenu
+                  compact
+                  helixVisible={helixVisible}
+                  onToggleVisible={() => setHelixVisible(!helixVisible)}
+                  helixMotion={helixMotion}
+                  onToggleMotion={() => setHelixMotion(!helixMotion)}
+                />
+              )}
+              <ThemeToggle size="sm" />
+            </div>
 
-          {!landing && (
             <button
               type="button"
               aria-expanded={menuOpen}
@@ -236,8 +394,8 @@ export function SiteBar({ overlay = false, sticky = true, transparent = false }:
               {menuOpen ? <X className="size-4" /> : <Menu className="size-4" />}
               <span>Menu</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <AnimatePresence initial={false}>
           {menuOpen && !landing && (

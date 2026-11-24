@@ -13,7 +13,7 @@ export function FinalCta() {
           <span className="relative mx-auto flex size-14 items-center justify-center rounded-2xl" style={{ background: 'var(--fill-3)' }}>
             <TokenUSDC variant="branded" size={30} />
           </span>
-          <h2 className="display text-gradient relative mt-6 text-balance text-4xl font-bold sm:text-6xl">Ready to move your first dollar?</h2>
+          <h2 className="display relative mt-6 text-balance text-4xl font-bold sm:text-6xl" style={{ color: 'var(--accent)' }}>Ready to move your first dollar?</h2>
           <p className="relative mt-4 text-pretty text-sm sm:text-base" style={{ color: 'var(--muted)' }}>
             Open the market, post an ad, or just swap and bridge. It takes a wallet and a few seconds.
           </p>

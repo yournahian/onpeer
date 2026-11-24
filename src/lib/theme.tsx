@@ -5,6 +5,7 @@ export type ResolvedTheme = 'dark' | 'light'
 
 const KEY = 'onpeer-theme'
 const HELIX_KEY = 'onpeer-helix-motion'
+const HELIX_VISIBLE_KEY = 'onpeer-helix-visible'
 
 type ThemeCtx = {
   pref: ThemePref
@@ -12,6 +13,10 @@ type ThemeCtx = {
   setPref: (p: ThemePref) => void
   helixMotion: boolean
   setHelixMotion: (v: boolean) => void
+  helixVisible: boolean
+  setHelixVisible: (v: boolean) => void
+  helixBlurred: boolean
+  setHelixBlurred: (v: boolean) => void
 }
 
 // Kept on globalThis so a hot-reloaded copy of this module still finds the provider that is already mounted.
@@ -39,10 +44,20 @@ const readHelix = (): boolean => {
   }
 }
 
+const readHelixVisible = (): boolean => {
+  try {
+    return localStorage.getItem(HELIX_VISIBLE_KEY) !== 'off'
+  } catch {
+    return true
+  }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [pref, setPrefState] = useState<ThemePref>(readPref)
   const [system, setSystem] = useState<ResolvedTheme>(systemTheme)
   const [helixMotion, setHelixState] = useState<boolean>(readHelix)
+  const [helixVisible, setHelixVisibleState] = useState<boolean>(readHelixVisible)
+  const [helixBlurred, setHelixBlurred] = useState<boolean>(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: light)')
@@ -55,12 +70,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', resolved)
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#000000' : '#faf9f7')
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#000000' : '#ffffff')
   }, [resolved])
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-helix', helixMotion ? 'on' : 'off')
-  }, [helixMotion])
+    document.documentElement.setAttribute('data-helix', helixVisible && helixMotion ? 'on' : 'off')
+  }, [helixMotion, helixVisible])
 
   const setPref = useCallback((p: ThemePref) => {
     try {
@@ -80,9 +95,28 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setHelixState(v)
   }, [])
 
+  const setHelixVisible = useCallback((v: boolean) => {
+    try {
+      localStorage.setItem(HELIX_VISIBLE_KEY, v ? 'on' : 'off')
+    } catch {
+      /* storage unavailable */
+    }
+    setHelixVisibleState(v)
+  }, [])
+
   const value = useMemo(
-    () => ({ pref, resolved, setPref, helixMotion, setHelixMotion }),
-    [pref, resolved, setPref, helixMotion, setHelixMotion],
+    () => ({
+      pref,
+      resolved,
+      setPref,
+      helixMotion,
+      setHelixMotion,
+      helixVisible,
+      setHelixVisible,
+      helixBlurred,
+      setHelixBlurred,
+    }),
+    [pref, resolved, setPref, helixMotion, setHelixMotion, helixVisible, setHelixVisible, helixBlurred],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

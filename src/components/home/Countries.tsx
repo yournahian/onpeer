@@ -9,7 +9,7 @@ export function Countries() {
     <section className="mt-24" aria-labelledby="countries-title">
       <Reveal>
         <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>Made for the region</p>
-        <h2 id="countries-title" className="display text-gradient mt-2 text-balance text-4xl font-bold sm:text-5xl">
+        <h2 id="countries-title" className="display mt-2 text-balance text-4xl font-bold sm:text-5xl" style={{ color: 'var(--accent)' }}>
           Eight currencies, the payment apps you already use
         </h2>
       </Reveal>

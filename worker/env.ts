@@ -49,6 +49,7 @@ export interface Env {
   EMAIL_FROM?: string
   ADMIN_ALERT_EMAIL?: string
   CIRCLE_API_KEY?: string
+  ONRAMP_DEV_PASS?: string
 
   // Legacy / AI assistant secrets
   ADMIN_SESSION_SECRET?: string

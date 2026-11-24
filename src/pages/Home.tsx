@@ -13,7 +13,6 @@ import { HowItWorks } from '@/components/home/HowItWorks'
 import { Features } from '@/components/home/Features'
 import { Countries } from '@/components/home/Countries'
 import { Faq } from '@/components/home/Faq'
-import { FinalCta } from '@/components/home/FinalCta'
 import { useLenis } from '@/hooks/useLenis'
 
 const PRODUCTS = [
@@ -50,7 +49,7 @@ export default function Home() {
       {/* Navbar absolute over hero — no space taken, scrolls away with page */}
       <div className="relative">
         <div className="absolute inset-x-0 top-0 z-40">
-          <SiteBar sticky={false} transparent />
+          <SiteBar sticky={false} transparent landing />
         </div>
         <PlanetHero />
       </div>
@@ -60,8 +59,8 @@ export default function Home() {
 
         <section className="mt-24" aria-labelledby="products-title">
           <Reveal>
-            <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>Three tools, one wallet</p>
-            <h2 id="products-title" className="display text-gradient mt-2 text-balance text-4xl font-bold sm:text-5xl">
+            <p className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent)' }}>Three tools, one platform</p>
+            <h2 id="products-title" className="display mt-2 text-balance text-4xl font-bold sm:text-5xl" style={{ color: 'var(--accent)' }}>
               Trade, swap and bridge without leaving OnPeer
             </h2>
           </Reveal>
@@ -131,7 +130,6 @@ export default function Home() {
         <Features />
         <Countries />
         <Faq />
-        <FinalCta />
       </main>
     </div>
   )

@@ -6,7 +6,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #000000;
-  --bg-gradient: linear-gradient(180deg, #000000 0%, #0b0b0b 55%, #151515 100%);
+  --bg-gradient: none;
   --surface: rgba(255, 255, 255, 0.055);
   --surface-strong: rgba(255, 255, 255, 0.1);
   --surface-muted: #151515;
@@ -56,8 +56,8 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #faf9f7;
-  --bg-gradient: linear-gradient(180deg, #ffffff 0%, #faf8f5 55%, #f3efe9 100%);
+  --bg: #ffffff;
+  --bg-gradient: none;
   --surface: rgba(255, 255, 255, 0.82);
   --surface-strong: rgba(21, 21, 21, 0.07);
   --surface-muted: #f2ece6;
@@ -118,9 +118,8 @@ body {
   margin: 0;
   font-family: 'DM Sans', sans-serif;
   min-height: 100dvh;
-  background: var(--bg);
-  background-image: var(--bg-gradient);
-  background-attachment: scroll;
+  background-color: var(--bg);
+  background-image: none;
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;

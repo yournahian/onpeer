@@ -310,7 +310,30 @@ async function handleApi(
       return res ?? json(404, { error: 'not_found' })
     }
 
-    // ---- Phase 3 Circle Onramp Sandbox Session (/api/onramp/session) ----
+    // ---- Phase 3 Circle Onramp Sandbox Session (/api/onramp/session) & Dev Preview Gate ----
+    if (path === '/onramp/dev-unlock') {
+      if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' }, { Allow: 'POST' })
+      const ip = clientIp(req)
+      const allowed = await runDb(env, (db) => checkRateLimit(db, `rl:onramp:dev:${ip}`, 10, 60)).catch(() => true)
+      if (!allowed) return json(429, { error: 'rate_limited' })
+      const expected = env.ONRAMP_DEV_PASS?.trim() ?? ''
+      if (!expected) return json(503, { error: 'passcode_not_configured' })
+      const body = await readJsonBody(req, 2_048)
+      const candidate = typeof body?.passcode === 'string' ? body.passcode.trim() : ''
+      if (!candidate) return json(401, { error: 'invalid_passcode' })
+      const enc = new TextEncoder()
+      const [aBuf, bBuf] = await Promise.all([
+        crypto.subtle.digest('SHA-256', enc.encode(candidate)),
+        crypto.subtle.digest('SHA-256', enc.encode(expected)),
+      ])
+      const a = new Uint8Array(aBuf)
+      const b = new Uint8Array(bBuf)
+      let diff = 0
+      for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i]
+      if (diff !== 0) return json(401, { error: 'invalid_passcode' })
+      return json(200, { ok: true })
+    }
+
     if (path === '/onramp/session' || path.startsWith('/onramp/')) {
       const res = await runDb(env, (db) => handleOnrampRoutes(req, env, db, path))
       return res ?? json(404, { error: 'not_found' })

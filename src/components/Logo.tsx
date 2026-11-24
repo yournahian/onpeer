@@ -17,19 +17,14 @@ export function LogoMark({ size = 40 }: { size?: number }) {
 }
 
 /** Logo mark plus wordmark, linking home. */
-export function Brand({ tagline }: { tagline?: string }) {
+export function Brand() {
   return (
     <AppLink to={isAppSubdomain() ? LANDING_URL : '/'} aria-label="OnPeer home" className="group flex items-center gap-3">
       <span className="glow-accent rounded-xl transition-transform duration-500 group-hover:rotate-[-8deg] group-hover:scale-105">
         <LogoMark size={40} />
       </span>
-      <span className="leading-tight">
-        <span className="script block text-2xl leading-tight" style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}>OnPeer</span>
-        {tagline && (
-          <span className="block text-xs" style={{ color: 'var(--subtle)' }}>
-            {tagline}
-          </span>
-        )}
+      <span className="script block text-2xl leading-tight" style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}>
+        OnPeer
       </span>
     </AppLink>
   )

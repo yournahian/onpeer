@@ -1168,16 +1168,11 @@ export default function DocsPage() {
               <span className="glow-accent rounded-xl transition-transform duration-500 group-hover:rotate-[-8deg] group-hover:scale-105">
                 <LogoMark size={40} />
               </span>
-              <span className="leading-tight">
-                <span
-                  className="script block text-2xl leading-tight"
-                  style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
-                >
-                  OnPeer
-                </span>
-                <span className="block text-xs" style={{ color: 'var(--subtle)' }}>
-                  USDC for South Asia
-                </span>
+              <span
+                className="script block text-2xl leading-tight"
+                style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
+              >
+                OnPeer
               </span>
             </a>
 
@@ -1702,16 +1697,11 @@ export default function DocsPage() {
                 <span className="glow-accent rounded-xl">
                   <LogoMark size={36} />
                 </span>
-                <span className="leading-tight">
-                  <span
-                    className="script block text-xl leading-tight"
-                    style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
-                  >
-                    OnPeer
-                  </span>
-                  <span className="block text-[11px]" style={{ color: 'var(--subtle)' }}>
-                    USDC for South Asia
-                  </span>
+                <span
+                  className="script block text-xl leading-tight"
+                  style={{ color: 'var(--accent)', textShadow: '0 0 18px var(--accent-glow)' }}
+                >
+                  OnPeer
                 </span>
               </div>
               <button
