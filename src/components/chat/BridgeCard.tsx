@@ -1,4 +1,4 @@
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { AlertTriangle, Check, ExternalLink, Info, Loader2, X } from 'lucide-react'
 import {
   bridgeStepLabel,
@@ -113,13 +113,13 @@ export function BridgeCard({
       )}
 
       {phase === 'done' ? null : !flow.isConnected ? (
-        <ConnectKitButton.Custom>
+        <ConnectWalletCustom>
           {({ show }) => (
             <Button className="w-full" onClick={show}>
               Connect wallet
             </Button>
           )}
-        </ConnectKitButton.Custom>
+        </ConnectWalletCustom>
       ) : phase === 'quoted' ? (
         <Button variant="buy" className="w-full" onClick={() => void flow.execute()}>
           Confirm bridge

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAccount } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import {
   ChevronRight,
   Copy,
@@ -81,7 +81,7 @@ function ConnectPrompt({ body }: { body: string }) {
       title="Connect Your Wallet"
       body={body}
       cta={
-        <ConnectKitButton.Custom>
+        <ConnectWalletCustom>
           {({ show }) => (
             <button
               type="button"
@@ -91,7 +91,7 @@ function ConnectPrompt({ body }: { body: string }) {
               Connect Wallet
             </button>
           )}
-        </ConnectKitButton.Custom>
+        </ConnectWalletCustom>
       }
     />
   )

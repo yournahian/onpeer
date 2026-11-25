@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, usePublicClient } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -692,7 +692,7 @@ function MobileOrderScreen({
                 : 'Place Order'}
           </button>
         ) : (
-          <ConnectKitButton.Custom>
+          <ConnectWalletCustom>
             {({ show }) => (
               <button
                 type="button"
@@ -702,7 +702,7 @@ function MobileOrderScreen({
                 Connect Wallet
               </button>
             )}
-          </ConnectKitButton.Custom>
+          </ConnectWalletCustom>
         )}
       </footer>
     </motion.section>
@@ -1096,7 +1096,7 @@ export function InlineOrderDrawer({
                       : `Sell ${s.asset}`}
               </button>
             ) : (
-              <ConnectKitButton.Custom>
+              <ConnectWalletCustom>
                 {({ show }) => (
                   <button
                     type="button"
@@ -1106,7 +1106,7 @@ export function InlineOrderDrawer({
                     Connect Wallet
                   </button>
                 )}
-              </ConnectKitButton.Custom>
+              </ConnectWalletCustom>
             )}
           </div>
         </div>

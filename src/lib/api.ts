@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { isTelegramMiniApp, openExternalUrl } from '@/lib/telegram'
 
 export interface StoredBackendSession {
   token: string
@@ -201,7 +202,30 @@ export async function signInWithWallet(
     body: { address: normalized },
     auth: false,
   })
-  const signature = await signMessageAsync({ message: challenge.message })
+  let nudgeTimer: number | null = null
+  if (isTelegramMiniApp()) {
+    nudgeTimer = window.setTimeout(() => {
+      try {
+        const id = window.sessionStorage.getItem('onpeer:tg:wallet_id')
+        const map: Record<string, string> = {
+          metamask: 'https://metamask.app.link/wc',
+          trust: 'https://link.trustwallet.com/wc',
+          coinbase: 'https://go.cb-w.com/wc',
+          rainbow: 'https://rnbwapp.com/wc',
+          zerion: 'https://wallet.zerion.io/wc',
+        }
+        if (id && map[id]) openExternalUrl(map[id])
+      } catch {
+        /* ignore */
+      }
+    }, 400)
+  }
+  let signature: string
+  try {
+    signature = await signMessageAsync({ message: challenge.message })
+  } finally {
+    if (nudgeTimer !== null) window.clearTimeout(nudgeTimer)
+  }
   const login = await apiFetch<{ token: string; wallet: string; expiresInSeconds: number }>('/auth/login', {
     method: 'POST',
     body: { address: normalized, signature, nonce: challenge.nonce },

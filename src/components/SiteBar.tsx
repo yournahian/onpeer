@@ -16,7 +16,7 @@ import {
   Waypoints,
   X,
 } from 'lucide-react'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { isLandingDomain, useRoute, type Route } from '@/lib/router'
 import { shortAddr } from '@/lib/p2p'
 import { AppLink } from '@/components/AppLink'
@@ -316,13 +316,13 @@ export function SiteBar({
               Open App <ArrowRight className="size-4" />
             </AppLink>
           ) : (
-            <ConnectKitButton.Custom>
+            <ConnectWalletCustom>
               {({ show, isConnected, address }) => (
                 <Button variant={isConnected ? 'ghost' : 'primary'} className="mono min-h-10" onClick={show}>
                   {isConnected && address ? shortAddr(address) : 'Connect'}
                 </Button>
               )}
-            </ConnectKitButton.Custom>
+            </ConnectWalletCustom>
           )}
         </div>
       </div>
@@ -346,7 +346,7 @@ export function SiteBar({
               </AppLink>
             </div>
           ) : (
-            <ConnectKitButton.Custom>
+            <ConnectWalletCustom>
               {({ show, isConnected, address }) => (
                 <Button
                   variant={isConnected ? 'ghost' : 'primary'}
@@ -356,7 +356,7 @@ export function SiteBar({
                   {isConnected && address ? shortAddr(address) : 'Connect'}
                 </Button>
               )}
-            </ConnectKitButton.Custom>
+            </ConnectWalletCustom>
           )}
         </div>
 

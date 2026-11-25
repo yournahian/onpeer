@@ -5,6 +5,8 @@ import { erc20Abi, type Hash } from 'viem'
 import { toast } from 'sonner'
 import { buildTxExplorerUrl } from '@/onchain-facts'
 import { CHAIN_ID, getEscrowConfig, parseTxError, type P2pAsset } from '@/lib/p2p'
+import { isTelegramMiniApp, openExternalUrl } from '@/lib/telegram'
+import { getSavedTelegramWalletLaunchUrl } from '@/components/TelegramWalletModal'
 import { useP2pAsset } from '@/hooks/useEscrow'
 
 /**
@@ -25,9 +27,20 @@ export function useTx(assetOverride?: P2pAsset) {
   const run = useCallback(
     async (key: string, label: string, send: () => Promise<Hash>): Promise<boolean> => {
       setPendingKey(key)
+      let nudgeTimer: number | null = null
       try {
         if (chainId !== CHAIN_ID) await switchChainAsync({ chainId: CHAIN_ID })
+        if (isTelegramMiniApp()) {
+          nudgeTimer = window.setTimeout(() => {
+            const launch = getSavedTelegramWalletLaunchUrl()
+            if (launch) openExternalUrl(launch)
+          }, 400)
+        }
         const hash = await send()
+        if (nudgeTimer !== null) {
+          window.clearTimeout(nudgeTimer)
+          nudgeTimer = null
+        }
         const toastId = toast.loading(`${label}: confirming...`)
         const receipt = await publicClient!.waitForTransactionReceipt({ hash })
         if (receipt.status !== 'success') {
@@ -52,6 +65,7 @@ export function useTx(assetOverride?: P2pAsset) {
         if (copy) toast.error(copy)
         return false
       } finally {
+        if (nudgeTimer !== null) window.clearTimeout(nudgeTimer)
         setPendingKey(null)
       }
     },

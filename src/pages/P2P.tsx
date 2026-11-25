@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAccount } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { AlertTriangle, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { ESCROW_ADDRESS, SIDE_BUY, SIDE_SELL, sameAddr } from '@/lib/p2p'
@@ -218,7 +218,7 @@ export default function P2PPage() {
                     Connect your wallet and complete your P2P profile before accessing the marketplace, encrypted
                     payment vault, or order chat. Swap and Bridge remain open without an account.
                   </p>
-                  <ConnectKitButton.Custom>
+                  <ConnectWalletCustom>
                     {({ show }) => (
                       <button
                         type="button"
@@ -228,7 +228,7 @@ export default function P2PPage() {
                         Connect Wallet
                       </button>
                     )}
-                  </ConnectKitButton.Custom>
+                  </ConnectWalletCustom>
                 </section>
               ) : isSignedIn && accountLoading && !profile ? (
                 <div className="p2p-card h-52 animate-pulse rounded-xl" />

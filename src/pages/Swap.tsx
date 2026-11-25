@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import type { SwapEstimate } from '@circle-fin/app-kit'
@@ -374,13 +374,13 @@ export default function SwapPage() {
           {/* Primary Pill CTA */}
           <div className="mt-4">
             {!isConnected ? (
-              <ConnectKitButton.Custom>
+              <ConnectWalletCustom>
                 {({ show }) => (
                   <Button className="w-full rounded-full py-3 text-sm font-bold" onClick={show}>
                     Connect wallet
                   </Button>
                 )}
-              </ConnectKitButton.Custom>
+              </ConnectWalletCustom>
             ) : isReviewed ? (
               <Button
                 className="w-full rounded-full py-3 text-sm font-bold"

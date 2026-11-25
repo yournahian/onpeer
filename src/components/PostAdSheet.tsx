@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, usePublicClient } from 'wagmi'
 import { keccak256, toBytes } from 'viem'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { toast } from 'sonner'
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, Lock, ShieldCheck, X } from 'lucide-react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
@@ -877,7 +877,7 @@ function PostAdForm({
                         : `Post Buy Ad (${formatUsdcAmount(listingFee, undefined, asset)} ${asset} Fee)`}
               </button>
             ) : (
-              <ConnectKitButton.Custom>
+              <ConnectWalletCustom>
                 {({ show }) => (
                   <button
                     type="button"
@@ -887,7 +887,7 @@ function PostAdForm({
                     Connect Wallet
                   </button>
                 )}
-              </ConnectKitButton.Custom>
+              </ConnectWalletCustom>
             )}
           </div>
         </div>

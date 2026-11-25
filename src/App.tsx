@@ -4,6 +4,7 @@ import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
 import { useTelegramMiniAppBridge } from '@/lib/telegram'
 import { useTheme } from '@/lib/theme'
 import { AgentChat } from '@/components/AgentChat'
+import { TelegramWalletModal } from '@/components/TelegramWalletModal'
 import { AgentProvider } from '@/agent/AgentContext'
 import { Backdrop } from '@/components/fx/Backdrop'
 import { ScrollProgress } from '@/components/fx/ScrollProgress'
@@ -135,6 +136,7 @@ export default function App() {
           <AgentChat route={route} />
         </ErrorBoundary>
       )}
+      <TelegramWalletModal />
       </AgentProvider>
     </MotionConfig>
   )

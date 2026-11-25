@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAccount } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import {
   Activity,
   AlertTriangle,
@@ -272,7 +272,7 @@ export function AccountPanel({
         <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
           Inspect your P2P User Center, saved payment methods, feedback, and Merchant Security Margin.
         </p>
-        <ConnectKitButton.Custom>
+        <ConnectWalletCustom>
           {({ show }) => (
             <button
               type="button"
@@ -282,7 +282,7 @@ export function AccountPanel({
               Connect Wallet
             </button>
           )}
-        </ConnectKitButton.Custom>
+        </ConnectWalletCustom>
       </div>
     )
   }

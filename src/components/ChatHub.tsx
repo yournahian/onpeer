@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import {
   ArrowLeft,
   ExternalLink,
@@ -139,7 +139,7 @@ export function ChatHub({
         <p className="mx-auto mt-1.5 max-w-md text-xs text-[var(--p2p-muted)]">
           Connect your wallet to access encrypted P2P order chats with your counterparties.
         </p>
-        <ConnectKitButton.Custom>
+        <ConnectWalletCustom>
           {({ show }) => (
             <button
               type="button"
@@ -149,7 +149,7 @@ export function ChatHub({
               Connect Wallet
             </button>
           )}
-        </ConnectKitButton.Custom>
+        </ConnectWalletCustom>
       </div>
     )
   }

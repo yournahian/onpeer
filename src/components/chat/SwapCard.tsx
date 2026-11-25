@@ -1,4 +1,4 @@
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { Check, ExternalLink, Info } from 'lucide-react'
 import { SLIPPAGE_OPTIONS, useSwapFlow, type SwapToken } from '@/hooks/useSwapFlow'
 import { Button, Chip } from '@/components/ui'
@@ -85,13 +85,13 @@ export function SwapCard({
       )}
 
       {phase === 'done' ? null : !flow.isConnected ? (
-        <ConnectKitButton.Custom>
+        <ConnectWalletCustom>
           {({ show }) => (
             <Button className="w-full" onClick={show}>
               Connect wallet
             </Button>
           )}
-        </ConnectKitButton.Custom>
+        </ConnectWalletCustom>
       ) : phase === 'quoted' ? (
         <Button variant="buy" className="w-full" onClick={() => void flow.execute()}>
           Confirm swap

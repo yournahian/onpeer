@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAccount, useReadContract, useSignMessage } from 'wagmi'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import type {
@@ -559,13 +559,13 @@ function BuyUsdcPanelInner() {
         {/* Two-step Popup Action Bar */}
         <div className="mt-3.5 space-y-2">
           {!isConnected || !address ? (
-            <ConnectKitButton.Custom>
+            <ConnectWalletCustom>
               {({ show }) => (
                 <Button className="w-full rounded-full py-3 text-sm font-bold" onClick={show}>
                   Connect wallet to continue
                 </Button>
               )}
-            </ConnectKitButton.Custom>
+            </ConnectWalletCustom>
           ) : !isSessionFresh(mintedSession) ? (
             <Button
               className="w-full rounded-full py-3 text-sm font-bold"

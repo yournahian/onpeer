@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ConnectKitButton } from 'connectkit'
+import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { Activity, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
 import { TokenUSDC } from '@web3icons/react'
 import { zeroAddress } from 'viem'
@@ -42,13 +42,13 @@ function Gate({ title, body, connect }: { title: string; body: string; connect?:
         <h1 className="display mt-4 text-2xl font-bold">{title}</h1>
         <p className="mt-2 text-sm text-pretty" style={{ color: 'var(--muted)' }}>{body}</p>
         {connect && (
-          <ConnectKitButton.Custom>
+          <ConnectWalletCustom>
             {({ show }) => (
               <Button className="mt-6 w-full" onClick={show}>
                 Connect wallet
               </Button>
             )}
-          </ConnectKitButton.Custom>
+          </ConnectWalletCustom>
         )}
       </div>
     </div>
