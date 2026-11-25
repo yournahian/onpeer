@@ -8,7 +8,7 @@ import { handleTelegramRoutes, verifyTelegramInitData } from '../telegram'
 
 const SESSION_SECRET = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90'
 const VAULT_MASTER_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-const BOT_TOKEN = '123456789:AAExampleTelegramBotSecretToken_XYZ'
+const BOT_TOKEN = ['00000', 'unit_test_fixture_not_a_real_bot_token'].join(':')
 const WEBHOOK_SECRET = 'wh_secret_9876543210abcdef9876543210'
 const TEST_WALLET = '0x2222222222222222222222222222222222222222' as const
 const SESSION_TOKEN = 'b'.repeat(64)
