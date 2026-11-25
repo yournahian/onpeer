@@ -1,7 +1,25 @@
-import { useEffect, useState } from 'react'
-import { BellRing, CheckCircle2, ExternalLink, KeyRound, Loader2, LogOut, Mail, Send, ShieldCheck, Trash2, Unlink, UserCheck } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  ArrowRight,
+  BellRing,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ExternalLink,
+  KeyRound,
+  Loader2,
+  LogOut,
+  Mail,
+  RefreshCw,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Unlink,
+  UserCheck,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { AppLink } from '@/components/AppLink'
+import { CountryFlag } from '@/components/logos'
 import { COUNTRIES } from '@/lib/p2p'
 import { BackendApiError } from '@/lib/api'
 import {
@@ -13,7 +31,120 @@ import {
 } from '@/lib/telegram'
 import { useP2pAccount, useTelegramAlerts, type P2pAccountProfile, type UpsertAccountInput } from '@/hooks/useAccount'
 
-export function AccountSetup() {
+const ONBOARD_STAGE_PREFIX = 'onpeer:p2p-onboard-stage:'
+
+export function getOnboardingStage(wallet: string | null | undefined): 'step2' | 'done' | null {
+  if (!wallet || typeof window === 'undefined') return null
+  try {
+    const v = localStorage.getItem(`${ONBOARD_STAGE_PREFIX}${wallet.toLowerCase()}`)
+    return v === 'step2' || v === 'done' ? v : null
+  } catch {
+    return null
+  }
+}
+
+export function setOnboardingStage(wallet: string | null | undefined, stage: 'step2' | 'done'): void {
+  if (!wallet || typeof window === 'undefined') return
+  try {
+    localStorage.setItem(`${ONBOARD_STAGE_PREFIX}${wallet.toLowerCase()}`, stage)
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function CountryDropdown({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (code: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const selected = COUNTRIES.find((c) => c.code.toUpperCase() === value.toUpperCase()) ?? COUNTRIES[0]!
+
+  useEffect(() => {
+    if (!open) return
+    const onPointer = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={`p2p-input flex h-10 w-full items-center justify-between gap-2 rounded-lg px-3 text-xs font-semibold text-[var(--p2p-ink)] transition-colors ${
+          open ? 'border-[#FF5A00]' : ''
+        }`}
+      >
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <CountryFlag code={selected.code} size={18} />
+          <span className="truncate">{selected.name}</span>
+          <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">({selected.currency})</span>
+        </span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-[var(--p2p-muted)] transition-transform ${open ? 'rotate-180 text-[#FF5A00]' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="p2p-glass-popover absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-64 overflow-y-auto rounded-xl border border-[var(--p2p-border-active)] p-1.5 shadow-2xl"
+        >
+          {COUNTRIES.map((c) => {
+            const active = c.code.toUpperCase() === selected.code.toUpperCase()
+            return (
+              <button
+                key={c.code}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onChange(c.code.toUpperCase())
+                  setOpen(false)
+                }}
+                className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold transition-colors ${
+                  active
+                    ? 'bg-[var(--p2p-tint)] text-[#FF5A00]'
+                    : 'text-[var(--p2p-ink)] hover:bg-[var(--p2p-input-bg)]'
+                }`}
+              >
+                <span className="inline-flex items-center gap-2.5">
+                  <CountryFlag code={c.code} size={18} />
+                  <span>{c.name}</span>
+                  <span className="p2p-mono text-[11px] opacity-75">({c.currency})</span>
+                </span>
+                {active && <Check className="size-3.5 shrink-0 text-[#FF5A00]" />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function AccountSetup({
+  onboarding = false,
+  onOnboardingComplete,
+}: {
+  onboarding?: boolean
+  onOnboardingComplete?: () => void
+}) {
   const {
     isSignedIn,
     profile,
@@ -41,27 +172,22 @@ export function AccountSetup() {
 
   if (!isSignedIn) {
     return (
-      <section className="p2p-card rounded-xl p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="max-w-2xl">
+      <section className="p2p-card rounded-2xl p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="max-w-md space-y-1">
             <div className="flex items-center gap-2">
               <UserCheck className="size-4 text-[#FF5A00]" />
-              <h2 className="text-base font-bold text-[var(--p2p-ink)]">P2P Account, Encrypted Vault &amp; Alerts</h2>
+              <h2 className="text-base font-bold text-[var(--p2p-ink)]">Sign In to P2P</h2>
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--p2p-muted)]">
-              Sign a free, gasless message with your wallet to manage your P2P profile, encrypted payment details,
-              offchain chat, dispute filings, and optional email notifications. Review our{' '}
-              <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
-                Privacy &amp; Encryption Notice
-              </AppLink>
-              .
+            <p className="text-xs text-[var(--p2p-muted)]">
+              Sign a free, gasless wallet message to continue.
             </p>
           </div>
           <button
             type="button"
             disabled={signingIn}
             onClick={() => void handleSignIn()}
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-50"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-50"
           >
             {signingIn ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
             {signingIn ? 'Signing In...' : 'Sign In with Wallet'}
@@ -72,14 +198,15 @@ export function AccountSetup() {
   }
 
   if (isLoading && !profile) {
-    return <div className="p2p-card h-44 animate-pulse rounded-xl" />
+    return <div className="p2p-card h-44 animate-pulse rounded-2xl" />
   }
 
-  const formKey = `${profile?.wallet ?? ''}|${profile?.displayName ?? ''}|${profile?.country ?? ''}|${profile?.emailMasked ?? ''}|${String(profile?.emailOptIn)}|${profile?.consentAt ?? ''}`
+  const formKey = `${profile?.wallet ?? ''}|${profile?.displayName ?? ''}|${profile?.country ?? ''}|${profile?.emailMasked ?? ''}|${String(profile?.emailVerified)}|${String(profile?.emailOptIn)}|${profile?.consentAt ?? ''}`
 
   return (
     <AccountSetupForm
       key={formKey}
+      onboarding={onboarding}
       profile={profile}
       saving={saving}
       resending={resending}
@@ -88,11 +215,13 @@ export function AccountSetup() {
       onSave={saveAccount}
       onResend={resendVerification}
       onDelete={deleteAccount}
+      onOnboardingComplete={onOnboardingComplete}
     />
   )
 }
 
 function AccountSetupForm({
+  onboarding,
   profile,
   saving,
   resending,
@@ -101,7 +230,9 @@ function AccountSetupForm({
   onSave,
   onResend,
   onDelete,
+  onOnboardingComplete,
 }: {
+  onboarding: boolean
   profile: P2pAccountProfile | null
   saving: boolean
   resending: boolean
@@ -110,20 +241,70 @@ function AccountSetupForm({
   onSave: (input: UpsertAccountInput) => Promise<P2pAccountProfile>
   onResend: () => Promise<{ queued: boolean; reason?: string }>
   onDelete: () => Promise<{ ok: boolean }>
+  onOnboardingComplete?: () => void
 }) {
   const [displayName, setDisplayName] = useState(profile?.displayName ?? '')
   const [country, setCountry] = useState(profile?.country ?? 'BD')
   const [email, setEmail] = useState('')
   const [emailOptIn, setEmailOptIn] = useState(profile?.emailOptIn ?? true)
-  const [consent, setConsent] = useState(!!profile?.consentAt)
+  const [consent, setConsent] = useState(onboarding ? false : !!profile?.consentAt)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
+  const isEmailVerified = !!profile?.emailVerified
   const isSandbox = profile?.diditMode !== 'live'
   const kycBadgeLabel = isSandbox ? 'Test KYC' : 'KYC'
 
-  const handleSave = async () => {
+  const handleSendVerifyEmail = async () => {
+    const trimmedEmail = email.trim()
+    if (!trimmedEmail && !profile?.hasEmail) {
+      toast.error('Enter your email address to verify.')
+      return
+    }
+    try {
+      const res = await onSave({
+        displayName: displayName.trim() || null,
+        country: country || null,
+        ...(trimmedEmail ? { email: trimmedEmail } : {}),
+        emailOptIn: true,
+        consent: true,
+      })
+      setOnboardingStage(res.wallet, 'step2')
+      setEmail('')
+      if (res.verificationEmail?.queued) {
+        toast.success('Verification link sent — check your inbox.')
+      } else if (res.verificationEmail?.reason === 'email_send_failed') {
+        toast.error('Could not deliver email. Please check the address and retry.')
+      } else if (!trimmedEmail && profile?.hasEmail) {
+        await handleResend()
+      } else {
+        toast.success('Profile saved.')
+      }
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not save profile.')
+    }
+  }
+
+  const handleCompleteOnboarding = async () => {
+    if (!consent) {
+      toast.error('Please accept the Privacy & Encryption Notice to continue.')
+      return
+    }
+    try {
+      const res = await onSave({
+        emailOptIn,
+        consent: true,
+      })
+      setOnboardingStage(res.wallet, 'done')
+      toast.success('Welcome to OnPeer P2P!')
+      onOnboardingComplete?.()
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not complete setup.')
+    }
+  }
+
+  const handleSaveSettings = async () => {
     if (!consent && !profile?.consentAt) {
-      toast.error('Please review and accept the Privacy & Sandbox Notice first.')
+      toast.error('Please accept the Privacy & Encryption Notice first.')
       return
     }
     try {
@@ -136,16 +317,10 @@ function AccountSetupForm({
         consent: true,
       })
       setEmail('')
-      if (res.verificationEmail) {
-        if (res.verificationEmail.queued) {
-          toast.success('Profile saved — check your inbox to confirm your email.')
-        } else if (res.verificationEmail.reason === 'email_send_failed') {
-          toast.error('Profile saved, but Resend rejected the verification email. Check EMAIL_FROM & Resend logs.')
-        } else {
-          toast.info('Profile saved. Email confirmation will be available once Resend is configured.')
-        }
+      if (res.verificationEmail?.queued) {
+        toast.success('Saved — check your inbox to verify your email.')
       } else {
-        toast.success('P2P Account saved')
+        toast.success('Account settings saved')
       }
     } catch (err) {
       toast.error(err instanceof BackendApiError ? err.message : 'Could not save account.')
@@ -156,7 +331,7 @@ function AccountSetupForm({
     try {
       await onSave({ email: '', emailOptIn: false, consent: true })
       setEmail('')
-      toast.success('Email address removed')
+      toast.success('Email removed')
     } catch (err) {
       toast.error(err instanceof BackendApiError ? err.message : 'Could not remove email.')
     }
@@ -165,12 +340,12 @@ function AccountSetupForm({
   const handleResend = async () => {
     try {
       const res = await onResend()
-      if (res.queued) toast.success('Verification email sent.')
+      if (res.queued) toast.success('Verification link resent — check your inbox.')
       else if (res.reason === 'email_send_failed') {
-        toast.error('Resend rejected the verification email. Check EMAIL_FROM & Resend logs.')
+        toast.error('Email delivery failed. Please try again.')
       } else toast.info('Email sender is not configured on this environment yet.')
     } catch (err) {
-      toast.error(err instanceof BackendApiError ? err.message : 'Could not resend verification email.')
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not resend link.')
     }
   }
 
@@ -178,44 +353,235 @@ function AccountSetupForm({
     try {
       await onDelete()
       setConfirmDelete(false)
-      toast.success('Account deleted and personal data scrubbed.')
+      toast.success('Account deleted.')
     } catch (err) {
       toast.error(err instanceof BackendApiError ? err.message : 'Could not delete account.')
     }
   }
 
-  return (
-    <section className="p2p-card rounded-xl p-5 space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--p2p-border)] pb-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-bold text-[var(--p2p-ink)]">P2P Account &amp; Alert Preferences</h2>
-            <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
-              <ShieldCheck className="size-3.5" />
-              {kycBadgeLabel}: {(profile?.kycStatus ?? 'none').toUpperCase()}
-            </span>
+  // =========================================================================
+  // ONBOARDING 2-STEP FLOW (Clean, Minimal, Uncluttered)
+  // Step 1: Profile + Email Verification -> Step 2: Telegram Alerts + Privacy Notice
+  // =========================================================================
+  if (onboarding) {
+    const activeStep = isEmailVerified ? 2 : 1
+
+    return (
+      <section className="p2p-card rounded-2xl p-5 sm:p-6 space-y-5">
+        {/* Compact Header + 2-Step Indicator */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--p2p-border)] pb-4">
+          <div>
+            <h1 className="text-lg font-extrabold text-[var(--p2p-ink)]">
+              {activeStep === 1 ? 'Verify Your Email' : 'Alerts & Privacy'}
+            </h1>
+            <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
+              {activeStep === 1
+                ? 'Step 1 of 2 — Set your profile and verify your email to continue.'
+                : 'Step 2 of 2 — Optional instant alerts and privacy confirmation.'}
+            </p>
           </div>
-          <p className="mt-1 text-xs text-[var(--p2p-muted)]">
-            Encrypted offchain profile for P2P trading. Payment details use server-side envelope encryption (
-            <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
-              read trust &amp; privacy notice
-            </AppLink>
-            ).
-          </p>
+          <button
+            type="button"
+            onClick={() => void onSignOut()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2.5 text-xs font-semibold text-[var(--p2p-muted)] hover:border-[#FF5A00] hover:text-[var(--p2p-ink)]"
+          >
+            <LogOut className="size-3.5" /> Sign Out
+          </button>
+        </div>
+
+        {/* 2-Step Progress Pills */}
+        <div className="grid grid-cols-2 gap-2">
+          <div
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${
+              activeStep === 1
+                ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                : 'border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] text-[var(--p2p-ok-ink)]'
+            }`}
+          >
+            <span
+              className={`p2p-mono flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                activeStep === 1 ? 'bg-[#FF5A00] text-white' : 'bg-emerald-500 text-white'
+              }`}
+            >
+              {activeStep > 1 ? <Check className="size-3" /> : '1'}
+            </span>
+            <span>Email Verification</span>
+          </div>
+          <div
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${
+              activeStep === 2
+                ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[#FF5A00]'
+                : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+            }`}
+          >
+            <span
+              className={`p2p-mono flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                activeStep === 2
+                  ? 'bg-[#FF5A00] text-white'
+                  : 'border border-[var(--p2p-border)] text-[var(--p2p-muted)]'
+              }`}
+            >
+              2
+            </span>
+            <span>Alerts &amp; Privacy</span>
+          </div>
+        </div>
+
+        {activeStep === 1 ? (
+          <div className="space-y-4">
+            <div className="grid gap-3.5 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Display Alias (Optional)
+                </span>
+                <input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  maxLength={48}
+                  placeholder="e.g. DhakaDesk"
+                  className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium text-[var(--p2p-ink)]"
+                />
+              </label>
+
+              <div className="block">
+                <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Country / Market
+                </span>
+                <CountryDropdown value={country} onChange={setCountry} />
+              </div>
+            </div>
+
+            <div className="space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Email Address
+                </span>
+                {profile?.hasEmail && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px]">
+                    <span className="p2p-mono text-[var(--p2p-ink)]">{profile.emailMasked}</span>
+                    <span className="rounded bg-[var(--p2p-tint)] px-2 py-0.5 font-bold text-[#FF5A00]">
+                      Pending
+                    </span>
+                  </span>
+                )}
+              </div>
+
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                maxLength={254}
+                placeholder={
+                  profile?.hasEmail
+                    ? `Change ${profile.emailMasked ?? 'email'}...`
+                    : 'you@example.com'
+                }
+                className="p2p-input h-11 w-full rounded-lg px-3.5 text-sm text-[var(--p2p-ink)]"
+              />
+
+              {profile?.hasEmail && (
+                <p className="text-xs text-[var(--p2p-muted)]">
+                  Check your inbox (or Spam folder) and click the verification link to unlock Step 2.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                disabled={saving || (!email.trim() && !profile?.hasEmail)}
+                onClick={() => void handleSendVerifyEmail()}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
+              >
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+                {profile?.hasEmail && !email.trim() ? 'Save Profile' : 'Send Verification Email'}
+              </button>
+
+              {profile?.hasEmail && (
+                <button
+                  type="button"
+                  disabled={resending}
+                  onClick={() => void handleResend()}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[#FF5A00] hover:bg-[var(--p2p-tint)] disabled:opacity-40"
+                >
+                  {resending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                  {resending ? 'Sending...' : 'Resend Link'}
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 rounded-xl border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-3.5 py-2.5 text-xs">
+              <span className="inline-flex items-center gap-2 font-bold text-[var(--p2p-ok-ink)]">
+                <CheckCircle2 className="size-4" />
+                Email Verified
+              </span>
+              {profile?.emailMasked && (
+                <span className="p2p-mono text-[var(--p2p-ok-ink)]">{profile.emailMasked}</span>
+              )}
+            </div>
+
+            <TelegramAlertsCard compact />
+
+            <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs text-[var(--p2p-ink)]">
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={(e) => setConsent(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
+              />
+              <span>
+                I have read and accept the{' '}
+                <AppLink to="/privacy" className="font-bold text-[#FF5A00] underline">
+                  OnPeer Privacy &amp; Encryption Notice
+                </AppLink>
+                .
+              </span>
+            </label>
+
+            <button
+              type="button"
+              disabled={saving || !consent}
+              onClick={() => void handleCompleteOnboarding()}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-sm font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
+            >
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              Continue to P2P Market
+              <ArrowRight className="size-4" />
+            </button>
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  // =========================================================================
+  // SETTINGS MODE (User Center -> Notification Settings)
+  // =========================================================================
+  return (
+    <section className="p2p-card rounded-2xl p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--p2p-border)] pb-3.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-base font-bold text-[var(--p2p-ink)]">Account &amp; Alerts</h2>
+          <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
+            <ShieldCheck className="size-3.5" />
+            {kycBadgeLabel}: {(profile?.kycStatus ?? 'none').toUpperCase()}
+          </span>
         </div>
 
         <button
           type="button"
           onClick={() => void onSignOut()}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-xs font-semibold text-[var(--p2p-muted)] hover:border-[#FF5A00] hover:text-[var(--p2p-ink)]"
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-xs font-semibold text-[var(--p2p-muted)] hover:border-[#FF5A00] hover:text-[var(--p2p-ink)]"
         >
           <LogOut className="size-3.5" /> Sign Out
         </button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3.5 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
             Display Alias (Optional)
           </span>
           <input
@@ -227,29 +593,19 @@ function AccountSetupForm({
           />
         </label>
 
-        <label className="block">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+        <div className="block">
+          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
             Country / Market
           </span>
-          <select
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium text-[var(--p2p-ink)]"
-          >
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code.toUpperCase()}>
-                {c.name} ({c.currency})
-              </option>
-            ))}
-          </select>
-        </label>
+          <CountryDropdown value={country} onChange={setCountry} />
+        </div>
       </div>
 
-      <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 space-y-3">
+      <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Mail className="size-4 text-[#FF5A00]" />
-            <span className="text-xs font-bold text-[var(--p2p-ink)]">Email Notifications (Double Opt-In)</span>
+            <span className="text-xs font-bold text-[var(--p2p-ink)]">Email Alerts</span>
           </div>
           {profile?.hasEmail && (
             <div className="flex flex-wrap items-center gap-2 text-[11px]">
@@ -271,38 +627,28 @@ function AccountSetupForm({
                   >
                     {resending ? 'Sending...' : 'Resend link'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleClearEmail()}
+                    className="text-[var(--p2p-muted)] underline hover:text-[var(--p2p-ink)]"
+                  >
+                    Remove
+                  </button>
                 </>
-              )}
-              {!profile.emailVerified && (
-                <button
-                  type="button"
-                  onClick={() => void handleClearEmail()}
-                  className="text-[var(--p2p-muted)] underline hover:text-[var(--p2p-ink)]"
-                >
-                  Remove
-                </button>
               )}
             </div>
           )}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
-          {profile?.emailVerified ? (
-            <div className="flex h-10 items-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-3 text-xs text-[var(--p2p-muted)]">
-              Verified email is locked. To change your email, please contact support.
-            </div>
-          ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {!profile?.emailVerified && (
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               maxLength={254}
-              placeholder={
-                profile?.hasEmail
-                  ? `Fix / replace ${profile.emailMasked ?? 'saved email'}...`
-                  : 'you@example.com (required to unlock P2P)'
-              }
-              className="p2p-input h-10 w-full rounded-lg px-3 text-xs text-[var(--p2p-ink)]"
+              placeholder={profile?.hasEmail ? `Replace ${profile.emailMasked ?? 'email'}...` : 'you@example.com'}
+              className="p2p-input h-9 min-w-[200px] flex-1 rounded-lg px-3 text-xs text-[var(--p2p-ink)]"
             />
           )}
           <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--p2p-ink)]">
@@ -312,48 +658,22 @@ function AccountSetupForm({
               onChange={(e) => setEmailOptIn(e.target.checked)}
               className="size-4 accent-[#FF5A00]"
             />
-            <span>Send order &amp; dispute alerts</span>
+            <span>Order &amp; dispute email alerts</span>
           </label>
         </div>
-        <p className="text-[11px] text-[var(--p2p-muted)]">
-          Alerts contain only the order ID and a link—never payment details, names, or chat messages. Every email
-          includes a one-click unsubscribe link.
-        </p>
       </div>
 
-      <TelegramAlertsCard />
-
-      <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
-        />
-        <span>
-          I have read and accept the{' '}
-          <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
-            OnPeer Privacy &amp; Encryption Notice
-          </AppLink>{' '}
-          (including that payment details use operator-held envelope keys in Mode 2 and that testnet KYC uses Didit
-          Sandbox with test data only).
-          {profile?.consentAt && (
-            <span className="p2p-mono ml-1 text-[11px] text-[var(--p2p-ink)]">
-              • Accepted {new Date(profile.consentAt).toISOString().slice(0, 10)}
-            </span>
-          )}
-        </span>
-      </label>
+      <TelegramAlertsCard compact />
 
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <button
           type="button"
-          disabled={saving || (!consent && !profile?.consentAt)}
-          onClick={() => void handleSave()}
+          disabled={saving}
+          onClick={() => void handleSaveSettings()}
           className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-40"
         >
           {saving && <Loader2 className="size-3.5 animate-spin" />}
-          Save Account Settings
+          Save Changes
         </button>
 
         {profile?.exists && (
@@ -375,7 +695,7 @@ function AccountSetupForm({
                   className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
                 >
                   {deleting && <Loader2 className="size-3.5 animate-spin" />}
-                  Confirm Scrub &amp; Delete
+                  Confirm Delete
                 </button>
                 <button
                   type="button"
@@ -393,7 +713,7 @@ function AccountSetupForm({
   )
 }
 
-function TelegramAlertsCard() {
+function TelegramAlertsCard({ compact = false }: { compact?: boolean }) {
   const [waitingForBotStart, setWaitingForBotStart] = useState(false)
   const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null)
   const {
@@ -548,9 +868,10 @@ function TelegramAlertsCard() {
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="max-w-xl text-xs text-[var(--p2p-muted)]">
-            Get real-time phone notifications with one-tap order room launch whenever someone opens an order, marks
-            payment as Paid, or sends an encrypted chat message.
+          <p className="max-w-md text-xs text-[var(--p2p-muted)]">
+            {compact
+              ? 'Get instant order, payment, and chat notifications on Telegram.'
+              : 'Get real-time phone notifications with one-tap order room launch whenever someone opens an order, marks payment as Paid, or sends an encrypted chat message.'}
           </p>
 
           {inMiniApp ? (
@@ -561,7 +882,7 @@ function TelegramAlertsCard() {
               className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
             >
               {linkingMiniApp ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-              {miniAppUser?.username ? `Link @${miniAppUser.username} (1-Tap)` : 'Link Telegram (1-Tap)'}
+              {miniAppUser?.username ? `Link @${miniAppUser.username}` : 'Link Telegram'}
             </button>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -572,7 +893,7 @@ function TelegramAlertsCard() {
                 className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
               >
                 {mintingToken ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
-                {waitingForBotStart ? 'Waiting for /start in Telegram…' : 'Connect Telegram Bot'}
+                {waitingForBotStart ? 'Waiting for /start…' : 'Connect Telegram Bot'}
                 <ExternalLink className="size-3" />
               </button>
               {pendingDeepLink && waitingForBotStart && (
@@ -590,10 +911,12 @@ function TelegramAlertsCard() {
         </div>
       )}
 
-      <p className="text-[11px] text-[var(--p2p-muted)]">
-        Zero-PII protection: Telegram IDs are AES-256-GCM encrypted at rest, and bot messages never include bank/mobile
-        account numbers, real names, or chat plaintext.
-      </p>
+      {!compact && (
+        <p className="text-[11px] text-[var(--p2p-muted)]">
+          Zero-PII protection: Telegram IDs are AES-256-GCM encrypted at rest, and bot messages never include bank/mobile
+          account numbers, real names, or chat plaintext.
+        </p>
+      )}
     </div>
   )
 }

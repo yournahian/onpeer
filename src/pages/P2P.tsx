@@ -16,7 +16,7 @@ import { TraderProfileView } from '@/components/TraderProfileView'
 import { PostAdSheet } from '@/components/PostAdSheet'
 import { OrderRoom } from '@/components/OrderRoom'
 import { AccountPanel } from '@/components/AccountPanel'
-import { AccountSetup } from '@/components/AccountSetup'
+import { AccountSetup, getOnboardingStage } from '@/components/AccountSetup'
 import { useEligibility } from '@/hooks/useEligibility'
 
 const parseId = (raw: string | null): bigint | null => (raw && /^\d+$/.test(raw) ? BigInt(raw) : null)
@@ -161,7 +161,10 @@ export default function P2PPage() {
     }
   }, [refetchAccount])
 
-  const accountReady = isConnected && isSignedIn && !!profile?.exists && !!profile?.emailVerified
+  const [onboardTick, setOnboardTick] = useState(0)
+  const pendingStep2 = onboardTick >= 0 && getOnboardingStage(address) === 'step2'
+  const accountReady =
+    isConnected && isSignedIn && !!profile?.exists && !!profile?.emailVerified && !pendingStep2
   // C-01: Never gate an active order URL (`?order=...`) behind offchain onboarding/API availability once wallet is connected
   const needsOnboarding = !accountReady && !(isConnected && orderId !== null)
   const postSheetOpen = postOpen || (!needsOnboarding && deepPostSide !== undefined)
@@ -216,16 +219,15 @@ export default function P2PPage() {
               </p>
             </div>
           ) : needsOnboarding ? (
-            <div className="mx-auto max-w-2xl space-y-4 py-6">
+            <div className="mx-auto max-w-xl py-8">
               {!isConnected ? (
-                <section className="p2p-card rounded-xl px-6 py-12 text-center">
+                <section className="p2p-card rounded-2xl px-6 py-12 text-center">
                   <div className="mx-auto flex size-12 items-center justify-center rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] text-[#FF5A00]">
                     <ShieldCheck className="size-6" />
                   </div>
-                  <h1 className="mt-4 text-lg font-bold text-[var(--p2p-ink)]">Create Your P2P Account</h1>
-                  <p className="mx-auto mt-1.5 max-w-md text-xs leading-relaxed text-[var(--p2p-muted)]">
-                    Connect your wallet and complete your P2P profile before accessing the marketplace, encrypted
-                    payment vault, or order chat. Swap and Bridge remain open without an account.
+                  <h1 className="mt-4 text-lg font-bold text-[var(--p2p-ink)]">Connect Your Wallet</h1>
+                  <p className="mx-auto mt-1.5 max-w-sm text-xs text-[var(--p2p-muted)]">
+                    Connect your wallet to access OnPeer P2P trading and encrypted order chat.
                   </p>
                   <ConnectWalletCustom>
                     {({ show }) => (
@@ -240,23 +242,9 @@ export default function P2PPage() {
                   </ConnectWalletCustom>
                 </section>
               ) : isSignedIn && accountLoading && !profile ? (
-                <div className="p2p-card h-52 animate-pulse rounded-xl" />
+                <div className="p2p-card h-52 animate-pulse rounded-2xl" />
               ) : (
-                <>
-                  <div className="p2p-card rounded-xl px-5 py-4">
-                    <h1 className="text-base font-bold text-[var(--p2p-ink)]">
-                      {profile?.exists && !profile?.emailVerified
-                        ? 'Verify Your Email to Unlock P2P'
-                        : 'Complete P2P Account Setup to Continue'}
-                    </h1>
-                    <p className="mt-1 text-xs text-[var(--p2p-muted)]">
-                      {profile?.exists && !profile?.emailVerified
-                        ? 'Confirm the verification link sent to your email (check Spam/All Mail if missing) to unlock the P2P Trade marketplace, My Ads, My Orders, and encrypted order chat. If you entered the wrong email, you can edit and save it below before verifying.'
-                        : 'Sign in with your wallet, save your P2P profile, and verify your email below to unlock the P2P Trade marketplace, My Ads, My Orders, and encrypted order chat.'}
-                    </p>
-                  </div>
-                  <AccountSetup />
-                </>
+                <AccountSetup onboarding onOnboardingComplete={() => setOnboardTick((n) => n + 1)} />
               )}
             </div>
           ) : orderId !== null ? (
