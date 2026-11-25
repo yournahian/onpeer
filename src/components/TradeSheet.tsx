@@ -33,6 +33,7 @@ import {
   encodeScopedId,
   fiatFor,
   formatDuration,
+  hasMethodBit,
   formatFiat,
   formatOrderCap,
   formatPrice,
@@ -98,7 +99,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const isSealedBuyAd = !userBuys && ad.detailsMode !== DETAILS_MODE.PLAIN
 
   const matchingSaved = useMemo(
-    () => savedMethods.filter((m) => (ad.paymentMask & (1 << m.methodBit)) !== 0),
+    () => savedMethods.filter((m) => hasMethodBit(ad.paymentMask, m.methodBit)),
     [savedMethods, ad.paymentMask],
   )
 

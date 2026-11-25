@@ -1,7 +1,7 @@
 import { useReadContract } from 'wagmi'
 import { ArrowLeftRight, ArrowRight, Repeat, Waypoints } from 'lucide-react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
-import { CHAIN_ID, COUNTRIES, ESCROW_ADDRESS, PAYMENT_METHODS } from '@/lib/p2p'
+import { CHAIN_ID, COUNTRIES, COUNTRY_PROVIDERS, ESCROW_ADDRESS, PAYMENT_METHODS } from '@/lib/p2p'
 import { CountryFlag, MethodLogo } from '@/components/logos'
 import { AppLink } from '@/components/AppLink'
 import { SiteBar } from '@/components/SiteBar'
@@ -150,13 +150,14 @@ function LiveStats() {
 }
 
 function Marquee() {
+  const allProviderNames = Object.values(COUNTRY_PROVIDERS).flat()
   const items = [
     ...COUNTRIES.map((c) => ({ key: c.code, label: `${c.symbol}  ${c.currency}`, flag: c.code, method: null as string | null })),
-    ...PAYMENT_METHODS.filter((m) => m.name !== 'Bank transfer').map((m) => ({
-      key: m.name,
-      label: m.name,
+    ...allProviderNames.map((name) => ({
+      key: name,
+      label: name,
       flag: null as string | null,
-      method: m.name,
+      method: name,
     })),
   ]
   const row = [...items, ...items]

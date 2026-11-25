@@ -21,6 +21,7 @@ import {
   STATUS,
   fiatFor,
   formatPrice,
+  hasMethodBit,
   hexToCurrency,
   isAdExpired,
   isUncapped,
@@ -190,7 +191,7 @@ export function Market({
         if (activeMode === 'sell' && viewerBalance !== undefined && viewerBalance < minReq) return false
         return true
       })
-      .filter((ad) => method === null || (ad.paymentMask & (1 << method)) !== 0)
+      .filter((ad) => method === null || hasMethodBit(ad.paymentMask, method))
       .filter((ad) => {
         if (fiatFilter === null) return true
         const lo = fiatFor(ad.minAmount > ad.available ? ad.available : ad.minAmount, ad.priceE6, ad.asset)

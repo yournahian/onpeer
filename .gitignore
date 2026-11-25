@@ -11,5 +11,6 @@ server/ai-settings.json.tmp
 contracts/out
 contracts/cache
 Video/
+South_Asia_Payment_Logos_512/
 console.jsonl
 traces.jsonl

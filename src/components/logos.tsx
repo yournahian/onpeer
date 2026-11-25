@@ -15,48 +15,83 @@ import {
 } from '@web3icons/react'
 import type { PaymentMethod } from '@/lib/p2p'
 
-/** Real brand marks live in /public/logos. Drop a file named after the method id to replace a fallback. */
+/** 512×512 regional payment provider marks stored in /public/logos. */
 const LOGO_FILE: Record<string, string> = {
+  // India
   UPI: 'upi.png',
-  IMPS: 'imps.png',
+  PhonePe: 'phonepe.png',
   Paytm: 'paytm.png',
-  Raast: 'raast.png',
-  JazzCash: 'jazzcash.png',
+  BHIM: 'bhim.png',
+  // Pakistan
   Easypaisa: 'easypaisa.png',
-  LankaQR: 'lankaqr.png',
-  eSewa: 'esewa.webp',
-  Khalti: 'khalti.ico',
+  JazzCash: 'jazzcash.png',
+  NayaPay: 'nayapay.png',
+  SadaPay: 'sadapay.png',
+  // Bangladesh
+  bKash: 'bkash.png',
+  Nagad: 'nagad.png',
   Rocket: 'rocket.png',
+  upay: 'upay.png',
+  // Sri Lanka
+  'eZ Cash': 'ezcash.png',
+  FriMi: 'frimi.png',
+  Genie: 'genie.png',
+  mCash: 'mcash.png',
+  // Nepal
+  eSewa: 'esewa.png',
+  Khalti: 'khalti.png',
+  'IME Pay': 'imepay.png',
+  'Namaste Pay': 'namastepay.png',
+  // Bhutan
   mBoB: 'mbob.png',
+  goBOB: 'gobob.png',
+  'Digital Kidu': 'digitalkidu.png',
+  eTeeru: 'eteeru.png',
+  MyPay: 'mypay.png',
+  // Maldives
   'BML MobilePay': 'bml.png',
+  'BML Mobile Banking': 'bml.png',
+  DhiraaguPay: 'dhiraagupay.png',
+  Favara: 'favara.png',
+  'm-Faisaa': 'mfaisaa.png',
+  // Afghanistan
+  'M-Paisa': 'mpaisa.png',
+  HesabPay: 'hesabpay.png',
+  'M-Hawala': 'mhawala.png',
+  'My-Money': 'mymoney.png',
 }
 
-/** Methods without a bundled mark get a clean monogram tile in the brand's own colour. */
+/** Clean monogram tiles for network clearing rails without a dedicated app logo. */
 const FALLBACK: Record<string, { bg: string; abbr: string }> = {
-  bKash: { bg: '#E2136E', abbr: 'bK' },
-  Nagad: { bg: '#F6921E', abbr: 'N' },
-  'eZ Cash': { bg: '#E31E24', abbr: 'eZ' },
+  IMPS: { bg: '#0F4C81', abbr: 'IMPS' },
+  Raast: { bg: '#01693A', abbr: 'RST' },
+  LankaQR: { bg: '#8D2029', abbr: 'LQR' },
   ConnectIPS: { bg: '#00529B', abbr: 'IPS' },
-  'M-Paisa': { bg: '#D0021B', abbr: 'M' },
 }
 
 export function MethodLogo({ name, size = 28 }: { name: string; size?: number }) {
   const [broken, setBroken] = useState(false)
   const file = LOGO_FILE[name]
-  const radius = Math.round(size * 0.28)
+  const radius = Math.round(size * 0.26)
 
   if (file && !broken) {
     return (
       <span
-        className="inline-flex shrink-0 items-center justify-center overflow-hidden bg-white"
-        style={{ width: size, height: size, borderRadius: radius, padding: Math.max(2, Math.round(size * 0.1)) }}
+        title={name}
+        className="inline-flex shrink-0 items-center justify-center overflow-hidden bg-white ring-1 ring-black/10"
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius,
+          padding: 1,
+        }}
       >
         <img
           src={`/logos/${file}`}
-          alt=""
-          loading="lazy"
+          alt={name}
+          decoding="async"
           onError={() => setBroken(true)}
-          className="size-full object-contain"
+          className="size-full rounded-[inherit] object-contain"
         />
       </span>
     )
@@ -66,9 +101,17 @@ export function MethodLogo({ name, size = 28 }: { name: string; size?: number })
   if (fb) {
     return (
       <span
+        title={name}
         aria-hidden
         className="inline-flex shrink-0 items-center justify-center font-bold text-white"
-        style={{ width: size, height: size, borderRadius: radius, background: fb.bg, fontSize: size * 0.38, letterSpacing: '-0.02em' }}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius,
+          background: fb.bg,
+          fontSize: Math.max(8, Math.round(size * (fb.abbr.length >= 4 ? 0.28 : 0.34))),
+          letterSpacing: '-0.02em',
+        }}
       >
         {fb.abbr}
       </span>
@@ -77,6 +120,7 @@ export function MethodLogo({ name, size = 28 }: { name: string; size?: number })
 
   return (
     <span
+      title={name}
       aria-hidden
       className="inline-flex shrink-0 items-center justify-center"
       style={{ width: size, height: size, borderRadius: radius, background: 'var(--fill-3)', color: 'var(--accent)' }}
@@ -102,7 +146,7 @@ export function CountryFlag({ code, size = 28 }: { code: string; size?: number }
       src={`/flags/${code.toLowerCase()}.svg`}
       alt=""
       aria-hidden
-      loading="lazy"
+      decoding="async"
       className="shrink-0 rounded-full object-cover"
       style={{ width: size, height: size, boxShadow: '0 0 0 1px rgba(255,255,255,0.18)' }}
     />

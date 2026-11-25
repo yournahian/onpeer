@@ -225,7 +225,7 @@ export const countryByCurrency = (currency: string) =>
 
 export type PaymentMethod = { bit: number; name: string; countries: string[] | 'all' }
 
-/** The bit index of each method is stored onchain in the ad's payment mask. Never reorder. */
+/** The bit index of each method is stored onchain in the ad's uint32 paymentMask (0..31). Never reorder existing bits. */
 export const PAYMENT_METHODS: PaymentMethod[] = [
   { bit: 0, name: 'UPI', countries: ['IN'] },
   { bit: 1, name: 'IMPS', countries: ['IN'] },
@@ -245,15 +245,44 @@ export const PAYMENT_METHODS: PaymentMethod[] = [
   { bit: 15, name: 'mBoB', countries: ['BT'] },
   { bit: 16, name: 'BML MobilePay', countries: ['MV'] },
   { bit: 17, name: 'M-Paisa', countries: ['AF'] },
+  { bit: 18, name: 'PhonePe', countries: ['IN'] },
+  { bit: 19, name: 'BHIM', countries: ['IN'] },
+  { bit: 20, name: 'SadaPay', countries: ['PK'] },
+  { bit: 21, name: 'NayaPay', countries: ['PK'] },
+  { bit: 22, name: 'upay', countries: ['BD'] },
+  { bit: 23, name: 'FriMi', countries: ['LK'] },
+  { bit: 24, name: 'Genie', countries: ['LK'] },
+  { bit: 25, name: 'IME Pay', countries: ['NP'] },
+  { bit: 26, name: 'Digital Kidu', countries: ['BT'] },
+  { bit: 27, name: 'eTeeru', countries: ['BT'] },
+  { bit: 28, name: 'DhiraaguPay', countries: ['MV'] },
+  { bit: 29, name: 'Favara', countries: ['MV'] },
+  { bit: 30, name: 'HesabPay', countries: ['AF'] },
+  { bit: 31, name: 'M-Hawala', countries: ['AF'] },
 ]
+
+/** Featured 4 flagship local payment apps per South Asian country (all 32 bundled 512px marks). */
+export const COUNTRY_PROVIDERS: Record<string, readonly string[]> = {
+  IN: ['UPI', 'PhonePe', 'Paytm', 'BHIM'],
+  PK: ['Easypaisa', 'JazzCash', 'SadaPay', 'NayaPay'],
+  BD: ['bKash', 'Nagad', 'Rocket', 'upay'],
+  LK: ['eZ Cash', 'FriMi', 'Genie', 'mCash'],
+  NP: ['eSewa', 'Khalti', 'IME Pay', 'Namaste Pay'],
+  BT: ['goBOB', 'Digital Kidu', 'eTeeru', 'MyPay'],
+  MV: ['BML MobilePay', 'DhiraaguPay', 'Favara', 'm-Faisaa'],
+  AF: ['M-Paisa', 'HesabPay', 'M-Hawala', 'My-Money'],
+}
+
+export const hasMethodBit = (mask: number, bit: number) => ((mask >>> bit) & 1) !== 0
 
 export const methodsForCountry = (code: string) =>
   PAYMENT_METHODS.filter((m) => m.countries === 'all' || m.countries.includes(code))
 
 export const maskToMethods = (mask: number) =>
-  PAYMENT_METHODS.filter((m) => (mask & (1 << m.bit)) !== 0)
+  PAYMENT_METHODS.filter((m) => hasMethodBit(mask, m.bit))
 
-export const bitsToMask = (bits: number[]) => bits.reduce((acc, b) => acc | (1 << b), 0)
+export const bitsToMask = (bits: number[]) =>
+  bits.reduce((acc, b) => (acc | ((1 << b) >>> 0)) >>> 0, 0)
 
 export const SIDE_SELL = 0
 export const SIDE_BUY = 1
