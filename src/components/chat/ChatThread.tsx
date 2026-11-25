@@ -53,7 +53,8 @@ export function ChatThread({
     <>
       <div
         ref={listRef}
-        className={`flex min-h-0 flex-1 flex-col gap-3 ${items.length > 0 ? 'overflow-y-auto' : 'overflow-hidden'} ${page ? 'px-4 py-4 sm:px-5' : 'px-4 py-3.5'}`}
+        data-lenis-prevent
+        className={`flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain ${page ? 'px-4 py-4 sm:px-5' : 'px-4 py-3.5'}`}
         aria-live="polite"
       >
         {health.state === 'offline' && (

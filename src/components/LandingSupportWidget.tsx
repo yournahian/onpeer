@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
-  AlertTriangle,
   ArrowLeft,
   ChevronDown,
   ChevronRight,
   HelpCircle,
+  LifeBuoy,
   MessageSquareText,
   RotateCcw,
   Search,
@@ -153,10 +154,10 @@ const HELP_COLLECTIONS: HelpCollection[] = [
 ]
 
 const QUICK_ARTICLES: HelpArticle[] = [
-  HELP_COLLECTIONS[1].articles[0], // Are there any fees for P2P trading?
-  HELP_COLLECTIONS[2].articles[0], // How does P2P escrow keep my USDC safe?
-  HELP_COLLECTIONS[2].articles[1], // Supported countries and payment methods
-  HELP_COLLECTIONS[2].articles[2], // What if the seller does not release my crypto?
+  HELP_COLLECTIONS[1].articles[0],
+  HELP_COLLECTIONS[2].articles[0],
+  HELP_COLLECTIONS[2].articles[1],
+  HELP_COLLECTIONS[2].articles[2],
 ]
 
 /** Friendly smiling speech-bubble icon matching the Intercom launcher aesthetic. */
@@ -169,7 +170,7 @@ function LauncherBubbleIcon({ className }: { className?: string }) {
       />
       <path
         d="M8.3 12.6c1.05 1.35 2.3 2 3.7 2s2.65-.65 3.7-2"
-        stroke="var(--launcher-smile, #ffffff)"
+        stroke="#ffffff"
         strokeWidth="1.9"
         strokeLinecap="round"
       />
@@ -195,6 +196,69 @@ function HomeTabIcon({ active }: { active: boolean }) {
       />
     </svg>
   )
+}
+
+/** Crisp illustrated avatar stack for the Home header (2 team portraits + live AI badge). */
+function SupportAvatarCluster() {
+  return (
+    <div className="flex items-center -space-x-2" aria-hidden="true">
+      {/* Specialist Avatar 1 */}
+      <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-full bg-[#fde68a] ring-2 ring-white/90 shadow-sm">
+        <svg viewBox="0 0 32 32" className="size-8">
+          <rect width="32" height="32" fill="#ffedd5" />
+          <circle cx="16" cy="12.5" r="5.5" fill="#ea580c" />
+          <path d="M7 29c1.4-5.4 5-8.2 9-8.2s7.6 2.8 9 8.2" fill="#9a3412" />
+          <circle cx="16" cy="13" r="4.6" fill="#fdba74" />
+          <path d="M11.2 11.8c.8-2.9 3.1-4.3 5.5-4.1 2.2.2 3.8 1.5 4.2 3.8-1.5-.8-3.1-1.1-4.9-1-1.8.1-3.4.5-4.8 1.3Z" fill="#431407" />
+        </svg>
+      </span>
+
+      {/* Specialist Avatar 2 */}
+      <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-full bg-[#dbeafe] ring-2 ring-white/90 shadow-sm">
+        <svg viewBox="0 0 32 32" className="size-8">
+          <rect width="32" height="32" fill="#e0e7ff" />
+          <path d="M7.5 29c1.3-5.2 4.8-8 8.5-8s7.2 2.8 8.5 8" fill="#1e293b" />
+          <circle cx="16" cy="13" r="4.7" fill="#fed7aa" />
+          <path d="M11 12.5c.4-3.3 2.6-5.2 5.3-5.2 2.8 0 4.8 1.9 5.1 5.1-1.4-1.1-3.1-1.6-5.1-1.6-2 0-3.8.6-5.3 1.7Z" fill="#0f172a" />
+        </svg>
+      </span>
+
+      {/* Live AI Agent Avatar with emerald status indicator */}
+      <span className="relative flex size-8 items-center justify-center rounded-full bg-[#141417] text-white ring-2 ring-white/90 shadow-sm">
+        <Sparkles className="size-3.5 text-[#FF5A00]" />
+        <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-400 ring-2 ring-[#d94b00]" />
+      </span>
+    </div>
+  )
+}
+
+const PANEL_VARIANTS = {
+  open: {
+    visibility: 'visible' as const,
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    transition: {
+      type: 'spring' as const,
+      stiffness: 420,
+      damping: 31,
+      mass: 0.85,
+    },
+  },
+  closed: {
+    opacity: 0,
+    scale: 0.88,
+    y: 18,
+    filter: 'blur(6px)',
+    transition: {
+      duration: 0.22,
+      ease: [0.32, 0, 0.67, 0] as [number, number, number, number],
+    },
+    transitionEnd: {
+      visibility: 'hidden' as const,
+    },
+  },
 }
 
 /**
@@ -258,158 +322,239 @@ export function LandingSupportWidget() {
     setTab('messages')
   }
 
-  const widgetSurface = isDark ? '#141417' : '#f7f7f9'
-  const cardSurface = isDark ? '#1e1f24' : '#ffffff'
-  const inputSurface = isDark ? '#27282f' : '#f2f3f5'
-  const borderCol = isDark ? 'rgba(255, 255, 255, 0.09)' : 'rgba(17, 24, 39, 0.08)'
+  const widgetSurface = isDark ? '#121317' : '#f5f6f8'
+  const cardSurface = isDark ? '#1b1c22' : '#ffffff'
+  const inputSurface = isDark ? '#252730' : '#f1f2f5'
+  const rowHoverBg = isDark ? 'rgba(255, 255, 255, 0.045)' : 'rgba(15, 23, 42, 0.035)'
+  const borderCol = isDark ? 'rgba(255, 255, 255, 0.085)' : 'rgba(15, 23, 42, 0.075)'
   const textPrimary = isDark ? '#f5f5f7' : '#111827'
   const textSecondary = isDark ? '#9ca3af' : '#6b7280'
+  const cardShadow = isDark
+    ? '0 10px 28px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05)'
+    : '0 8px 24px -8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04)'
 
   return (
     <>
-      {/* Floating Messenger Panel — stays mounted when closed so active AI streams persist */}
-      <section
+      {/* Smoothly animated Messenger Panel — stays mounted so active AI streams persist */}
+      <motion.section
         role="dialog"
         aria-label="OnPeer Help & Assistant"
-        hidden={!open}
-        data-hidden={!open}
-        className="panel-in fixed inset-x-3 bottom-20 z-40 flex h-[min(630px,calc(100dvh-6.25rem))] flex-col overflow-hidden rounded-[26px] data-[hidden=true]:hidden sm:inset-x-auto sm:right-5 sm:w-[388px]"
+        aria-hidden={!open}
+        data-lenis-prevent
+        initial={false}
+        animate={open ? 'open' : 'closed'}
+        variants={PANEL_VARIANTS}
+        onWheel={(e) => e.stopPropagation()}
+        className={`fixed inset-x-3 bottom-20 z-40 flex h-[min(636px,calc(100dvh-6.25rem))] flex-col overflow-hidden rounded-[28px] sm:inset-x-auto sm:right-5 sm:w-[392px] ${
+          open ? 'pointer-events-auto' : 'pointer-events-none'
+        }`}
         style={{
           ['--widget-surface' as string]: cardSurface,
+          transformOrigin: 'calc(100% - 28px) calc(100% + 14px)',
           backgroundColor: widgetSurface,
           border: `1px solid ${borderCol}`,
           boxShadow: isDark
-            ? '0 24px 64px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.06)'
-            : '0 20px 56px rgba(15, 23, 42, 0.18), 0 2px 10px rgba(15, 23, 42, 0.06)',
+            ? '0 28px 72px -8px rgba(0, 0, 0, 0.82), 0 0 0 1px rgba(255, 255, 255, 0.07)'
+            : '0 24px 64px -8px rgba(15, 23, 42, 0.22), 0 4px 16px rgba(15, 23, 42, 0.06)',
           color: textPrimary,
         }}
       >
         {/* ==================== TAB 1: HOME ==================== */}
         {tab === 'home' && (
-          <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
-            {/* Brand Orange Hero Header */}
+          <div
+            data-lenis-prevent
+            className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+          >
+            {/* Layered Ambient Brand Gradient Backdrop (sits BEHIND content so nothing ever clips) */}
             <div
-              className="relative shrink-0 px-6 pb-14 pt-5"
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[272px]"
               style={{
                 background: isDark
-                  ? 'linear-gradient(180deg, #FF5A00 0%, #d94b00 62%, #141417 100%)'
-                  : 'linear-gradient(180deg, #FF5A00 0%, #ff7a2e 65%, #f7f7f9 100%)',
+                  ? 'radial-gradient(120% 90% at 15% 0%, #ff8533 0%, #FF5A00 42%, rgba(224, 78, 0, 0.42) 72%, rgba(18, 19, 23, 0) 100%)'
+                  : 'radial-gradient(120% 90% at 15% 0%, #ff7a2e 0%, #FF5A00 48%, rgba(255, 122, 46, 0.28) 76%, rgba(245, 246, 248, 0) 100%)',
               }}
-            >
-              <div className="flex items-center justify-between">
+            />
+            {/* Subtle top glass mesh highlight */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[180px] opacity-25"
+              style={{
+                backgroundImage:
+                  'radial-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px)',
+                backgroundSize: '18px 18px',
+                maskImage: 'linear-gradient(to bottom, black 10%, transparent 90%)',
+                WebkitMaskImage: 'linear-gradient(to bottom, black 10%, transparent 90%)',
+              }}
+            />
+
+            {/* Foreground Home Content (`relative z-10` — never covered by backdrop) */}
+            <div className="relative z-10 flex flex-col px-4 pb-5 pt-5">
+              {/* Top Bar */}
+              <div className="flex items-center justify-between px-1.5">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-white/15 p-0.5 backdrop-blur-sm">
+                  <span className="flex size-8 items-center justify-center rounded-xl bg-white/20 p-0.5 shadow-sm backdrop-blur-md ring-1 ring-white/30">
                     <LogoMark size={28} />
                   </span>
-                  <span className="display text-lg font-bold tracking-tight text-white">OnPeer</span>
+                  <span className="display text-lg font-bold tracking-tight text-white drop-shadow-sm">
+                    OnPeer
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2.5">
-                  {/* Support & AI team badges */}
-                  <div className="flex -space-x-2" aria-hidden="true">
-                    <span className="flex size-7 items-center justify-center rounded-full bg-[#151515] text-[11px] font-bold text-white ring-2 ring-white/80">
-                      AI
-                    </span>
-                    <span className="flex size-7 items-center justify-center rounded-full bg-amber-100 text-[11px] font-bold text-[#9a3412] ring-2 ring-white/80">
-                      OP
-                    </span>
-                    <span className="flex size-7 items-center justify-center rounded-full bg-orange-50 text-[11px] font-bold text-[#c2410c] ring-2 ring-white/80">
-                      24/7
-                    </span>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <SupportAvatarCluster />
                   <button
                     type="button"
                     onClick={() => setOpen(false)}
                     aria-label="Close messenger"
-                    className="flex size-8 items-center justify-center rounded-full text-white/90 transition-colors hover:bg-black/15 hover:text-white"
+                    className="no-focus-ring flex size-8 items-center justify-center rounded-full bg-black/15 text-white/95 backdrop-blur-sm transition-colors hover:bg-black/28 hover:text-white"
                   >
                     <X className="size-4" />
                   </button>
                 </div>
               </div>
 
-              <div className="mt-7">
-                <p className="text-xl font-semibold text-white/85">Hi there 👋</p>
-                <h2 className="display mt-0.5 text-2xl font-bold tracking-tight text-white sm:text-[26px]">
+              {/* Greeting */}
+              <div className="mt-7 mb-5 px-1.5">
+                <p className="text-lg font-medium text-white/88">Hi there 👋</p>
+                <h2 className="display mt-0.5 text-[26px] font-bold leading-tight tracking-tight text-white drop-shadow-sm">
                   How can we help?
                 </h2>
               </div>
-            </div>
 
-            {/* Cards Stack overlapping hero gradient */}
-            <div className="-mt-9 flex flex-col gap-3 px-4 pb-4">
-              {/* Card 1: Search + Top Questions */}
-              <div
-                className="rounded-2xl p-3 shadow-sm"
-                style={{ backgroundColor: cardSurface, border: `1px solid ${borderCol}` }}
-              >
+              {/* Cards Stack */}
+              <div className="flex flex-col gap-3">
+                {/* Card 1: Search for help + Quick Articles */}
+                <div
+                  className="rounded-2xl p-3"
+                  style={{
+                    backgroundColor: cardSurface,
+                    border: `1px solid ${borderCol}`,
+                    boxShadow: cardShadow,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedArticle(null)
+                      setSelectedCollectionId(null)
+                      setTab('help')
+                    }}
+                    className="no-focus-ring group flex h-10 w-full items-center justify-between rounded-xl px-3.5 text-left text-xs font-semibold transition-colors"
+                    style={{ backgroundColor: inputSurface, color: textPrimary }}
+                  >
+                    <span>Search for help</span>
+                    <Search
+                      className="size-4 transition-transform duration-200 group-hover:scale-110"
+                      style={{ color: 'var(--accent)' }}
+                    />
+                  </button>
+
+                  <ul className="mt-2 space-y-0.5">
+                    {QUICK_ARTICLES.map((art) => (
+                      <li key={art.id}>
+                        <button
+                          type="button"
+                          onClick={() => openArticle(art)}
+                          className="no-focus-ring group flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2.5 text-left text-xs font-medium transition-colors"
+                          style={{ color: textPrimary }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = rowHoverBg
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
+                        >
+                          <span className="line-clamp-1">{art.title}</span>
+                          <ChevronRight
+                            className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                            style={{ color: textSecondary }}
+                          />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {/* Card 2: Ask a question (Live AI Agent) */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setSelectedArticle(null)
-                    setSelectedCollectionId(null)
-                    setTab('help')
+                  onClick={startConversation}
+                  className="no-focus-ring group flex w-full items-center justify-between gap-3 rounded-2xl p-3.5 text-left transition-transform duration-200 hover:-translate-y-0.5 active:scale-[0.99]"
+                  style={{
+                    backgroundColor: cardSurface,
+                    border: `1px solid ${borderCol}`,
+                    boxShadow: cardShadow,
                   }}
-                  className="flex h-10 w-full items-center justify-between rounded-xl px-3.5 text-left text-xs font-medium transition-opacity hover:opacity-90"
-                  style={{ backgroundColor: inputSurface, color: textPrimary }}
                 >
-                  <span>Search for help</span>
-                  <Search className="size-4" style={{ color: 'var(--accent)' }} />
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
+                      style={{ background: 'var(--accent-bg)' }}
+                    >
+                      <Sparkles className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                        Ask a question
+                      </p>
+                      <p className="mt-0.5 text-xs" style={{ color: textSecondary }}>
+                        AI Agent and team can help instantly
+                      </p>
+                    </div>
+                  </div>
+                  <SendHorizontal
+                    className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                    style={{ color: 'var(--accent)' }}
+                  />
                 </button>
 
-                <ul className="mt-1.5 divide-y" style={{ borderColor: borderCol }}>
-                  {QUICK_ARTICLES.map((art) => (
-                    <li key={art.id}>
-                      <button
-                        type="button"
-                        onClick={() => openArticle(art)}
-                        className="flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-left text-xs font-medium transition-colors hover:opacity-80"
-                        style={{ color: textSecondary }}
-                      >
-                        <span className="line-clamp-1" style={{ color: textPrimary }}>
-                          {art.title}
-                        </span>
-                        <ChevronRight className="size-4 shrink-0" style={{ color: textSecondary }} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {/* Card 3: Create a support ticket */}
+                <a
+                  href="mailto:support@onpeer.xyz?subject=OnPeer%20Support%20Request"
+                  className="no-focus-ring group flex items-center justify-between gap-3 rounded-2xl p-3.5 transition-transform duration-200 hover:-translate-y-0.5 active:scale-[0.99]"
+                  style={{
+                    backgroundColor: cardSurface,
+                    border: `1px solid ${borderCol}`,
+                    boxShadow: cardShadow,
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+                      style={{ backgroundColor: inputSurface, color: 'var(--accent)' }}
+                    >
+                      <LifeBuoy className="size-4" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-bold" style={{ color: textPrimary }}>
+                        Create a support ticket
+                      </p>
+                      <p className="mt-0.5 text-xs" style={{ color: textSecondary }}>
+                        Order, KYC or payment issue • support@onpeer.xyz
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight
+                    className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                    style={{ color: textSecondary }}
+                  />
+                </a>
+
+                {/* Subtle Live Status Card */}
+                <div
+                  className="flex items-center justify-between rounded-2xl px-4 py-3 text-[11px] font-medium"
+                  style={{
+                    backgroundColor: cardSurface,
+                    border: `1px solid ${borderCol}`,
+                  }}
+                >
+                  <span className="flex items-center gap-2" style={{ color: textSecondary }}>
+                    <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                    Arc Testnet Escrow &amp; CCTP Bridge operational
+                  </span>
+                </div>
               </div>
-
-              {/* Card 2: Support Ticket / Email */}
-              <a
-                href="mailto:support@onpeer.xyz?subject=OnPeer%20Support%20Request"
-                className="flex items-center justify-between rounded-2xl px-4 py-3.5 shadow-sm transition-transform active:scale-[0.99]"
-                style={{ backgroundColor: cardSurface, border: `1px solid ${borderCol}` }}
-              >
-                <div>
-                  <p className="text-xs font-bold" style={{ color: textPrimary }}>
-                    Create a support ticket
-                  </p>
-                  <p className="mt-0.5 text-xs" style={{ color: textSecondary }}>
-                    Order, KYC or payment issue • support@onpeer.xyz
-                  </p>
-                </div>
-                <AlertTriangle className="size-4 shrink-0" style={{ color: 'var(--accent)' }} />
-              </a>
-
-              {/* Card 3: Ask a question (AI Agent) */}
-              <button
-                type="button"
-                onClick={startConversation}
-                className="flex w-full items-center justify-between rounded-2xl px-4 py-3.5 text-left shadow-sm transition-transform active:scale-[0.99]"
-                style={{ backgroundColor: cardSurface, border: `1px solid ${borderCol}` }}
-              >
-                <div>
-                  <p className="text-xs font-bold" style={{ color: textPrimary }}>
-                    Ask a question
-                  </p>
-                  <p className="mt-0.5 text-xs" style={{ color: textSecondary }}>
-                    AI Agent and team can help
-                  </p>
-                </div>
-                <SendHorizontal className="size-4 shrink-0" style={{ color: 'var(--accent)' }} />
-              </button>
             </div>
           </div>
         )}
@@ -430,7 +575,7 @@ export function LandingSupportWidget() {
                       else setTab('home')
                     }}
                     aria-label="Back"
-                    className="flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+                    className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
                     style={{ color: textSecondary }}
                   >
                     <ArrowLeft className="size-4" />
@@ -450,7 +595,7 @@ export function LandingSupportWidget() {
                     }}
                     aria-label="Clear conversation"
                     title="Clear chat"
-                    className="flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+                    className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
                     style={{ color: textSecondary }}
                   >
                     <RotateCcw className="size-3.5" />
@@ -460,7 +605,7 @@ export function LandingSupportWidget() {
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close messenger"
-                  className="flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+                  className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
                   style={{ color: textSecondary }}
                 >
                   <X className="size-4" />
@@ -471,11 +616,14 @@ export function LandingSupportWidget() {
             {showChatThread ? (
               <ChatThread variant="panel" active={open && tab === 'messages'} onNavigate={() => setOpen(false)} />
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-between px-6 py-10 text-center">
+              <div
+                data-lenis-prevent
+                className="flex flex-1 flex-col items-center justify-between overflow-y-auto overscroll-contain px-6 py-10 text-center"
+              >
                 <div className="my-auto flex flex-col items-center">
                   <span
-                    className="flex size-12 items-center justify-center rounded-2xl"
-                    style={{ backgroundColor: inputSurface, color: textPrimary }}
+                    className="flex size-14 items-center justify-center rounded-2xl p-3.5"
+                    style={{ backgroundColor: inputSurface, color: 'var(--accent)' }}
                   >
                     <MessageSquareText className="size-6" />
                   </span>
@@ -488,7 +636,7 @@ export function LandingSupportWidget() {
                 <button
                   type="button"
                   onClick={() => setChatStarted(true)}
-                  className="inline-flex h-10 items-center gap-2 rounded-full px-5 text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.02] active:scale-[0.98]"
+                  className="no-focus-ring btn-shine inline-flex h-10 items-center gap-2 rounded-full px-5 text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.03] active:scale-[0.98]"
                   style={{ background: 'var(--accent-bg)' }}
                 >
                   <span>Ask a question</span>
@@ -515,7 +663,7 @@ export function LandingSupportWidget() {
                       else setSelectedCollectionId(null)
                     }}
                     aria-label="Back"
-                    className="flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+                    className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
                     style={{ color: textSecondary }}
                   >
                     <ArrowLeft className="size-4" />
@@ -530,7 +678,7 @@ export function LandingSupportWidget() {
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close messenger"
-                  className="flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+                  className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
                   style={{ color: textSecondary }}
                 >
                   <X className="size-4" />
@@ -549,7 +697,7 @@ export function LandingSupportWidget() {
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search for help"
                     aria-label="Search help articles"
-                    className="min-w-0 flex-1 bg-transparent text-xs outline-none"
+                    className="no-focus-ring min-w-0 flex-1 bg-transparent text-xs outline-none"
                     style={{ color: textPrimary }}
                   />
                   {searchQuery ? (
@@ -557,18 +705,22 @@ export function LandingSupportWidget() {
                       type="button"
                       onClick={() => setSearchQuery('')}
                       aria-label="Clear search"
+                      className="no-focus-ring"
                       style={{ color: textSecondary }}
                     >
                       <X className="size-3.5" />
                     </button>
                   ) : (
-                    <Search className="size-4 shrink-0" style={{ color: textPrimary }} />
+                    <Search className="size-4 shrink-0" style={{ color: 'var(--accent)' }} />
                   )}
                 </div>
               </div>
             )}
 
-            <div className="no-scrollbar flex-1 overflow-y-auto px-4 py-3">
+            <div
+              data-lenis-prevent
+              className="flex-1 overflow-y-auto overscroll-contain px-4 py-3"
+            >
               {selectedArticle ? (
                 <article className="space-y-3 py-1">
                   <h3 className="display text-base font-bold leading-snug">{selectedArticle.title}</h3>
@@ -585,7 +737,7 @@ export function LandingSupportWidget() {
                     <button
                       type="button"
                       onClick={startConversation}
-                      className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold"
+                      className="no-focus-ring mt-2 inline-flex items-center gap-1.5 text-xs font-bold"
                       style={{ color: 'var(--accent)' }}
                     >
                       Ask our AI Assistant <ChevronRight className="size-3.5" />
@@ -608,7 +760,13 @@ export function LandingSupportWidget() {
                           <button
                             type="button"
                             onClick={() => setSelectedArticle(art)}
-                            className="flex w-full items-center justify-between gap-3 py-3 text-left"
+                            className="no-focus-ring group flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors"
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = rowHoverBg
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'transparent'
+                            }}
                           >
                             <div>
                               <p className="text-xs font-bold">{art.title}</p>
@@ -616,7 +774,10 @@ export function LandingSupportWidget() {
                                 {art.summary}
                               </p>
                             </div>
-                            <ChevronRight className="size-4 shrink-0" style={{ color: textSecondary }} />
+                            <ChevronRight
+                              className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                              style={{ color: textSecondary }}
+                            />
                           </button>
                         </li>
                       ))}
@@ -635,7 +796,13 @@ export function LandingSupportWidget() {
                         <button
                           type="button"
                           onClick={() => setSelectedArticle(art)}
-                          className="flex w-full items-center justify-between gap-3 py-3 text-left"
+                          className="no-focus-ring group flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3 text-left transition-colors"
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = rowHoverBg
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
                         >
                           <div>
                             <p className="text-xs font-bold">{art.title}</p>
@@ -643,7 +810,10 @@ export function LandingSupportWidget() {
                               {art.summary}
                             </p>
                           </div>
-                          <ChevronRight className="size-4 shrink-0" style={{ color: textSecondary }} />
+                          <ChevronRight
+                            className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                            style={{ color: textSecondary }}
+                          />
                         </button>
                       </li>
                     ))}
@@ -658,18 +828,27 @@ export function LandingSupportWidget() {
                         <button
                           type="button"
                           onClick={() => setSelectedCollectionId(col.id)}
-                          className="flex w-full items-center justify-between gap-3 py-3.5 text-left transition-opacity hover:opacity-85"
+                          className="no-focus-ring group flex w-full items-center justify-between gap-3 rounded-xl px-2 py-3.5 text-left transition-colors"
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = rowHoverBg
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
                         >
                           <div>
                             <p className="text-xs font-bold">{col.title}</p>
                             <p className="mt-1 text-xs leading-relaxed" style={{ color: textSecondary }}>
                               {col.description}
                             </p>
-                            <p className="mt-1.5 text-[11px]" style={{ color: textSecondary }}>
+                            <p className="mt-1.5 text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
                               {col.articles.length} articles
                             </p>
                           </div>
-                          <ChevronRight className="size-4 shrink-0" style={{ color: textSecondary }} />
+                          <ChevronRight
+                            className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
+                            style={{ color: textSecondary }}
+                          />
                         </button>
                       </li>
                     ))}
@@ -683,61 +862,92 @@ export function LandingSupportWidget() {
         {/* ==================== BOTTOM NAVIGATION BAR ==================== */}
         <nav
           aria-label="Messenger sections"
-          className="grid shrink-0 grid-cols-3 py-2"
+          className="grid shrink-0 grid-cols-3 py-1.5"
           style={{
             backgroundColor: cardSurface,
             borderTop: `1px solid ${borderCol}`,
           }}
         >
-          <button
-            type="button"
-            onClick={() => setTab('home')}
-            className="flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors"
-            style={{ color: tab === 'home' ? 'var(--accent)' : textSecondary }}
-          >
-            <HomeTabIcon active={tab === 'home'} />
-            <span>Home</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setTab('messages')}
-            className="flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors"
-            style={{ color: tab === 'messages' ? 'var(--accent)' : textSecondary }}
-          >
-            <MessageSquareText className="size-5" />
-            <span>Messages</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedArticle(null)
-              setTab('help')
-            }}
-            className="flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors"
-            style={{ color: tab === 'help' ? 'var(--accent)' : textSecondary }}
-          >
-            <HelpCircle className="size-5" />
-            <span>Help</span>
-          </button>
+          {(
+            [
+              { id: 'home', label: 'Home' },
+              { id: 'messages', label: 'Messages' },
+              { id: 'help', label: 'Help' },
+            ] as const
+          ).map((item) => {
+            const active = tab === item.id
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  if (item.id === 'help') setSelectedArticle(null)
+                  setTab(item.id)
+                }}
+                className="no-focus-ring relative flex flex-col items-center justify-center gap-1 py-1.5 text-[11px] font-semibold transition-colors"
+                style={{ color: active ? 'var(--accent)' : textSecondary }}
+              >
+                {active && (
+                  <motion.span
+                    layoutId="landing-messenger-tab-bar"
+                    transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                    className="absolute top-0 h-[2px] w-10 rounded-full"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  />
+                )}
+                {item.id === 'home' ? (
+                  <HomeTabIcon active={active} />
+                ) : item.id === 'messages' ? (
+                  <MessageSquareText className="size-5" />
+                ) : (
+                  <HelpCircle className="size-5" />
+                )}
+                <span>{item.label}</span>
+              </button>
+            )
+          })}
         </nav>
-      </section>
+      </motion.section>
 
-      {/* Circular Floating Launcher Button (Intercom-style white circle + dark chat smile / chevron) */}
-      <button
+      {/* Smoothly morphing Circular Floating Launcher Button */}
+      <motion.button
         type="button"
+        whileHover={{ scale: 1.06 }}
+        whileTap={{ scale: 0.94 }}
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Minimize support messenger' : 'Open support & AI assistant'}
         aria-expanded={open}
-        className="fixed bottom-4 right-4 z-30 flex size-12 items-center justify-center rounded-full bg-white text-[#151515] transition-transform duration-200 hover:scale-105 active:scale-95 sm:bottom-5 sm:right-5 sm:size-14"
+        className="no-focus-ring fixed bottom-4 right-4 z-40 flex size-12 items-center justify-center rounded-full bg-white text-[#151515] sm:bottom-5 sm:right-5 sm:size-14"
         style={{
-          ['--launcher-smile' as string]: '#ffffff',
-          boxShadow: '0 8px 28px rgba(0, 0, 0, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.06)',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(0, 0, 0, 0.06)',
         }}
       >
-        {open ? <ChevronDown className="size-6 stroke-[2.2]" /> : <LauncherBubbleIcon className="size-6" />}
-      </button>
+        <AnimatePresence mode="wait" initial={false}>
+          {open ? (
+            <motion.span
+              key="chevron"
+              initial={{ opacity: 0, rotate: -65, scale: 0.65 }}
+              animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: 65, scale: 0.65 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="flex items-center justify-center"
+            >
+              <ChevronDown className="size-6 stroke-[2.3]" />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="bubble"
+              initial={{ opacity: 0, rotate: 65, scale: 0.65 }}
+              animate={{ opacity: 1, rotate: 0, scale: 1 }}
+              exit={{ opacity: 0, rotate: -65, scale: 0.65 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="flex items-center justify-center"
+            >
+              <LauncherBubbleIcon className="size-6" />
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
     </>
   )
 }

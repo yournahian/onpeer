@@ -20,6 +20,7 @@ export function useLenis() {
       duration: 1.1,
       easing: (t: number) => 1 - Math.pow(1 - t, 4), // easeOutQuart
       smoothWheel: true,
+      allowNestedScroll: true,
       touchMultiplier: 1.5,
       infinite: false,
     })
