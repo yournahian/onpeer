@@ -9,7 +9,7 @@
  *  - Signed unsubscribe link (180-day HMAC token) appended to every notification email.
  */
 import { mintUnsubscribeUrl } from './accounts'
-import type { ChainReader } from './chain'
+import { formatScopedOrderLabel, type ChainReader } from './chain'
 import { openText } from './crypto'
 import { type Queryable } from './db'
 import { publicAppOrigin, type Env } from './env'
@@ -34,6 +34,7 @@ type NotifyEvent =
   | 'case_taken'
   | 'dispute_resolved'
   | 'order_chat'
+  | 'order_chat_email'
 
 function eventSubject(event: string): string {
   switch (event as NotifyEvent) {
@@ -48,7 +49,8 @@ function eventSubject(event: string): string {
     case 'dispute_filed':    return 'A dispute statement was filed on your OnPeer order'
     case 'case_taken':       return 'An arbiter has taken your OnPeer dispute case'
     case 'dispute_resolved': return 'A ruling has been issued on your OnPeer dispute'
-    case 'order_chat':       return 'New message in your OnPeer order chat'
+    case 'order_chat':
+    case 'order_chat_email': return 'New message in your OnPeer order chat'
     default:                 return 'OnPeer notification'
   }
 }
@@ -57,6 +59,7 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
   const link = orderId
     ? `${appOrigin}/p2p?order=${orderId.toString()}`
     : `${appOrigin}/p2p`
+  const label = orderId ? formatScopedOrderLabel(orderId) : null
 
   switch (event as NotifyEvent) {
     case 'kyc_approved':
@@ -84,36 +87,36 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
 
     case 'order_opened':
       return [
-        orderId ? `A new trade order (#${orderId.toString()}) has been opened.` : 'A new trade order has been opened.',
+        label ? `A new trade order (${label}) has been opened.` : 'A new trade order has been opened.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'order_paid':
       return [
-        orderId ? `Order #${orderId.toString()} has been marked as paid.` : 'Your order has been marked as paid.',
-        'Please release the USDC once you have confirmed receipt.',
+        label ? `Order ${label} has been marked as paid.` : 'Your order has been marked as paid.',
+        'Please release the escrowed crypto once you have confirmed receipt in your payment app.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'order_completed':
       return [
-        orderId ? `Order #${orderId.toString()} has been completed successfully.` : 'Your order has completed.',
+        label ? `Order ${label} has been completed successfully.` : 'Your order has completed.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'order_cancelled':
       return [
-        orderId ? `Order #${orderId.toString()} has been cancelled.` : 'Your order has been cancelled.',
+        label ? `Order ${label} has been cancelled.` : 'Your order has been cancelled.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'order_disputed':
       return [
-        orderId ? `A dispute has been opened on order #${orderId.toString()}.` : 'A dispute has been opened on your order.',
+        label ? `A dispute has been opened on order ${label}.` : 'A dispute has been opened on your order.',
         'The arbiter will review the case. Please file your dispute statement through the app.',
         '',
         `View order: ${link}`,
@@ -121,7 +124,7 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
 
     case 'dispute_filed':
       return [
-        orderId ? `A dispute statement has been filed on order #${orderId.toString()}.` : 'A dispute statement has been filed on your order.',
+        label ? `A dispute statement has been filed on order ${label}.` : 'A dispute statement has been filed on your order.',
         'The arbiter will review the submitted evidence.',
         '',
         `View order: ${link}`,
@@ -129,21 +132,22 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
 
     case 'case_taken':
       return [
-        orderId ? `An arbiter has started reviewing order #${orderId.toString()}.` : 'An arbiter has started reviewing your dispute.',
+        label ? `An arbiter has started reviewing order ${label}.` : 'An arbiter has started reviewing your dispute.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'dispute_resolved':
       return [
-        orderId ? `A ruling has been issued on order #${orderId.toString()}.` : 'A ruling has been issued on your dispute.',
+        label ? `A ruling has been issued on order ${label}.` : 'A ruling has been issued on your dispute.',
         '',
         `View order: ${link}`,
       ].join('\n')
 
     case 'order_chat':
+    case 'order_chat_email':
       return [
-        orderId ? `You have a new message in order #${orderId.toString()} chat.` : 'You have a new message in your order chat.',
+        label ? `You have a new message in order ${label} chat.` : 'You have a new message in your order chat.',
         '',
         `View order: ${link}`,
       ].join('\n')
@@ -159,6 +163,7 @@ interface OutboxRow {
   event: string
   order_id: string | null
   attempts: number
+  last_error?: string | null
 }
 
 interface AccountEmailRow {
@@ -177,10 +182,11 @@ export async function queueNotification(
   wallet: `0x${string}`,
   event: string,
   orderId?: bigint | null,
+  customDedupeKey?: string,
 ): Promise<void> {
-  const dedupeKey = orderId
-    ? `${event}:${wallet}:${orderId.toString()}`
-    : `${event}:${wallet}`
+  const dedupeKey =
+    customDedupeKey ??
+    (orderId ? `${event}:${wallet}:${orderId.toString()}` : `${event}:${wallet}`)
   await db.query(
     `INSERT INTO public.notifications_outbox (wallet, event, order_id, dedupe_key)
      VALUES ($1, $2, $3, $4)
@@ -247,7 +253,7 @@ export async function processNotificationsOutbox(
          LIMIT $2
          FOR UPDATE SKIP LOCKED
       )
-      RETURNING id, wallet, event, order_id, attempts`,
+      RETURNING id, wallet, event, order_id, attempts, last_error`,
     [MAX_ATTEMPTS, BATCH_SIZE],
   )
 
@@ -257,6 +263,7 @@ export async function processNotificationsOutbox(
   const adminFallbackEmail = env.ADMIN_ALERT_EMAIL?.trim() || null
   const adminFallbackChatId = env.TELEGRAM_ADMIN_CHAT_ID?.trim() || null
   const hasTelegramBot = !!env.TELEGRAM_BOT_TOKEN?.trim()
+  const hasResend = !!env.RESEND_API_KEY?.trim() && !!env.EMAIL_FROM?.trim()
   const roles =
     (adminFallbackEmail || adminFallbackChatId) && chain
       ? await chain.getRoles().catch(() => null)
@@ -265,6 +272,8 @@ export async function processNotificationsOutbox(
   for (const row of claimed.rows) {
     const wallet = row.wallet.toLowerCase() as `0x${string}`
     const orderId = row.order_id ? BigInt(row.order_id) : null
+    const isEmailOnlyEvent = row.event === 'order_chat_email'
+    const prevErr = row.last_error ?? null
     let success = false
     let skipReason: string | null = null
 
@@ -296,9 +305,9 @@ export async function processNotificationsOutbox(
         includeUnsub = false
       }
 
-      // 2. Load account Telegram chat ID (when TELEGRAM_BOT_TOKEN is configured)
+      // 2. Load account Telegram chat ID (when TELEGRAM_BOT_TOKEN is configured and event is not email-only)
       let tgChatId: string | null = null
-      if (hasTelegramBot) {
+      if (hasTelegramBot && !isEmailOnlyEvent) {
         const tgRes = await db
           .query<{ telegram_chat_id_enc: string | null; telegram_opt_in: boolean }>(
             `SELECT telegram_chat_id_enc, telegram_opt_in
@@ -322,31 +331,38 @@ export async function processNotificationsOutbox(
       if (!plainEmail && !tgChatId) {
         if (!skipReason) skipReason = 'no_verified_opt_in_email'
       } else {
-        let emailSent = false
-        let telegramSent = false
+        // M-06: Track each configured channel independently so partial dual-channel failure retries ONLY the failed channel
+        const wantEmail = !!plainEmail && (hasResend || !tgChatId)
+        const wantTg = !!tgChatId && hasTelegramBot
+        let emailDone = !wantEmail || prevErr === 'email_ok_tg_failed'
+        let tgDone = !wantTg || prevErr === 'tg_ok_email_failed'
 
-        if (plainEmail) {
+        if (!emailDone && plainEmail) {
           const subject = eventSubject(row.event)
           const parts = [eventBody(row.event, orderId, appOrigin)]
           if (includeUnsub) {
             const unsubUrl = await mintUnsubscribeUrl(env, appOrigin, wallet)
             parts.push('', '---', `Unsubscribe: ${unsubUrl}`)
           }
-          emailSent = await sendEmail(env, plainEmail, subject, parts.join('\n'))
+          emailDone = await sendEmail(env, plainEmail, subject, parts.join('\n'))
         }
 
-        if (tgChatId) {
+        if (!tgDone && tgChatId) {
           const alert = buildTelegramAlertMessage(row.event, orderId, appOrigin)
-          telegramSent = await sendTelegramBotMessage(env, {
+          tgDone = await sendTelegramBotMessage(env, {
             chatId: tgChatId,
             text: alert.text,
             buttons: alert.buttons,
           })
         }
 
-        if (emailSent || telegramSent) {
+        if (emailDone && tgDone) {
           success = true
           skipReason = null
+        } else if (emailDone && !tgDone) {
+          skipReason = 'email_ok_tg_failed'
+        } else if (!emailDone && tgDone) {
+          skipReason = 'tg_ok_email_failed'
         } else {
           skipReason = 'send_failed'
         }

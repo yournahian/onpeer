@@ -42,18 +42,145 @@ export interface SavedPaymentMethod {
   holderName: string
   accountNumber: string
   bankOrBranch: string
+  branchName?: string
+  routingNumber?: string
   notes: string
   updatedAt: string
 }
 
+export interface ParsedPaymentEntry {
+  methodName: string
+  holderName: string
+  accountNumber: string
+  bankOrType: string
+  branchName: string
+  routingNumber: string
+  remarks: string
+  rawLine: string
+}
+
+const cleanPipe = (v: string) => v.replace(/\|/g, '/').replace(/\r?\n/g, ' ').trim()
+
 export function formatSavedMethodLine(m: SavedPaymentMethod, includeHolder: boolean): string {
-  const bankTag = m.bankOrBranch ? ` (${m.bankOrBranch})` : ''
-  const holderTag = includeHolder && m.holderName ? ` — ${m.holderName}` : ''
-  return `${m.methodName}${bankTag}: ${m.accountNumber}${holderTag}`
+  const parts: string[] = [cleanPipe(m.methodName)]
+  if (includeHolder && m.holderName.trim()) {
+    parts.push(`Name: ${cleanPipe(m.holderName)}`)
+  }
+  parts.push(`Account: ${cleanPipe(m.accountNumber)}`)
+  if (m.bankOrBranch.trim()) {
+    const label = m.methodName === 'Bank transfer' ? 'Bank' : 'Type'
+    parts.push(`${label}: ${cleanPipe(m.bankOrBranch)}`)
+  }
+  if (m.branchName?.trim()) {
+    parts.push(`Branch: ${cleanPipe(m.branchName)}`)
+  }
+  if (m.routingNumber?.trim()) {
+    parts.push(`Routing: ${cleanPipe(m.routingNumber)}`)
+  }
+  if (m.notes.trim()) {
+    parts.push(`Remarks: ${cleanPipe(m.notes)}`)
+  }
+  return parts.join(' | ')
 }
 
 export function formatSavedMethodsBlock(methods: SavedPaymentMethod[], includeHolder: boolean): string {
   return methods.map((m) => formatSavedMethodLine(m, includeHolder)).join('\n')
+}
+
+/** Parse structured (`Method | Account: ... | Bank: ...`) or legacy (`Method (Bank): 123`) payment lines. */
+export function parseAccountDetailsEntries(raw: string, fallbackHolder = ''): ParsedPaymentEntry[] {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  return lines.map((line) => {
+    if (line.includes(' | ')) {
+      const segs = line.split(' | ').map((s) => s.trim())
+      const methodName = segs[0] ?? ''
+      let holderName = fallbackHolder
+      let accountNumber = ''
+      let bankOrType = ''
+      let branchName = ''
+      let routingNumber = ''
+      let remarks = ''
+      for (const seg of segs.slice(1)) {
+        const idx = seg.indexOf(':')
+        if (idx === -1) continue
+        const key = seg.slice(0, idx).trim().toLowerCase()
+        const val = seg.slice(idx + 1).trim()
+        if (key === 'name' || key === 'holder') holderName = val
+        else if (key === 'account' || key === 'number') accountNumber = val
+        else if (key === 'bank' || key === 'type') bankOrType = val
+        else if (key === 'branch') branchName = val
+        else if (key === 'routing') routingNumber = val
+        else if (key === 'remarks' || key === 'note') remarks = val
+      }
+      return {
+        methodName,
+        holderName: holderName || fallbackHolder,
+        accountNumber,
+        bankOrType,
+        branchName,
+        routingNumber,
+        remarks,
+        rawLine: line,
+      }
+    }
+
+    // Legacy format: `Bank transfer (The City Bank): 01234567896 — Holder` or `bKash (Personal): 01965847521`
+    const legacyMatch = line.match(/^([^(:]+?)(?:\s*\(([^)]+)\))?\s*:\s*(.+)$/)
+    if (legacyMatch) {
+      const methodName = legacyMatch[1]?.trim() ?? ''
+      const bankOrType = legacyMatch[2]?.trim() ?? ''
+      const rest = legacyMatch[3]?.trim() ?? ''
+      const dashIdx = rest.indexOf(' — ')
+      const accountNumber = dashIdx >= 0 ? rest.slice(0, dashIdx).trim() : rest
+      const holderFromLine = dashIdx >= 0 ? rest.slice(dashIdx + 3).trim() : ''
+      return {
+        methodName,
+        holderName: holderFromLine || fallbackHolder,
+        accountNumber,
+        bankOrType,
+        branchName: '',
+        routingNumber: '',
+        remarks: '',
+        rawLine: line,
+      }
+    }
+
+    return {
+      methodName: '',
+      holderName: fallbackHolder,
+      accountNumber: line,
+      bankOrType: '',
+      branchName: '',
+      routingNumber: '',
+      remarks: '',
+      rawLine: line,
+    }
+  })
+}
+
+const ORDER_METHOD_STORAGE_PREFIX = 'onpeer:order-method:'
+
+export function saveOrderChosenMethod(orderId: bigint, methodBit: number): void {
+  try {
+    sessionStorage.setItem(`${ORDER_METHOD_STORAGE_PREFIX}${orderId.toString()}`, String(methodBit))
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function loadOrderChosenMethod(orderId: bigint): number | null {
+  try {
+    const raw = sessionStorage.getItem(`${ORDER_METHOD_STORAGE_PREFIX}${orderId.toString()}`)
+    if (raw === null || !/^\d+$/.test(raw)) return null
+    const n = Number(raw)
+    return n >= 0 && n <= 31 ? n : null
+  } catch {
+    return null
+  }
 }
 
 export function useSavedPaymentMethods() {
@@ -107,12 +234,12 @@ export function useP2pAccount() {
   const normalizedWallet = address?.toLowerCase() ?? null
   const isSignedIn = !!(isConnected && normalizedWallet && session && session.wallet === normalizedWallet)
 
-  // Clear stale session immediately if the user switches or disconnects wallets
+  // L-01b: Clear stale session immediately if the user switches OR disconnects wallets
   useEffect(() => {
-    if (session && normalizedWallet && session.wallet !== normalizedWallet) {
+    if (session && (!isConnected || !normalizedWallet || session.wallet !== normalizedWallet)) {
       clearBackendSession()
     }
-  }, [session, normalizedWallet])
+  }, [session, isConnected, normalizedWallet])
 
   const profileQuery = useQuery({
     queryKey: ['p2p-account', normalizedWallet, session?.token ?? null],

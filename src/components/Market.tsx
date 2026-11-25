@@ -14,6 +14,7 @@ import {
   type AdWithId,
 } from '@/hooks/useEscrow'
 import {
+  BUY_AD_MIN_COMPLETED,
   COUNTRIES,
   P2P_ASSETS,
   SIDE_BUY,
@@ -158,7 +159,7 @@ export function Market({
   }, [live, activeCountryCode])
 
   const makerAddresses = useMemo(() => hereAds.map((a) => a.maker), [hereAds])
-  const verifications = useVerifications(makerAddresses)
+  const verifications = useVerifications(makerAddresses, activeAsset)
   const accounts = useAccounts(makerAddresses, activeAsset)
   const traderProfiles = useTraderProfiles(makerAddresses)
 
@@ -170,6 +171,18 @@ export function Market({
     const list = hereAds
       .filter((ad) => ad.side === wantedSide)
       .filter((ad) => !blockedSet.has(ad.maker.toLowerCase()))
+      .filter((ad) => {
+        // H-08: Hide ads whose maker has become ineligible onchain since posting
+        const makerAcc = accounts.get(ad.maker.toLowerCase())
+        if (!makerAcc) return true
+        if (makerAcc.restricted || makerAcc.disputeLimitReached) return false
+        if (makerAcc.totalDebt > 0n) return false
+        if (Number(makerAcc.bannedUntil) > now) return false
+        if (ad.side === SIDE_BUY && !makerAcc.merchant && makerAcc.ordersCompleted < BUY_AD_MIN_COMPLETED) {
+          return false
+        }
+        return true
+      })
       .filter((ad) => !filterState.merchantsOnly || ad.merchantAd)
       .filter((ad) => {
         const kycOk =
@@ -229,6 +242,7 @@ export function Market({
     method,
     fiatFilter,
     accounts,
+    now,
   ])
 
   const hasActiveAdvancedFilter =

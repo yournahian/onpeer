@@ -84,7 +84,7 @@ export function computeTraderOrderMetrics(
     return {
       trades30d: 0,
       completion30dPct: '100.00%',
-      avgReleaseMin: '0.00',
+      avgReleaseMin: '—',
       avgPayMin: '0.00',
       allCompleted: 0,
       buyCompleted: 0,
@@ -148,12 +148,6 @@ export function computeTraderOrderMetrics(
       payTotalSec += Number(o.paidAt - o.createdAt)
       paySamples++
     }
-    if (isSeller && isCompleted && o.paidAt > 0n) {
-      // Approximate release speed when paidAt is recorded (bounded reasonably)
-      const rel = Math.max(30, Math.min(3600, Number(o.deadline > o.paidAt ? 120n : 60n)))
-      releaseTotalSec += rel
-      releaseSamples++
-    }
   }
 
   const totalCompletedFromOrders = buyCompleted + sellCompleted
@@ -167,7 +161,8 @@ export function computeTraderOrderMetrics(
   }
 
   const avgPayMin = paySamples > 0 ? (payTotalSec / paySamples / 60).toFixed(2) : '0.00'
-  const avgReleaseMin = releaseSamples > 0 ? (releaseTotalSec / releaseSamples / 60).toFixed(2) : '0.00'
+  // L-01b: Never display a synthetic 2.00m release time when exact release timestamps are not stored onchain
+  const avgReleaseMin = releaseSamples > 0 ? (releaseTotalSec / releaseSamples / 60).toFixed(2) : '—'
   const firstTradeDaysAgo =
     earliestSec !== null ? Math.max(0, Math.floor((nowSec - earliestSec) / 86_400)) : null
 

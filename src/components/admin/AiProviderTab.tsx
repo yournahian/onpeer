@@ -67,7 +67,9 @@ export function AiProviderTab() {
     setBusy('unlock')
     setError(null)
     try {
-      const nonce = await adminFetch<{ nonce: string; message: string }>('/admin/nonce')
+      const nonce = await adminFetch<{ nonce: string; message: string }>(
+        `/admin/nonce?address=${encodeURIComponent(address)}`,
+      )
       const signature = await signMessageAsync({ message: nonce.message })
       const res = await adminFetch<{ token: string; expiresInSeconds: number }>('/admin/login', {
         method: 'POST',

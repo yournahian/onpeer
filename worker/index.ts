@@ -5,13 +5,15 @@ import {
   AuthConfigError,
   getSession,
   handleAuthRoutes,
+  SESSION_TTL_SECONDS,
+  sha256Hex,
   signHmacToken,
   verifyHmacToken,
 } from './auth'
 import { handleAccountRoutes } from './accounts'
 import { checkAdminAccess, createArcPublicClient, createChainReader, type ChainReader } from './chain'
 import { CryptoTamperError, VaultConfigError } from './crypto'
-import { DbUnavailableError, withDb, type Queryable } from './db'
+import { DbUnavailableError, withDb, writeAudit, type Queryable } from './db'
 import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
 import { handleChatRoutes } from './chat'
 import { handleVaultRoutes } from './vault'
@@ -24,8 +26,10 @@ import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
 import { checkRateLimit } from './db'
 import {
+  CHAIN_ID,
   clientIp,
   json,
+  normalizeWallet,
   readJsonBody,
   textField,
   type Env,
@@ -132,8 +136,40 @@ function adminHmacEnv(env: Env): Env {
   return { ...env, SESSION_SECRET: secret }
 }
 
-const signInMessage = (nonce: string) =>
-  `OnPeer admin sign-in\nThis proves you control an admin wallet. It costs no gas.\nNonce: ${nonce}`
+const signInMessage = (nonceId: string, issuedAtIso: string, wallet?: `0x${string}` | null) =>
+  [
+    'OnPeer Admin Sign-In',
+    'Domain: app.onpeer.xyz',
+    ...(wallet ? [`Wallet: ${wallet}`] : []),
+    `Chain ID: ${CHAIN_ID}`,
+    `Nonce: ${nonceId}`,
+    `Issued At: ${issuedAtIso}`,
+    'This signature proves you control an admin wallet. It costs no gas.',
+  ].join('\n')
+
+function randomHex32(): string {
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) out += bytes[i]!.toString(16).padStart(2, '0')
+  return out
+}
+
+async function checkIpRateLimit(
+  env: Env,
+  runWithDb: <T>(env: Env, fn: (db: Queryable) => Promise<T>) => Promise<T>,
+  bucket: string,
+  limit: number,
+  windowSec: number,
+): Promise<boolean> {
+  try {
+    return await runWithDb(env, (db) => checkRateLimit(db, bucket, limit, windowSec))
+  } catch (err) {
+    // M-05: Fail closed when HYPERDRIVE is configured in production; only allow DB-less local dev
+    if (!env.HYPERDRIVE && err instanceof DbUnavailableError) return true
+    return false
+  }
+}
 
 function validBaseUrl(value: string): string | null {
   try {
@@ -212,29 +248,17 @@ async function resolveAdminWallet(
 ): Promise<`0x${string}` | null> {
   const auth = req.headers.get('authorization') ?? ''
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  if (!bearer) return null
+  if (!bearer || !/^[0-9a-f]{64}$/.test(bearer)) return null
 
-  // 1. Prefer 12h Postgres-backed opaque session token when 64-hex
-  if (/^[0-9a-f]{64}$/.test(bearer)) {
-    try {
-      const sess = await runWithDb(env, (db) => getSession(req, db))
-      if (sess) {
-        const admin = await checkAdminAccess(chain, sess.wallet)
-        return admin.allowed ? sess.wallet : null
-      }
-    } catch {
-      /* fall through to HMAC admin token if DB is not needed for AI KV */
-    }
-  }
-
-  // 2. Legacy /admin/login HMAC token signed strictly with SESSION_SECRET or ADMIN_SESSION_SECRET
-  const verified = await verifyHmacToken(adminHmacEnv(env), bearer)
-  if (!verified || verified.kind !== 'admin_session' || typeof verified.sub !== 'string' || !isAddress(verified.sub)) {
+  // H-06: Enforce DB-backed revocable `public.sessions` tokens exclusively (no non-revocable stateless HMAC tokens)
+  try {
+    const sess = await runWithDb(env, (db) => getSession(req, db))
+    if (!sess) return null
+    const admin = await checkAdminAccess(chain, sess.wallet)
+    return admin.allowed ? sess.wallet : null
+  } catch {
     return null
   }
-  const wallet = verified.sub.toLowerCase() as `0x${string}`
-  const admin = await checkAdminAccess(chain, wallet)
-  return admin.allowed ? wallet : null
 }
 
 async function handleApi(
@@ -321,7 +345,7 @@ async function handleApi(
     if (path === '/onramp/dev-unlock') {
       if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' }, { Allow: 'POST' })
       const ip = clientIp(req)
-      const allowed = await runDb(env, (db) => checkRateLimit(db, `rl:onramp:dev:${ip}`, 10, 60)).catch(() => true)
+      const allowed = await checkIpRateLimit(env, runDb, `rl:onramp:dev:${ip}`, 10, 60)
       if (!allowed) return json(429, { error: 'rate_limited' })
       const expected = env.ONRAMP_DEV_PASS?.trim() ?? ''
       if (!expected) return json(503, { error: 'passcode_not_configured' })
@@ -346,10 +370,10 @@ async function handleApi(
       return res ?? json(404, { error: 'not_found' })
     }
 
-    // ---- Assistant chat (M5: IP rate limit + 32 KB request size cap) ----
+    // ---- Assistant chat (M-05: fail-closed IP rate limit + 32 KB request size cap) ----
     if (req.method === 'POST' && path === '/chat') {
       const ip = clientIp(req)
-      const allowed = await runDb(env, (db) => checkRateLimit(db, `rl:ai:chat:${ip}`, 20, 60)).catch(() => true)
+      const allowed = await checkIpRateLimit(env, runDb, `rl:ai:chat:${ip}`, 20, 60)
       if (!allowed) return json(429, { error: 'rate_limited' })
 
       const body = await readJsonBody(req, 32_768)
@@ -400,62 +424,86 @@ async function handleApi(
       }
     }
 
-    // ---- Admin routes (L5: single-use nonce consumed in DB) ----
+    // ---- Admin routes (H-06: domain/chain-bound challenge + revocable DB session) ----
     if (req.method === 'GET' && path === '/admin/nonce') {
       const ip = clientIp(req)
-      const allowed = await runDb(env, (db) => checkRateLimit(db, `rl:admin:nonce:${ip}`, 20, 60)).catch(() => true)
+      const allowed = await checkIpRateLimit(env, runDb, `rl:admin:nonce:${ip}`, 20, 60)
       if (!allowed) return json(429, { error: 'rate_limited' })
+      const reqUrl = new URL(req.url)
+      const rawAddr = reqUrl.searchParams.get('address')
+      const wallet = rawAddr !== null ? normalizeWallet(rawAddr) : null
+      if (rawAddr !== null && !wallet) return json(400, { error: 'bad_request' })
+      const nonceId = crypto.randomUUID()
+      const issuedAtIso = new Date().toISOString()
       const nonce = await signHmacToken(adminHmacEnv(env), {
         kind: 'admin_nonce',
-        r: crypto.randomUUID(),
+        r: nonceId,
+        sub: wallet,
+        iat: issuedAtIso,
         exp: Date.now() + NONCE_TTL,
       })
-      return json(200, { nonce, message: signInMessage(nonce) })
+      return json(200, { nonce, message: signInMessage(nonceId, issuedAtIso, wallet) })
     }
 
     if (req.method === 'POST' && path === '/admin/login') {
       const ip = clientIp(req)
-      const allowed = await runDb(env, (db) => checkRateLimit(db, `rl:admin:login:${ip}`, 15, 60)).catch(() => true)
+      const allowed = await checkIpRateLimit(env, runDb, `rl:admin:login:${ip}`, 15, 60)
       if (!allowed) return json(429, { error: 'rate_limited' })
       const body = await readJsonBody(req, 8_192)
       if (!body) return json(400, { error: 'bad_request' })
       const address = textField(body.address, 64)
-      const signature = textField(body.signature, 400)
-      const nonce = textField(body.nonce, 512)
+      const signature = textField(body.signature, 600)
+      const nonce = textField(body.nonce, 600)
       if (!address || !isAddress(address) || !signature || !nonce) return json(400, { error: 'bad_request' })
+      const wallet = address.toLowerCase() as `0x${string}`
       const verifiedNonce = await verifyHmacToken(adminHmacEnv(env), nonce)
-      if (!verifiedNonce || verifiedNonce.kind !== 'admin_nonce' || typeof verifiedNonce.r !== 'string') {
+      if (
+        !verifiedNonce ||
+        verifiedNonce.kind !== 'admin_nonce' ||
+        typeof verifiedNonce.r !== 'string' ||
+        typeof verifiedNonce.iat !== 'string'
+      ) {
         return json(401, { error: 'nonce_expired' })
       }
+      if (verifiedNonce.sub !== null && verifiedNonce.sub !== undefined && verifiedNonce.sub !== wallet) {
+        return json(401, { error: 'bad_signature' })
+      }
+      const boundWallet = typeof verifiedNonce.sub === 'string' ? (verifiedNonce.sub as `0x${string}`) : null
       const ok = await verifyMessage({
-        address,
-        message: signInMessage(nonce),
+        address: wallet,
+        message: signInMessage(verifiedNonce.r, verifiedNonce.iat, boundWallet),
         signature: signature as `0x${string}`,
       }).catch(() => false)
       if (!ok) return json(401, { error: 'bad_signature' })
       const chain = makeChain(env)
-      const admin = await checkAdminAccess(chain, address.toLowerCase() as `0x${string}`)
+      const admin = await checkAdminAccess(chain, wallet)
       if (!admin.allowed) return json(403, { error: 'not_admin' })
 
-      // L5: Consume admin nonce atomically in DB so it cannot be replayed
       const nonceTtlSec = Math.max(1, Math.ceil((Number(verifiedNonce.exp) - Date.now()) / 1000))
-      const consumed = await runDb(env, async (db) => {
+      const token = randomHex32()
+      const tokenHash = await sha256Hex(token)
+      const expiresSec = Math.min(SESSION_TTL_SECONDS, Math.floor(SESSION_TTL / 1000))
+      const expiresAt = new Date(Date.now() + expiresSec * 1000).toISOString()
+
+      const issued = await runDb(env, async (db) => {
         const res = await db.query(
           `INSERT INTO public.rate_limits (bucket, count, reset_at)
            VALUES ($1, 1, now() + make_interval(secs => $2))
            ON CONFLICT (bucket) DO NOTHING`,
           [`admin_nonce_used:${verifiedNonce.r}`, nonceTtlSec],
         )
-        return (res.rowCount ?? 0) > 0
+        if ((res.rowCount ?? 0) === 0) return false
+        await db.query(
+          `INSERT INTO public.sessions (token_hash, wallet, expires_at)
+           VALUES ($1, $2, $3::timestamptz)`,
+          [tokenHash, wallet, expiresAt],
+        )
+        await writeAudit(db, wallet, 'admin.login', null)
+        return true
       })
-      if (!consumed) return json(401, { error: 'nonce_expired' })
+      if (!issued) return json(401, { error: 'nonce_expired' })
 
-      const token = await signHmacToken(adminHmacEnv(env), {
-        kind: 'admin_session',
-        sub: address.toLowerCase(),
-        exp: Date.now() + SESSION_TTL,
-      })
-      return json(200, { token, expiresInSeconds: SESSION_TTL / 1000 })
+      return json(200, { token, wallet, expiresInSeconds: expiresSec, expiresAt })
     }
 
     if (path.startsWith('/admin/')) {

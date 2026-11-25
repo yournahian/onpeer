@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Briefcase, ChevronDown, Clock, Gavel, ShieldAlert } from 'lucide-react'
+import { Briefcase, ChevronDown, Clock, Gavel, KeyRound, Loader2, Lock, ShieldAlert } from 'lucide-react'
+import { toast } from 'sonner'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   BACKUP_ARBITER_DELAY_SECONDS,
   CHAIN_ID,
   STATUS,
+  ZERO_BYTES32,
   countryByCurrency,
   formatDuration,
   formatFiat,
@@ -15,8 +17,12 @@ import {
   hexToCurrency,
   sameAddr,
   shortAddr,
+  type P2pAsset,
 } from '@/lib/p2p'
-import { useNow, type Account, type OrderWithId } from '@/hooks/useEscrow'
+import { BackendApiError } from '@/lib/api'
+import { useAccounts, useNow, type Account, type OrderWithId } from '@/hooks/useEscrow'
+import { useP2pAccount } from '@/hooks/useAccount'
+import { useOrderVault } from '@/hooks/useVault'
 import { useTx } from '@/hooks/useTx'
 import { Avatar, Button, CopyButton, StatusBadge } from '@/components/ui'
 import { OrderChat } from '@/components/OrderChat'
@@ -24,7 +30,7 @@ import { CountryFlag } from '@/components/logos'
 
 const PAID_WAIT_SECONDS = 15 * 60
 
-function PartyRow({ role, address, account }: { role: string; address: string; account?: Account }) {
+function PartyRow({ role, address, account, asset }: { role: string; address: string; account?: Account; asset: P2pAsset }) {
   return (
     <div className="inner flex items-center gap-3 rounded-xl p-3">
       <Avatar address={address} size={34} />
@@ -39,7 +45,7 @@ function PartyRow({ role, address, account }: { role: string; address: string; a
         </p>
         <p className="text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
           {account
-            ? `${account.ordersCompleted} completed · ${account.disputesLost} lost · ${account.concessions} concessions · margin ${formatUsdcAmount(account.effectiveMargin)} USDC${account.totalDebt > 0n ? ` · debt ${formatUsdcAmount(account.totalDebt)} USDC` : ''}`
+            ? `${account.ordersCompleted} completed · ${account.disputesLost} lost · ${account.concessions} concessions · margin ${formatUsdcAmount(account.effectiveMargin, undefined, asset)} ${asset}${account.totalDebt > 0n ? ` · debt ${formatUsdcAmount(account.totalDebt, undefined, asset)} ${asset}` : ''}`
             : 'Loading profile...'}
         </p>
       </div>
@@ -82,9 +88,14 @@ export function DisputeCard({
   const canRule = paidReady && (isPrimaryArbiter || (isBackupArbiter && backupReady))
   const inReview = order.reviewStartedAt > 0n
 
-  const buyerAcc = accounts.get(order.buyer.toLowerCase())
-  const sellerAcc = accounts.get(order.seller.toLowerCase())
+  const assetAccounts = useAccounts([order.buyer, order.seller], asset)
+  const buyerAcc = assetAccounts.get(order.buyer.toLowerCase()) ?? accounts.get(order.buyer.toLowerCase())
+  const sellerAcc = assetAccounts.get(order.seller.toLowerCase()) ?? accounts.get(order.seller.toLowerCase())
   const isParty = sameAddr(viewer, order.buyer) || sameAddr(viewer, order.seller)
+  const { isSignedIn, signIn, signingIn } = useP2pAccount()
+  const hasSealedHashes = order.detailsHash !== ZERO_BYTES32 || order.payerProof !== ZERO_BYTES32
+  const canReadVault = open && !isParty && canRule
+  const vaultQuery = useOrderVault(order.id, order.detailsHash, order.payerProof, canReadVault)
   const loserAcc = toBuyer === null ? undefined : toBuyer ? sellerAcc : buyerAcc
   const deductedBond = applyBond ? order.bond : 0n
   const marginAfterBond =
@@ -164,26 +175,101 @@ export function DisputeCard({
             style={{ borderColor: 'var(--border)' }}
           >
             <div className="grid gap-2 sm:grid-cols-2">
-              <PartyRow role="Buyer" address={order.buyer} account={buyerAcc} />
-              <PartyRow role="Seller" address={order.seller} account={sellerAcc} />
+              <PartyRow role="Buyer" address={order.buyer} account={buyerAcc} asset={asset} />
+              <PartyRow role="Seller" address={order.seller} account={sellerAcc} asset={asset} />
             </div>
+
+            {hasSealedHashes && canReadVault && !isSignedIn && (
+              <div
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl p-3 text-xs"
+                style={{ background: 'var(--fill-2)', border: '1px solid var(--border)' }}
+              >
+                <span className="flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
+                  <Lock className="size-3.5 shrink-0" />
+                  Sign a free message with your arbiter wallet to decrypt sealed payment details &amp; payer proof.
+                </span>
+                <Button
+                  variant="ghost"
+                  onClick={() =>
+                    void signIn().catch((err) =>
+                      toast.error(err instanceof BackendApiError ? err.message : 'Wallet signature cancelled.'),
+                    )
+                  }
+                  disabled={signingIn}
+                >
+                  {signingIn ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
+                  Decrypt Vault
+                </Button>
+              </div>
+            )}
 
             <div className="inner rounded-xl p-3 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
                   Seller receiving details
                 </span>
-                {order.paymentDetails && <CopyButton text={order.paymentDetails} />}
+                {(vaultQuery.data?.sellerDetails?.accountDetails || order.paymentDetails) && (
+                  <CopyButton text={vaultQuery.data?.sellerDetails?.accountDetails || order.paymentDetails} />
+                )}
               </div>
-              <p className="mono mt-1.5 whitespace-pre-wrap break-words text-xs">
-                {order.paymentDetails || 'Sealed payment details'}
-              </p>
+              {vaultQuery.data?.sellerDetails ? (
+                <div className="mt-1.5 space-y-1 text-xs">
+                  <p>
+                    <span style={{ color: 'var(--subtle)' }}>Holder: </span>
+                    <span className="font-semibold">{vaultQuery.data.sellerDetails.holderName}</span>
+                    {' · '}
+                    <span style={{ color: 'var(--subtle)' }}>
+                      KYC name: {vaultQuery.data.sellerDetails.kycNameMatch.status}
+                    </span>
+                  </p>
+                  <p className="mono whitespace-pre-wrap break-words">{vaultQuery.data.sellerDetails.accountDetails}</p>
+                  {vaultQuery.data.sellerDetails.notes && (
+                    <p style={{ color: 'var(--muted)' }}>Notes: {vaultQuery.data.sellerDetails.notes}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="mono mt-1.5 whitespace-pre-wrap break-words text-xs">
+                  {order.paymentDetails || 'Sealed payment details'}
+                </p>
+              )}
               <p className="mt-2 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
                 Price {formatPrice(order.priceE6)} {currency} per {asset} · opened {new Date(Number(order.createdAt) * 1000).toLocaleString()}
                 {order.paidAt > 0n && ` · marked paid ${new Date(Number(order.paidAt) * 1000).toLocaleString()}`}
                 {inReview && ` · review started ${new Date(Number(order.reviewStartedAt) * 1000).toLocaleString()}`}
               </p>
             </div>
+
+            {vaultQuery.data?.buyerPayer && (
+              <div className="inner rounded-xl p-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
+                    Buyer payer proof (verified hash)
+                  </span>
+                  <CopyButton text={vaultQuery.data.buyerPayer.transferId} label="Copy TxID" />
+                </div>
+                <div className="mt-1.5 grid gap-1 sm:grid-cols-2">
+                  <p>
+                    <span style={{ color: 'var(--subtle)' }}>Transfer ID: </span>
+                    <span className="mono font-semibold">{vaultQuery.data.buyerPayer.transferId}</span>
+                  </p>
+                  <p>
+                    <span style={{ color: 'var(--subtle)' }}>Sender: </span>
+                    <span className="font-semibold">{vaultQuery.data.buyerPayer.senderName}</span>
+                    {vaultQuery.data.buyerPayer.last4 && ` (••${vaultQuery.data.buyerPayer.last4})`}
+                  </p>
+                  {vaultQuery.data.buyerPayer.paymentMethod && (
+                    <p>
+                      <span style={{ color: 'var(--subtle)' }}>Method: </span>
+                      <span className="font-semibold">{vaultQuery.data.buyerPayer.paymentMethod}</span>
+                    </p>
+                  )}
+                  <p>
+                    <span style={{ color: 'var(--subtle)' }}>KYC name match: </span>
+                    <span className="font-semibold">{vaultQuery.data.buyerPayer.kycNameMatch.status}</span>
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div>
               <h4 className="mb-2 text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>

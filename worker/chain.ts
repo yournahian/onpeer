@@ -146,6 +146,76 @@ export function resolveWethEscrowAddress(env: Env): Address {
   return raw && isAddress(raw) ? raw : DEFAULT_WETH_ESCROW
 }
 
+export interface ConfiguredEscrowTarget {
+  asset: 'USDC' | 'EURC' | 'cirBTC' | 'WETH'
+  address: Address
+  offset: bigint
+  cursorName: string
+  deployBlock: bigint
+}
+
+/**
+ * Return all explicitly configured escrow deployments for event scanning.
+ * `USDC` is always required; secondary markets (`EURC`, `cirBTC`, `WETH`) are included when their
+ * `VITE_P2P_*_ESCROW_ADDRESS` runtime var is present (set in `wrangler.jsonc` in production).
+ */
+export function getConfiguredEscrows(env: Env): ConfiguredEscrowTarget[] {
+  const out: ConfiguredEscrowTarget[] = [
+    {
+      asset: 'USDC',
+      address: requireEscrowAddress(env),
+      offset: 0n,
+      cursorName: 'escrow_events',
+      deployBlock: env.VITE_P2P_DEPLOY_BLOCK ? BigInt(env.VITE_P2P_DEPLOY_BLOCK) : 0n,
+    },
+  ]
+  const eurcRaw = env.VITE_P2P_EURC_ESCROW_ADDRESS?.trim()
+  if (eurcRaw && isAddress(eurcRaw)) {
+    out.push({
+      asset: 'EURC',
+      address: eurcRaw,
+      offset: EURC_ID_OFFSET,
+      cursorName: 'escrow_events:EURC',
+      deployBlock: env.VITE_P2P_EURC_DEPLOY_BLOCK ? BigInt(env.VITE_P2P_EURC_DEPLOY_BLOCK) : 0n,
+    })
+  }
+  const cirbtcRaw = env.VITE_P2P_CIRBTC_ESCROW_ADDRESS?.trim()
+  if (cirbtcRaw && isAddress(cirbtcRaw)) {
+    out.push({
+      asset: 'cirBTC',
+      address: cirbtcRaw,
+      offset: CIRBTC_ID_OFFSET,
+      cursorName: 'escrow_events:cirBTC',
+      deployBlock: env.VITE_P2P_CIRBTC_DEPLOY_BLOCK ? BigInt(env.VITE_P2P_CIRBTC_DEPLOY_BLOCK) : 0n,
+    })
+  }
+  const wethRaw = env.VITE_P2P_WETH_ESCROW_ADDRESS?.trim()
+  if (wethRaw && isAddress(wethRaw)) {
+    out.push({
+      asset: 'WETH',
+      address: wethRaw,
+      offset: WETH_ID_OFFSET,
+      cursorName: 'escrow_events:WETH',
+      deployBlock: env.VITE_P2P_WETH_DEPLOY_BLOCK ? BigInt(env.VITE_P2P_WETH_DEPLOY_BLOCK) : 0n,
+    })
+  }
+  return out
+}
+
+/** Human-readable order label preserving `#108` for USDC and `#5 (EURC)` for secondary markets. */
+export function formatScopedOrderLabel(orderId: bigint): string {
+  if (orderId >= WETH_ID_OFFSET) {
+    return `#${(orderId - WETH_ID_OFFSET).toString()} (WETH)`
+  }
+  if (orderId >= CIRBTC_ID_OFFSET) {
+    return `#${(orderId - CIRBTC_ID_OFFSET).toString()} (cirBTC)`
+  }
+  if (orderId >= EURC_ID_OFFSET) {
+    return `#${(orderId - EURC_ID_OFFSET).toString()} (EURC)`
+  }
+  return `#${orderId.toString()}`
+}
+
 export function createArcPublicClient() {
   const rpcUrl = requireChain(CHAIN_ID).rpcUrls[0]
   return createPublicClient({
@@ -326,22 +396,36 @@ export function isBackupArbiterEligible(order: ChainOrder, nowSeconds: number): 
 }
 
 /**
- * Restrict arbiter/backup_arbiter reads of order vault, chat, and evidence to orders that are:
- * - DISPUTED, OR
- * - have an offchain dispute filing, OR
- * - PAID for 15+ minutes.
- * For backup_arbiter, the 7-day rule is already enforced by `checkOrderAccess` / `isBackupArbiterEligible`.
+ * Restrict arbiter/backup_arbiter reads of order vault, chat, and evidence to orders that:
+ * - were NOT privately completed/cancelled/settled before `takeCase` (`reviewStartedAt === 0n`), AND
+ * - have `reviewStartedAt > 0n`, OR are `RESOLVED_*`, OR are `DISPUTED`, OR are `PAID` for 15+ minutes.
+ * Notably, a premature offchain filing (`< 15m` after `paidAt`) cannot grant arbiter vault/chat access early.
+ * For backup_arbiter, the 7-day rule is also enforced.
  */
 export function isArbiterOrderReadAllowed(
   order: ChainOrder,
   role: OrderPartyRole,
-  hasFiling: boolean,
+  _hasFiling: boolean,
   nowSeconds = Math.floor(Date.now() / 1000),
 ): boolean {
   if (role === 'buyer' || role === 'seller') return true
   if (role === 'backup_arbiter' && !isBackupArbiterEligible(order, nowSeconds)) return false
-  if (order.status === ORDER_STATUS.DISPUTED) return true
-  if (hasFiling) return true
+  if (
+    (order.status === ORDER_STATUS.COMPLETED ||
+      order.status === ORDER_STATUS.CANCELLED ||
+      order.status === ORDER_STATUS.SETTLED) &&
+    order.reviewStartedAt === 0n
+  ) {
+    return false
+  }
+  if (
+    order.reviewStartedAt > 0n ||
+    order.status === ORDER_STATUS.RESOLVED_BUYER ||
+    order.status === ORDER_STATUS.RESOLVED_SELLER ||
+    order.status === ORDER_STATUS.DISPUTED
+  ) {
+    return true
+  }
   if (
     order.status === ORDER_STATUS.PAID &&
     order.paidAt > 0n &&
@@ -428,5 +512,9 @@ export async function createVerifierClients(env: Env, roles: ChainRoles) {
     chain: arcTestnet,
     transport: http(rpcUrl, { timeout: 15_000 }),
   })
-  return { account, publicClient, walletClient, escrow: requireEscrowAddress(env) }
+  const escrow = requireEscrowAddress(env)
+  const secondaryEscrows = Array.from(
+    new Set([resolveEurcEscrowAddress(env), resolveCirbtcEscrowAddress(env), resolveWethEscrowAddress(env)]),
+  ).filter((a) => a.toLowerCase() !== escrow.toLowerCase())
+  return { account, publicClient, walletClient, escrow, secondaryEscrows }
 }

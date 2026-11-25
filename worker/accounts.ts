@@ -72,6 +72,8 @@ export interface SavedPaymentMethodItem {
   holderName: string
   accountNumber: string
   bankOrBranch: string
+  branchName?: string
+  routingNumber?: string
   notes: string
   updatedAt: string
 }
@@ -102,6 +104,8 @@ function sanitizeSavedPaymentMethods(raw: unknown, nowIso: string): SavedPayment
     const holderName = typeof e.holderName === 'string' ? e.holderName.trim() : ''
     const accountNumber = typeof e.accountNumber === 'string' ? e.accountNumber.trim() : ''
     const bankOrBranch = typeof e.bankOrBranch === 'string' ? e.bankOrBranch.trim() : ''
+    const branchName = typeof e.branchName === 'string' ? e.branchName.trim() : ''
+    const routingNumber = typeof e.routingNumber === 'string' ? e.routingNumber.trim() : ''
     const notes = typeof e.notes === 'string' ? e.notes.trim() : ''
 
     if (!PM_ID_RE.test(id) || seenIds.has(id)) return null
@@ -110,6 +114,8 @@ function sanitizeSavedPaymentMethods(raw: unknown, nowIso: string): SavedPayment
     if (holderName.length < 2 || holderName.length > 80 || CTRL_CHAR_RE.test(holderName)) return null
     if (accountNumber.length < 2 || accountNumber.length > 160 || CTRL_CHAR_RE.test(accountNumber)) return null
     if (bankOrBranch.length > 120 || CTRL_CHAR_RE.test(bankOrBranch)) return null
+    if (branchName.length > 120 || CTRL_CHAR_RE.test(branchName)) return null
+    if (routingNumber.length > 60 || CTRL_CHAR_RE.test(routingNumber)) return null
     if (notes.length > 160 || CTRL_CHAR_RE.test(notes)) return null
 
     seenIds.add(id)
@@ -120,6 +126,8 @@ function sanitizeSavedPaymentMethods(raw: unknown, nowIso: string): SavedPayment
       holderName,
       accountNumber,
       bankOrBranch,
+      ...(branchName ? { branchName } : {}),
+      ...(routingNumber ? { routingNumber } : {}),
       notes,
       updatedAt: nowIso,
     })

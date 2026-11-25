@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { FileText, Info, Shield, X } from 'lucide-react'
+import { Check, FileText, Info, Loader2, Paperclip, Shield, Trash2, X } from 'lucide-react'
 import { Button, inputClass } from '@/components/ui'
 import { AccountSetup } from '@/components/AccountSetup'
-import { useBackendSession } from '@/lib/api'
+import { BackendApiError, useBackendSession } from '@/lib/api'
+import { formatScopedOrderLabel } from '@/lib/p2p'
 import { useFileDispute } from '@/hooks/useDispute'
+import { uploadOrderEvidence, validateAndPrepareEvidence } from '@/hooks/useVault'
 
 const MAX_STATEMENT_BYTES = 8_192
 
@@ -35,7 +37,9 @@ export function DisputeFileSheet({
   const { file, isPending, error } = useFileDispute(orderId)
   const [reasonCode, setReasonCode] = useState('')
   const [statement, setStatement] = useState('')
-  const [evidenceBlobId, setEvidenceBlobId] = useState('')
+  const [uploadedEvidence, setUploadedEvidence] = useState<Array<{ id: string; name: string }>>([])
+  const [uploadingEvidence, setUploadingEvidence] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
   if (!open) return null
@@ -44,9 +48,37 @@ export function DisputeFileSheet({
   const bytesLeft = MAX_STATEMENT_BYTES - statementBytes
   const tooLong = bytesLeft < 0
 
-  const evidenceBlobIds = evidenceBlobId.trim()
-    ? [evidenceBlobId.trim()]
-    : []
+  const evidenceBlobIds = uploadedEvidence.map((e) => e.id)
+
+  const handlePickEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (files.length === 0) return
+    if (uploadedEvidence.length + files.length > 5) {
+      toast.error('You can attach up to 5 encrypted evidence files per dispute statement.')
+      return
+    }
+    setUploadingEvidence(true)
+    try {
+      for (const f of files) {
+        const prepared = await validateAndPrepareEvidence(f)
+        if (prepared.previewUrl) URL.revokeObjectURL(prepared.previewUrl)
+        const res = await uploadOrderEvidence(orderId, prepared)
+        setUploadedEvidence((prev) => [...prev, { id: res.id, name: prepared.name }])
+      }
+      toast.success('Evidence encrypted and attached.')
+    } catch (err) {
+      toast.error(
+        err instanceof BackendApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Failed to encrypt & upload evidence.',
+      )
+    } finally {
+      setUploadingEvidence(false)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!reasonCode) {
@@ -95,7 +127,7 @@ export function DisputeFileSheet({
             <div>
               <h2 className="text-base font-bold">File dispute statement</h2>
               <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                Order #{orderId.toString()}
+                Order {formatScopedOrderLabel(orderId)}
               </p>
             </div>
           </div>
@@ -125,9 +157,9 @@ export function DisputeFileSheet({
             >
               <Info className="mt-0.5 size-4 shrink-0" style={{ color: 'var(--accent)' }} />
               <p>
-                Your statement is encrypted end-to-end. The arbiter can read it only after taking
-                the case. The counterparty sees your statement once the arbiter has accepted review.
-                Do not include personal contact info or passwords.
+                Your statement is encrypted at rest in the OnPeer Vault. Your counterparty can only see it once an
+                arbiter takes the case onchain. Arbiters can triage statements once an order is disputed or 15+ minutes
+                after payment. Never include passwords or seed phrases.
               </p>
             </div>
 
@@ -171,20 +203,57 @@ export function DisputeFileSheet({
               />
             </div>
 
-            {/* Evidence blob ID (optional) */}
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
-                Evidence blob ID <span style={{ color: 'var(--muted)' }}>(optional)</span>
-              </label>
-              <div className="flex items-center gap-2">
-                <FileText className="size-4 shrink-0" style={{ color: 'var(--muted)' }} />
+            {/* Encrypted Evidence Uploader (L-01b: replaces manual UUID input) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
+                  Encrypted evidence <span style={{ color: 'var(--muted)' }}>(optional, up to 5 files)</span>
+                </label>
                 <input
-                  className={inputClass}
-                  placeholder="Vault blob UUID"
-                  value={evidenceBlobId}
-                  onChange={(e) => setEvidenceBlobId(e.target.value)}
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg,image/webp,application/pdf"
+                  onChange={(e) => void handlePickEvidence(e)}
+                  className="hidden"
                 />
+                <button
+                  type="button"
+                  disabled={uploadingEvidence || uploadedEvidence.length >= 5}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-40"
+                  style={{ background: 'var(--fill-2)', color: 'var(--accent)' }}
+                >
+                  {uploadingEvidence ? <Loader2 className="size-3.5 animate-spin" /> : <Paperclip className="size-3.5" />}
+                  {uploadingEvidence ? 'Encrypting…' : 'Attach screenshot / PDF'}
+                </button>
               </div>
+              {uploadedEvidence.length > 0 && (
+                <ul className="space-y-1.5">
+                  {uploadedEvidence.map((ev) => (
+                    <li
+                      key={ev.id}
+                      className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-xs"
+                      style={{ background: 'var(--fill-2)' }}
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Check className="size-3.5 shrink-0" style={{ color: 'var(--success)' }} />
+                        <FileText className="size-3.5 shrink-0" style={{ color: 'var(--muted)' }} />
+                        <span className="truncate font-medium">{ev.name}</span>
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${ev.name}`}
+                        onClick={() => setUploadedEvidence((prev) => prev.filter((x) => x.id !== ev.id))}
+                        className="rounded p-1 hover:opacity-80"
+                        style={{ color: 'var(--muted)' }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {/* API error */}
@@ -201,7 +270,7 @@ export function DisputeFileSheet({
               </Button>
               <Button
                 className="flex-1"
-                disabled={!reasonCode || !statement.trim() || tooLong || isPending}
+                disabled={!reasonCode || !statement.trim() || tooLong || isPending || uploadingEvidence}
                 loading={isPending}
                 onClick={() => void handleSubmit()}
               >

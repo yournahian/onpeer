@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, usePublicClient } from 'wagmi'
+import { parseEventLogs, type Address } from 'viem'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import {
   AlertTriangle,
@@ -21,10 +22,14 @@ import {
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import {
+  BUY_AD_MIN_COMPLETED,
   CHAIN_ID,
   DETAILS_MAX_BYTES,
   DETAILS_MODE,
   MAX_OPEN_ORDERS,
+  MIN_GAS_WARNING_USDC,
+  NATIVE_USDC_GAS_BUFFER,
+  SIDE_BUY,
   SIDE_SELL,
   TIER_TABLE,
   ZERO_BYTES32,
@@ -45,10 +50,12 @@ import {
   maskToMethods,
   shortAddr,
   tier0CapFor,
+  truncateUtf8,
   usdcFor,
 } from '@/lib/p2p'
-import { formatUnitsFixed, parseUnitsExact } from '@/onchain-money'
+import { formatUnitsExact, formatUnitsFixed, parseUnitsExact } from '@/onchain-money'
 import {
+  useAccounts,
   useNow,
   useOpenOrderCount,
   useUsdcAllowance,
@@ -63,7 +70,12 @@ import { Sheet } from '@/components/ui'
 import { CoinLogo, MethodLogo } from '@/components/logos'
 import { toast } from 'sonner'
 import { BackendApiError } from '@/lib/api'
-import { formatSavedMethodLine, useSavedPaymentMethods, type SavedPaymentMethod } from '@/hooks/useAccount'
+import {
+  formatSavedMethodLine,
+  saveOrderChosenMethod,
+  useSavedPaymentMethods,
+  type SavedPaymentMethod,
+} from '@/hooks/useAccount'
 import { recordRecentlyViewed, traderLabel, useTraderProfiles } from '@/hooks/useSocial'
 import { useVaultActions } from '@/hooks/useVault'
 
@@ -80,14 +92,17 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const asset = ad.asset
   const escrowCfg = getEscrowConfig(asset)
   const publicClient = usePublicClient({ chainId: CHAIN_ID })
-  const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx(asset)
+  const { runWithReceipt, approveUsdc, writeContractAsync, pendingKey, busy } = useTx(asset)
   const balance = useUsdcBalance(asset)
+  const nativeUsdcBalance = useUsdcBalance('USDC')
   const allowance = useUsdcAllowance(asset)
   const openCount = useOpenOrderCount(asset)
   const now = useNow()
   const { blocked, account, kycRequired } = useEligibility(asset)
-  const makerKyc = useVerification(ad.maker)
-  const { sealDetails } = useVaultActions()
+  const makerKyc = useVerification(ad.maker, asset)
+  const makerAccounts = useAccounts([ad.maker as Address], asset)
+  const makerChainAccount = makerAccounts.get(ad.maker.toLowerCase())
+  const { sealDetails, bindOrderDetails } = useVaultActions()
   const { methods: savedMethods } = useSavedPaymentMethods()
   const profiles = useTraderProfiles([ad.maker])
   const makerProfile = profiles.get(ad.maker.toLowerCase()) ?? null
@@ -110,10 +125,21 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const [fiat, setFiat] = useState('')
   const [usdc, setUsdc] = useState(validInitial)
   const [edited, setEdited] = useState<'fiat' | 'usdc'>(validInitial ? 'usdc' : 'fiat')
+  const adMethods = useMemo(() => maskToMethods(ad.paymentMask), [ad.paymentMask])
+  const [selectedBuyMethodBit, setSelectedBuyMethodBit] = useState<number | null>(() =>
+    adMethods.length === 1 ? adMethods[0]!.bit : null,
+  )
+  const [methodPickerOpen, setMethodPickerOpen] = useState(false)
   const [selectedSavedId, setSelectedSavedId] = useState<string | 'manual' | null>(null)
   const [manualHolderName, setManualHolderName] = useState('')
   const [manualDetails, setManualDetails] = useState('')
   const [sealing, setSealing] = useState(false)
+
+  const selectedBuyMethod = useMemo(
+    () =>
+      selectedBuyMethodBit !== null ? (adMethods.find((m) => m.bit === selectedBuyMethodBit) ?? null) : null,
+    [adMethods, selectedBuyMethodBit],
+  )
 
   useEffect(() => {
     recordRecentlyViewed({
@@ -135,7 +161,9 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
 
   const holderName = activeSaved ? activeSaved.holderName : manualHolderName
   const details = activeSaved
-    ? formatSavedMethodLine(activeSaved, !isSealedBuyAd).slice(0, isSealedBuyAd ? 400 : DETAILS_MAX_BYTES)
+    ? isSealedBuyAd
+      ? formatSavedMethodLine(activeSaved, false).slice(0, 400)
+      : truncateUtf8(formatSavedMethodLine(activeSaved, true), DETAILS_MAX_BYTES)
     : manualDetails
 
   const setHolderName = (v: string) => {
@@ -187,10 +215,21 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
   const effectiveHigh = !isUncapped(userCap) && userCap < adHigh ? userCap : adHigh
   const adLow = ad.minAmount > ad.available ? ad.available : ad.minAmount
 
+  const setMinAmount = () => {
+    setEdited('usdc')
+    setUsdc(adLow > 0n ? formatUnitsExact(adLow, tokenDecimals) : '')
+  }
+
   const setMaxAmount = (targetTab?: 'fiat' | 'usdc') => {
     let maxAllowed = effectiveHigh
-    if (!userBuys && balance !== undefined && balance < maxAllowed) {
-      maxAllowed = balance
+    if (!userBuys && balance !== undefined) {
+      const spendable =
+        asset === 'USDC'
+          ? balance > NATIVE_USDC_GAS_BUFFER
+            ? balance - NATIVE_USDC_GAS_BUFFER
+            : 0n
+          : balance
+      if (spendable < maxAllowed) maxAllowed = spendable
     }
     if (targetTab === 'fiat') {
       setEdited('fiat')
@@ -198,25 +237,36 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
       setFiat(maxFiat > 0n ? formatUnitsFixed(maxFiat, 6, 2) : '')
     } else {
       setEdited('usdc')
-      setUsdc(
-        maxAllowed > 0n
-          ? formatUnitsFixed(maxAllowed, tokenDecimals, Math.min(tokenDecimals, 8)).replace(/\.?0+$/, '')
-          : '',
-      )
+      setUsdc(maxAllowed > 0n ? formatUnitsExact(maxAllowed, tokenDecimals) : '')
     }
   }
+
+  const lowNativeGas = isConnected && nativeUsdcBalance !== undefined && nativeUsdcBalance < MIN_GAS_WARNING_USDC
 
   let problem: string | null = null
   if (expiredAd) problem = 'This ad has expired and can no longer accept new orders.'
   else if (kycRequired && !makerKyc.verified)
     problem = 'This advertiser does not currently hold active KYC verification.'
+  else if (makerChainAccount && (makerChainAccount.restricted || makerChainAccount.disputeLimitReached))
+    problem = 'This advertiser is currently restricted from opening new trades.'
+  else if (makerChainAccount && makerChainAccount.totalDebt > 0n)
+    problem = 'This advertiser has an unpaid dispute bond and cannot accept orders right now.'
+  else if (makerChainAccount && Number(makerChainAccount.bannedUntil) > now)
+    problem = 'This advertiser is in a temporary cancellation cooldown.'
+  else if (
+    makerChainAccount &&
+    ad.side === SIDE_BUY &&
+    !makerChainAccount.merchant &&
+    makerChainAccount.ordersCompleted < BUY_AD_MIN_COMPLETED
+  )
+    problem = 'This buy ad is temporarily unavailable until the advertiser restores their merchant margin.'
   else if (usdcRaw === 0n) problem = null
   else if (usdcRaw > ad.available)
     problem = `Only ${formatUsdcAmount(ad.available, undefined, asset)} ${asset} is available.`
   else if (usdcRaw > ad.maxAmount)
     problem = `Maximum order is ${formatUsdcAmount(ad.maxAmount, undefined, asset)} ${asset}.`
   else if (usdcRaw < ad.minAmount && !isRemainder)
-    problem = `Minimum order is ${formatUsdcAmount(ad.minAmount, undefined, asset)} ${asset}.`
+    problem = `Minimum order is ${formatUsdcAmount(ad.minAmount, undefined, asset)} ${asset} (tap Min for exact amount).`
   else if (!isUncapped(userCap) && usdcRaw > userCap)
     problem = `Your ${tierInfo.label} tier (Tier ${tierInfo.tier}) caps orders at ${formatOrderCap(userCap, asset)}.`
   else if (!userBuys && balance !== undefined && usdcRaw > balance)
@@ -235,7 +285,8 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     ? holderName.trim().length >= 2 && details.trim().length >= 2 && details.trim().length <= 400
     : details.trim().length > 0 && detailBytes <= DETAILS_MAX_BYTES
 
-  const ready = usdcRaw > 0n && !problem && (userBuys || sellerInputsReady)
+  const buyerMethodReady = !userBuys || adMethods.length === 0 || selectedBuyMethod !== null
+  const ready = usdcRaw > 0n && !problem && (userBuys ? buyerMethodReady : sellerInputsReady)
 
   const submit = async (onOpened: (orderId: bigint) => void) => {
     const escrow = escrowCfg.escrowAddress
@@ -247,6 +298,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
 
     let detailsHashArg: `0x${string}` = ZERO_BYTES32
     let plainDetailsArg = userBuys ? '' : details.trim()
+    let sealedBlobId: string | null = null
 
     if (isSealedBuyAd) {
       setSealing(true)
@@ -256,6 +308,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
           holderName: holderName.trim(),
           accountDetails: details.trim(),
         })
+        sealedBlobId = sealed.id
         detailsHashArg = sealed.contentHash
         plainDetailsArg = ''
       } catch (err) {
@@ -266,7 +319,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
       setSealing(false)
     }
 
-    const ok = await run('open', 'Open order', () =>
+    const receipt = await runWithReceipt('open', 'Open order', () =>
       writeContractAsync({
         address: escrow,
         abi: p2pEscrowAbi,
@@ -275,15 +328,39 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
         chainId: CHAIN_ID,
       }),
     )
-    if (!ok || !publicClient) return
-    const ids = await publicClient.readContract({
-      address: escrow,
-      abi: p2pEscrowAbi,
-      functionName: 'getUserOrderIds',
-      args: [address],
-    })
-    const last = ids[ids.length - 1]
-    if (last !== undefined) onOpened(encodeScopedId(asset, last))
+    if (!receipt) return
+    let minedRawOrderId: bigint | undefined
+    try {
+      const parsed = parseEventLogs({
+        abi: p2pEscrowAbi,
+        eventName: 'OrderOpened',
+        logs: receipt.logs,
+      })
+      minedRawOrderId = parsed[0]?.args.orderId
+    } catch {
+      minedRawOrderId = undefined
+    }
+    if (minedRawOrderId === undefined && publicClient) {
+      const ids = await publicClient
+        .readContract({
+          address: escrow,
+          abi: p2pEscrowAbi,
+          functionName: 'getUserOrderIds',
+          args: [address],
+        })
+        .catch(() => [] as readonly bigint[])
+      minedRawOrderId = ids[ids.length - 1]
+    }
+    if (minedRawOrderId !== undefined) {
+      const scopedOrderId = encodeScopedId(asset, minedRawOrderId)
+      if (userBuys && selectedBuyMethod) {
+        saveOrderChosenMethod(scopedOrderId, selectedBuyMethod.bit)
+      }
+      if (sealedBlobId) {
+        await bindOrderDetails(sealedBlobId, scopedOrderId)
+      }
+      onOpened(scopedOrderId)
+    }
   }
 
   return {
@@ -291,7 +368,14 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     tokenDecimals,
     escrowAddress: escrowCfg.escrowAddress,
     isConnected,
+    adMethods,
+    selectedBuyMethod,
+    setSelectedBuyMethodBit,
+    methodPickerOpen,
+    setMethodPickerOpen,
     balance,
+    nativeUsdcBalance,
+    lowNativeGas,
     now,
     account,
     makerKyc,
@@ -319,6 +403,7 @@ function useOrderFormState(ad: AdWithId, initialUsdc?: string) {
     shownUsdc,
     adLow,
     effectiveHigh,
+    setMinAmount,
     setMaxAmount,
     problem,
     ready,
@@ -427,6 +512,83 @@ function UnverifiedAdvertiserCard({
         </button>
       </div>
     </motion.div>
+  )
+}
+
+function BuyPaymentMethodPickerModal({
+  open,
+  methods,
+  selectedBit,
+  onSelect,
+  onClose,
+}: {
+  open: boolean
+  methods: ReturnType<typeof maskToMethods>
+  selectedBit: number | null
+  onSelect: (bit: number) => void
+  onClose: () => void
+}) {
+  if (!open || typeof document === 'undefined') return null
+  return createPortal(
+    <div
+      className="p2p-terminal fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Payment Method(s)"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] p-5 text-[var(--p2p-ink)] shadow-2xl"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h4 className="text-base font-extrabold text-[var(--p2p-ink)]">Payment Method(s)</h4>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="inline-flex size-8 items-center justify-center rounded-lg text-[var(--p2p-muted)] hover:bg-[var(--p2p-input-bg)] hover:text-[var(--p2p-ink)]"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-2.5">
+          {methods.map((m) => {
+            const active = selectedBit === m.bit
+            return (
+              <button
+                key={m.bit}
+                type="button"
+                onClick={() => {
+                  onSelect(m.bit)
+                  onClose()
+                }}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3.5 text-left text-sm font-bold transition-colors ${
+                  active
+                    ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
+                }`}
+              >
+                <span
+                  className="inline-flex items-center gap-2.5 pl-2.5"
+                  style={{ borderLeft: '3px solid #FF5A00' }}
+                >
+                  <MethodLogo name={m.name} size={18} />
+                  <span>{m.name}</span>
+                </span>
+                {active && (
+                  <span className="rounded-full bg-[#FF5A00] px-2 py-0.5 text-[10px] font-bold text-white">
+                    Selected
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -539,11 +701,18 @@ function MobileOrderScreen({
               />
             )}
 
-            <div className="flex shrink-0 items-center gap-2.5 text-sm font-bold">
+            <div className="flex shrink-0 items-center gap-2 text-sm font-bold">
               <span className="text-[var(--p2p-ink)]">{s.edited === 'fiat' ? s.currency : s.asset}</span>
               <button
                 type="button"
-                onClick={() => s.setMaxAmount(s.edited)}
+                onClick={s.setMinAmount}
+                className="text-xs font-extrabold text-[var(--p2p-muted)] hover:text-[#FF5A00]"
+              >
+                Min
+              </button>
+              <button
+                type="button"
+                onClick={() => s.setMaxAmount('usdc')}
                 className="font-extrabold text-[#FF5A00]"
               >
                 Max
@@ -568,6 +737,31 @@ function MobileOrderScreen({
         </div>
 
         {/* Card 2: Payment Methods & Auto-Fill */}
+        {s.userBuys ? (
+          <button
+            type="button"
+            onClick={() => s.setMethodPickerOpen(true)}
+            className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 py-3.5 text-left transition-colors hover:border-[#FF5A00]"
+          >
+            {s.selectedBuyMethod ? (
+              <span
+                className="inline-flex items-center gap-2 pl-2.5 text-sm font-bold text-[var(--p2p-ink)]"
+                style={{ borderLeft: '3px solid #FF5A00' }}
+              >
+                <MethodLogo name={s.selectedBuyMethod.name} size={16} />
+                <span>{s.selectedBuyMethod.name}</span>
+              </span>
+            ) : (
+              <span className="text-sm font-semibold text-[var(--p2p-muted)]">Set my payment method</span>
+            )}
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--p2p-muted)]">
+              <span className="p2p-mono inline-flex size-5 items-center justify-center rounded-full bg-[var(--p2p-surface)] text-[11px] font-bold text-[var(--p2p-ink)]">
+                {methods.length}
+              </span>
+              <ChevronRight className="size-4" />
+            </span>
+          </button>
+        ) : (
         <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 space-y-3">
           <div className="flex flex-wrap gap-2">
             {methods.map((m) => (
@@ -581,8 +775,7 @@ function MobileOrderScreen({
             ))}
           </div>
 
-          {!s.userBuys && (
-            <div className="space-y-2.5 border-t border-[var(--p2p-border)] pt-3">
+          <div className="space-y-2.5 border-t border-[var(--p2p-border)] pt-3">
               {s.matchingSaved.length > 0 && (
                 <div className="space-y-1.5">
                   <span className="block text-[11px] font-bold text-[#FF5A00]">
@@ -628,8 +821,16 @@ function MobileOrderScreen({
                 className="p2p-input p2p-mono w-full resize-none rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2 text-xs"
               />
             </div>
-          )}
         </div>
+        )}
+
+        <BuyPaymentMethodPickerModal
+          open={s.userBuys && s.methodPickerOpen}
+          methods={methods}
+          selectedBit={s.selectedBuyMethod?.bit ?? null}
+          onSelect={(bit) => s.setSelectedBuyMethodBit(bit)}
+          onClose={() => s.setMethodPickerOpen(false)}
+        />
 
         {/* Escrow Info Row */}
         <div className="flex items-center justify-between rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-4 py-3 text-xs">
@@ -667,6 +868,15 @@ function MobileOrderScreen({
             </div>
           )}
         </div>
+
+        {s.lowNativeGas && (
+          <div className="flex items-start gap-2 rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs text-[var(--p2p-warn-ink)]">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Low native USDC gas ({formatUsdcAmount(s.nativeUsdcBalance ?? 0n)} USDC). Keep ~0.05 USDC free on Arc for transaction gas.
+            </span>
+          </div>
+        )}
 
         {s.problem && (
           <div className="flex items-start gap-2 rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
@@ -736,36 +946,58 @@ export function InlineOrderDrawer({
       : '100.00'
   const previewBond = computeBond(s.usdcRaw > 0n ? s.usdcRaw : s.adLow, s.asset)
 
+  const minFiatText = formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 2)
+  const maxFiatText = formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 2)
+
   return (
     <div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        {/* Left Side */}
+        {/* Left Side: Advertisers' Terms + Maker Info */}
         <div className="flex flex-col justify-between space-y-4 border-b border-[var(--p2p-border)] pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-6">
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCancel()
-                    onOpenTrader?.(ad.maker)
-                  }}
-                  className="text-sm font-extrabold text-[var(--p2p-ink)] hover:text-[#FF5A00] hover:underline"
-                >
-                  {s.makerName}
-                </button>
-                {s.makerKyc.verified ? (
+              <h4 className="text-sm font-extrabold text-[var(--p2p-ink)]">
+                Advertisers&apos; Terms <span className="text-[#FF5A00]">*</span>
+              </h4>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {s.makerKyc.verified && (
                   <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--p2p-ok-ink)]">
                     <ShieldCheck className="size-3" /> Verified
                   </span>
-                ) : null}
+                )}
                 {ad.merchantAd && (
                   <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
                     <ShieldCheck className="size-3" /> Merchant
                   </span>
                 )}
               </div>
-              <span className="p2p-mono text-xs text-[var(--p2p-muted)]">
+            </div>
+
+            <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs leading-relaxed text-[var(--p2p-ink)]">
+              {ad.details?.trim() ? (
+                <p className="whitespace-pre-wrap break-words">{ad.details}</p>
+              ) : (
+                <div className="space-y-1.5 text-[var(--p2p-muted)]">
+                  <p className="font-semibold text-[var(--p2p-ink)]">Please read before opening an order:</p>
+                  <p>• Pay strictly from an account matching your verified name on OnPeer.</p>
+                  <p>• No third-party payments accepted. Do not mention crypto in bank remarks.</p>
+                  <p>• Complete transfer within {ad.windowMinutes} minutes of opening the order.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  onCancel()
+                  onOpenTrader?.(ad.maker)
+                }}
+                className="font-bold text-[var(--p2p-ink)] hover:text-[#FF5A00] hover:underline"
+              >
+                {s.makerName}
+              </button>
+              <span className="p2p-mono text-[var(--p2p-muted)]">
                 {makerAccount ? `${makerAccount.ordersCompleted} orders` : '0 orders'} • {completionPct}%
               </span>
             </div>
@@ -792,38 +1024,10 @@ export function InlineOrderDrawer({
               <div>
                 <span className="block text-[var(--p2p-muted)]">Asymmetric Dispute Bond</span>
                 <span className="p2p-mono mt-0.5 font-semibold text-[#FF5A00]">
-                  {formatUsdcAmount(previewBond, undefined, s.asset)} {s.asset} (loser pays)
+                  {formatUsdcAmount(previewBond, undefined, s.asset)} {s.asset}
                 </span>
               </div>
             </div>
-
-            <div>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                Accepted Payment Methods
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {methods.map((m) => (
-                  <span
-                    key={m.bit}
-                    className="inline-flex items-center rounded bg-[var(--p2p-input-bg)] py-1 pl-2.5 pr-2.5 text-xs font-medium text-[var(--p2p-ink)] ring-1 ring-inset ring-[var(--p2p-border)]"
-                    style={{ borderLeft: '3px solid #FF5A00' }}
-                  >
-                    {m.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {ad.details && (
-              <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                  Advertiser Terms
-                </p>
-                <p className="p2p-mono mt-1 whitespace-pre-wrap break-words text-xs text-[var(--p2p-ink)]">
-                  {ad.details}
-                </p>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[var(--p2p-muted)]">
@@ -846,16 +1050,23 @@ export function InlineOrderDrawer({
         <div className="space-y-3.5">
           {s.userBuys ? (
             <>
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-[var(--p2p-muted)]">I want to pay</span>
-                  <span className="p2p-mono text-[var(--p2p-muted)]">
-                    Limit: {s.country?.symbol}
-                    {formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 0)} - {s.country?.symbol}
-                    {formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 0)}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[var(--p2p-muted)]">
+                  Price{' '}
+                  <strong className="p2p-mono ml-1 text-sm font-extrabold text-[var(--p2p-ink)]">
+                    {formatPrice(ad.priceE6)} {s.currency}
+                  </strong>
+                </span>
+                {s.account && (
+                  <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+                    Tier {s.account.tier} cap: {formatOrderCap(s.account.orderCap, s.asset)}
                   </span>
-                </div>
-                <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+                )}
+              </div>
+
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 py-3">
+                <span className="block text-xs font-medium text-[var(--p2p-muted)]">You Pay</span>
+                <div className="mt-1.5 flex items-center gap-2">
                   <input
                     inputMode="decimal"
                     value={s.shownFiat}
@@ -866,38 +1077,32 @@ export function InlineOrderDrawer({
                         s.setFiat(v)
                       }
                     }}
-                    placeholder="0.00"
-                    className="p2p-mono w-full bg-transparent text-lg font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]"
+                    placeholder={`${minFiatText} - ${maxFiatText}`}
+                    className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]/70"
                   />
                   <button
                     type="button"
-                    onClick={() => s.setMaxAmount('usdc')}
-                    className="mr-2.5 text-xs font-bold text-[#FF5A00] hover:opacity-80"
+                    onClick={s.setMinAmount}
+                    className="shrink-0 text-xs font-bold text-[var(--p2p-muted)] hover:text-[#FF5A00]"
                   >
-                    Max
+                    MIN
                   </button>
-                  <span className="border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
+                  <button
+                    type="button"
+                    onClick={() => s.setMaxAmount('usdc')}
+                    className="shrink-0 text-xs font-extrabold text-[#FF5A00] hover:opacity-80"
+                  >
+                    MAX
+                  </button>
+                  <span className="inline-flex shrink-0 items-center gap-1 border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
                     {s.currency}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center justify-center">
-                <span className="rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-1 text-[var(--p2p-muted)]">
-                  <ArrowUpDown className="size-3.5" />
-                </span>
-              </div>
-
-              <div>
-                <div className="mb-1.5 flex items-center justify-between text-xs">
-                  <span className="font-medium text-[var(--p2p-muted)]">I will receive</span>
-                  {s.account && (
-                    <span className="p2p-mono text-[var(--p2p-muted)]">
-                      Tier {s.account.tier} cap: {formatOrderCap(s.account.orderCap, s.asset)}
-                    </span>
-                  )}
-                </div>
-                <div className="p2p-input flex items-center rounded-lg px-3 py-2.5">
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 py-3">
+                <span className="block text-xs font-medium text-[var(--p2p-muted)]">You Receive</span>
+                <div className="mt-1.5 flex items-center gap-2">
                   <input
                     inputMode="decimal"
                     value={s.shownUsdc}
@@ -909,13 +1114,50 @@ export function InlineOrderDrawer({
                       }
                     }}
                     placeholder="0.00"
-                    className="p2p-mono w-full bg-transparent text-lg font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]"
+                    className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]/70"
                   />
-                  <span className="inline-flex items-center gap-1.5 border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
-                    <CoinLogo symbol={s.asset} size={14} /> {s.asset}
+                  <span className="inline-flex shrink-0 items-center gap-1.5 border-l border-[var(--p2p-border)] pl-2.5 text-xs font-bold text-[var(--p2p-ink)]">
+                    <CoinLogo symbol={s.asset} size={15} /> {s.asset}
                   </span>
                 </div>
               </div>
+
+              {/* Required Payment Method Selector (8th–10th SS) */}
+              <button
+                type="button"
+                onClick={() => s.setMethodPickerOpen(true)}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3.5 py-3.5 text-left transition-colors ${
+                  s.selectedBuyMethod
+                    ? 'border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)]'
+                    : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] hover:border-[#FF5A00]'
+                }`}
+              >
+                {s.selectedBuyMethod ? (
+                  <span
+                    className="inline-flex items-center gap-2 pl-2.5 text-sm font-bold text-[var(--p2p-ink)]"
+                    style={{ borderLeft: '3px solid #FF5A00' }}
+                  >
+                    <MethodLogo name={s.selectedBuyMethod.name} size={16} />
+                    <span>{s.selectedBuyMethod.name}</span>
+                  </span>
+                ) : (
+                  <span className="text-sm font-semibold text-[var(--p2p-muted)]">Set my payment method</span>
+                )}
+                <span className="inline-flex items-center gap-1.5 text-xs text-[var(--p2p-muted)]">
+                  <span className="p2p-mono inline-flex size-5 items-center justify-center rounded-full bg-[var(--p2p-surface)] text-[11px] font-bold text-[var(--p2p-ink)]">
+                    {methods.length}
+                  </span>
+                  <ChevronRight className="size-4" />
+                </span>
+              </button>
+
+              <BuyPaymentMethodPickerModal
+                open={s.methodPickerOpen}
+                methods={methods}
+                selectedBit={s.selectedBuyMethod?.bit ?? null}
+                onSelect={(bit) => s.setSelectedBuyMethodBit(bit)}
+                onClose={() => s.setMethodPickerOpen(false)}
+              />
             </>
           ) : (
             <>
@@ -942,6 +1184,13 @@ export function InlineOrderDrawer({
                     placeholder="0.00"
                     className="p2p-mono w-full bg-transparent text-lg font-bold text-[var(--p2p-ink)] outline-none placeholder:text-[var(--p2p-muted)]"
                   />
+                  <button
+                    type="button"
+                    onClick={s.setMinAmount}
+                    className="mr-2 text-xs font-bold text-[var(--p2p-muted)] hover:text-[#FF5A00]"
+                  >
+                    Min
+                  </button>
                   <button
                     type="button"
                     onClick={() => s.setMaxAmount('usdc')}
@@ -1064,7 +1313,16 @@ export function InlineOrderDrawer({
             </span>
           </div>
 
-          {s.problem && (
+          {s.lowNativeGas && (
+          <div className="flex items-start gap-2 rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs text-[var(--p2p-warn-ink)]">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Low native USDC gas ({formatUsdcAmount(s.nativeUsdcBalance ?? 0n)} USDC). Keep ~0.05 USDC free on Arc for transaction gas.
+            </span>
+          </div>
+        )}
+
+        {s.problem && (
             <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3 py-2 text-xs text-[#FF5A00]">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <span>{s.problem}</span>

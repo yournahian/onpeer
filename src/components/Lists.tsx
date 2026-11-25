@@ -19,6 +19,7 @@ import {
   CHAIN_ID,
   COUNTRIES,
   DEFAULT_TTL_HOURS,
+  MAX_FIAT_PRICE_E6,
   P2P_ASSETS,
   SIDE_SELL,
   STATUS,
@@ -27,6 +28,7 @@ import {
   formatDuration,
   formatFiat,
   formatPrice,
+  formatScopedOrderLabel,
   formatUsdcAmount,
   getEscrowConfig,
   hexToCurrency,
@@ -264,10 +266,10 @@ export function MyOrders({
     setSearchId('')
   }
 
-  const copyOrderNumber = async (idStr: string) => {
+  const copyOrderNumber = async (scopedId: bigint) => {
     try {
-      await navigator.clipboard.writeText(idStr)
-      toast.success(`Order #${idStr} copied`)
+      await navigator.clipboard.writeText(scopedId.toString())
+      toast.success(`Order ${formatScopedOrderLabel(scopedId)} ID copied`)
     } catch {
       toast.error('Could not copy order number')
     }
@@ -538,11 +540,11 @@ export function MyOrders({
                             onClick={() => onOpen(o.id)}
                             className="p2p-mono font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
                           >
-                            {displayIdStr}
+                            {formatScopedOrderLabel(o.id)}
                           </button>
                           <button
                             type="button"
-                            onClick={() => void copyOrderNumber(displayIdStr)}
+                            onClick={() => void copyOrderNumber(o.id)}
                             aria-label={`Copy order ${displayIdStr}`}
                             className="rounded p-1 text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
                           >
@@ -616,7 +618,6 @@ export function MyOrders({
               <ul className="space-y-2.5 md:hidden">
                 {filteredOrders.map((o) => {
                   const idStr = o.id.toString()
-                  const displayIdStr = o.rawId.toString()
                   const currency = hexToCurrency(o.currency)
                   const country = countryByCurrency(currency)
                   const isBuyer = sameAddr(address, o.buyer)
@@ -657,7 +658,7 @@ export function MyOrders({
                       </div>
 
                       <div className="flex items-center justify-between text-[var(--p2p-muted)]">
-                        <span>Order #{displayIdStr}</span>
+                        <span>Order {formatScopedOrderLabel(o.id)}</span>
                         <span className="p2p-mono">{formatOrderTimestamp(o.createdAt)}</span>
                       </div>
 
@@ -731,7 +732,7 @@ function ArbiterOrderRow({
             {buyerLabel} vs {sellerLabel}
           </span>
           <span className="p2p-mono mt-0.5 block text-[11px] text-[var(--p2p-muted)]">
-            Order #{order.id.toString()}
+            Order {formatScopedOrderLabel(order.id)}
           </span>
         </div>
 
@@ -853,11 +854,11 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
       writeContractAsync({ ...baseFor(ad.asset), functionName: 'closeAd', args: [ad.rawId] }),
     )
 
-  const copyAdShare = async (adId: string) => {
+  const copyAdShare = async (ad: (typeof mine)[number]) => {
     try {
-      const link = await buildShareLink(`/p2p?trade=${adId}`)
+      const link = await buildShareLink(`/p2p?trade=${ad.id.toString()}`)
       await navigator.clipboard.writeText(link)
-      toast.success(`Ad #${adId} share link copied`)
+      toast.success(`Ad ${formatScopedOrderLabel(ad.id)} share link copied`)
     } catch {
       toast.error('Could not copy share link')
     }
@@ -956,9 +957,19 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
                       <button
                         type="button"
                         disabled={!newPrice || pendingKey === `price-${id}`}
-                        onClick={() =>
-                          void updatePrice(ad, parseUnitsExact(newPrice, 6)).then((ok) => ok && setEditing(null))
-                        }
+                        onClick={() => {
+                          let parsed = 0n
+                          try {
+                            parsed = parseUnitsExact(newPrice, 6)
+                          } catch {
+                            parsed = 0n
+                          }
+                          if (parsed <= 0n || parsed > MAX_FIAT_PRICE_E6) {
+                            toast.error('Enter a valid exchange rate within the supported range.')
+                            return
+                          }
+                          void updatePrice(ad, parsed).then((ok) => ok && setEditing(null))
+                        }}
                         className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
                       >
                         {pendingKey === `price-${id}` && <Loader2 className="size-3.5 animate-spin" />}
@@ -998,7 +1009,7 @@ export function MyAds({ onPostAd }: { onPostAd: () => void }) {
 
                       <button
                         type="button"
-                        onClick={() => void copyAdShare(id)}
+                        onClick={() => void copyAdShare(ad)}
                         className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
                       >
                         <Share2 className="size-3.5 text-[#FF5A00]" /> Share Ad

@@ -1,5 +1,5 @@
 import { requireSession } from './auth'
-import { checkOrderAccess, isArbiterOrderReadAllowed, type ChainReader } from './chain'
+import { checkOrderAccess, isArbiterOrderReadAllowed, ORDER_STATUS, type ChainReader } from './chain'
 import { CryptoTamperError, openText, sealText } from './crypto'
 import { checkRateLimit, writeAudit, type Queryable } from './db'
 import { json, publicAppOrigin, readJsonBody, type Env } from './env'
@@ -59,7 +59,16 @@ export async function handleChatRoutes(
       return json(429, { error: 'rate_limited' })
     }
 
-    // Gate arbiter/backup_arbiter chat POST identically to GET (DISPUTED, filed, or PAID >= 15m) + audit
+    // H-03: Block chat writes on terminal orders (COMPLETED, CANCELLED, RESOLVED_*, SETTLED)
+    if (
+      access.order.status !== ORDER_STATUS.PENDING &&
+      access.order.status !== ORDER_STATUS.PAID &&
+      access.order.status !== ORDER_STATUS.DISPUTED
+    ) {
+      return json(400, { error: 'invalid_order_status' })
+    }
+
+    // Gate arbiter/backup_arbiter chat POST identically to GET + audit
     if (access.role === 'arbiter' || access.role === 'backup_arbiter') {
       const filingRes = await db.query<{ exists: number }>(
         `SELECT 1 AS exists FROM public.dispute_filings WHERE order_id = $1 LIMIT 1`,
@@ -165,6 +174,27 @@ export async function handleChatRoutes(
             [targetWallet, orderIdStr, dedupeKey],
           )
           .catch(() => undefined)
+      } else {
+        // M-06: Also deliver deduplicated email alert when counterparty opted into BOTH Telegram and Email
+        const emailRow = await db
+          .query<{ email_enc: string | null; email_verified_at: string | null; email_opt_in: boolean }>(
+            `SELECT email_enc, email_verified_at, email_opt_in
+               FROM public.accounts
+              WHERE wallet = $1 AND deleted_at IS NULL`,
+            [targetWallet],
+          )
+          .then((r) => r.rows[0])
+          .catch(() => undefined)
+        if (emailRow?.email_enc && emailRow.email_verified_at && emailRow.email_opt_in) {
+          await db
+            .query(
+              `INSERT INTO public.notifications_outbox (wallet, event, order_id, dedupe_key)
+               VALUES ($1, 'order_chat_email', $2, $3)
+               ON CONFLICT (dedupe_key) DO NOTHING`,
+              [targetWallet, orderIdStr, `${dedupeKey}:email`],
+            )
+            .catch(() => undefined)
+        }
       }
     }
 

@@ -147,6 +147,36 @@ export function formatRawId(scopedId: bigint): string {
   return decodeScopedId(scopedId).rawId.toString()
 }
 
+/** Human-readable order/ad label: `#108` for USDC, `#5 (EURC)` for secondary markets. */
+export function formatScopedOrderLabel(scopedId: bigint): string {
+  const { asset, rawId } = decodeScopedId(scopedId)
+  return asset === 'USDC' ? `#${rawId.toString()}` : `#${rawId.toString()} (${asset})`
+}
+
+/** Truncate a string to at most `maxBytes` UTF-8 bytes without splitting multi-byte codepoints. */
+export function truncateUtf8(str: string, maxBytes: number): string {
+  if (maxBytes <= 0 || !str) return ''
+  const enc = new TextEncoder()
+  if (enc.encode(str).byteLength <= maxBytes) return str
+  let used = 0
+  let out = ''
+  for (const ch of Array.from(str)) {
+    const len = enc.encode(ch).byteLength
+    if (used + len > maxBytes) break
+    out += ch
+    used += len
+  }
+  return out
+}
+
+export function currentUnixSeconds(): number {
+  return Math.floor(Date.now() / 1000)
+}
+
+export const NATIVE_USDC_GAS_BUFFER = 100_000n // 0.10 USDC reserved for Arc native gas on Max clicks
+export const MIN_GAS_WARNING_USDC = 20_000n // Warn below 0.02 USDC native gas balance
+export const MAX_FIAT_PRICE_E6 = 1_000_000_000_000_000n // Matches contract MAX_FIAT_PRICE_E6 (1e15)
+
 export const MAX_OPEN_ORDERS = 5
 export const GRACE_SECONDS = 5 * 60
 export const COOLING_OFF_SECONDS = 30 * 60
@@ -188,6 +218,10 @@ export function merchantMarginFor(asset: P2pAsset = 'USDC'): bigint {
 
 export function defaultListingFeeFor(asset: P2pAsset = 'USDC'): bigint {
   return getEscrowConfig(asset).dollarUnit / 20n
+}
+
+export function maxListingFeeFor(asset: P2pAsset = 'USDC'): bigint {
+  return getEscrowConfig(asset).dollarUnit / 2n
 }
 
 export function computeBond(amountRaw: bigint, asset: P2pAsset = 'USDC'): bigint {

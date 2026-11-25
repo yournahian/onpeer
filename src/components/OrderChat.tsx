@@ -16,7 +16,7 @@ import {
   ZoomIn,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { STATUS, formatDuration, sameAddr, shortAddr } from '@/lib/p2p'
+import { STATUS, formatDuration, formatScopedOrderLabel, sameAddr, shortAddr } from '@/lib/p2p'
 import { BackendApiError, useBackendSession } from '@/lib/api'
 import { useChat } from '@/hooks/useChat'
 import { useNow } from '@/hooks/useEscrow'
@@ -337,7 +337,7 @@ export function OrderChat({
                 <span className="size-1.5 rounded-full bg-[#FF5A00]" /> Live
               </span>
             </p>
-            <p className="text-[11px] text-[var(--p2p-muted)]">Order #{orderId.toString()} Chat</p>
+            <p className="text-[11px] text-[var(--p2p-muted)]">Order {formatScopedOrderLabel(orderId)} Chat</p>
           </div>
         </div>
 
@@ -379,7 +379,7 @@ export function OrderChat({
       <div ref={streamRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
         <div className="text-center">
           <span className="p2p-mono inline-block rounded-full border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-1 text-[11px] text-[var(--p2p-muted)]">
-            Order #{orderId.toString()} created{amountText ? ` • ${amountText} locked in Arc escrow` : ''}
+            Order {formatScopedOrderLabel(orderId)} created{amountText ? ` • ${amountText} locked in Arc escrow` : ''}
           </span>
         </div>
 

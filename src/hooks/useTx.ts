@@ -1,7 +1,7 @@
 import { createElement, useCallback, useState } from 'react'
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from 'wagmi'
 import { useQueryClient } from '@tanstack/react-query'
-import { erc20Abi, type Hash } from 'viem'
+import { erc20Abi, type Hash, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
 import { buildTxExplorerUrl } from '@/onchain-facts'
 import { CHAIN_ID, getEscrowConfig, parseTxError, type P2pAsset } from '@/lib/p2p'
@@ -24,8 +24,8 @@ export function useTx(assetOverride?: P2pAsset) {
   const queryClient = useQueryClient()
   const [pendingKey, setPendingKey] = useState<string | null>(null)
 
-  const run = useCallback(
-    async (key: string, label: string, send: () => Promise<Hash>): Promise<boolean> => {
+  const runWithReceipt = useCallback(
+    async (key: string, label: string, send: () => Promise<Hash>): Promise<TransactionReceipt | null> => {
       setPendingKey(key)
       let nudgeTimer: number | null = null
       try {
@@ -45,7 +45,7 @@ export function useTx(assetOverride?: P2pAsset) {
         const receipt = await publicClient!.waitForTransactionReceipt({ hash })
         if (receipt.status !== 'success') {
           toast.error(`${label} failed onchain.`, { id: toastId })
-          return false
+          return null
         }
         const url = buildTxExplorerUrl(CHAIN_ID, hash)
         toast.success(`${label}: confirmed`, {
@@ -59,17 +59,23 @@ export function useTx(assetOverride?: P2pAsset) {
             : undefined,
         })
         await queryClient.invalidateQueries()
-        return true
+        return receipt
       } catch (err) {
         const copy = parseTxError(err)
         if (copy) toast.error(copy)
-        return false
+        return null
       } finally {
         if (nudgeTimer !== null) window.clearTimeout(nudgeTimer)
         setPendingKey(null)
       }
     },
     [chainId, switchChainAsync, publicClient, queryClient],
+  )
+
+  const run = useCallback(
+    async (key: string, label: string, send: () => Promise<Hash>): Promise<boolean> =>
+      (await runWithReceipt(key, label, send)) !== null,
+    [runWithReceipt],
   )
 
   const approveUsdc = useCallback(
@@ -86,5 +92,5 @@ export function useTx(assetOverride?: P2pAsset) {
     [run, writeContractAsync, cfg.asset, cfg.tokenAddress, cfg.escrowAddress],
   )
 
-  return { run, approveUsdc, writeContractAsync, pendingKey, busy: pendingKey !== null }
+  return { run, runWithReceipt, approveUsdc, writeContractAsync, pendingKey, busy: pendingKey !== null }
 }

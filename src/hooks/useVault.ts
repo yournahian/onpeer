@@ -238,10 +238,31 @@ export function useVaultActions() {
   }
 
   const bindAdDetails = async (blobId: string, adId: bigint): Promise<void> => {
-    await apiFetch('/vault/bind-ad', {
-      method: 'POST',
-      body: { blobId, adId: adId.toString() },
-    }).catch(() => undefined)
+    const attempt = () =>
+      apiFetch('/vault/bind-ad', {
+        method: 'POST',
+        body: { blobId, adId: adId.toString() },
+      })
+    try {
+      await attempt()
+    } catch {
+      await new Promise((r) => setTimeout(r, 700))
+      await attempt().catch(() => undefined)
+    }
+  }
+
+  const bindOrderDetails = async (blobId: string, orderId: bigint): Promise<void> => {
+    const attempt = () =>
+      apiFetch('/vault/bind-order', {
+        method: 'POST',
+        body: { blobId, orderId: orderId.toString() },
+      })
+    try {
+      await attempt()
+    } catch {
+      await new Promise((r) => setTimeout(r, 700))
+      await attempt().catch(() => undefined)
+    }
   }
 
   const sealPayerProof = async (input: {
@@ -266,7 +287,7 @@ export function useVaultActions() {
     return res
   }
 
-  return { ensureSession, sealDetails, bindAdDetails, sealPayerProof }
+  return { ensureSession, sealDetails, bindAdDetails, bindOrderDetails, sealPayerProof }
 }
 
 export function useOrderVault(

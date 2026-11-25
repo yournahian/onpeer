@@ -86,15 +86,63 @@ export const json = (status: number, body: unknown, extraHeaders?: Record<string
 export const textField = (v: unknown, max: number): string | undefined =>
   typeof v === 'string' ? v.trim().slice(0, max) : undefined
 
+/**
+ * Normalize client IPs for rate-limiting:
+ * - IPv4 addresses are kept verbatim.
+ * - IPv6 addresses are collapsed to their `/64` network prefix so rotating SLAAC/privacy suffixes cannot bypass buckets.
+ */
+export function normalizeIpForRateLimit(rawIp: string): string {
+  const ip = rawIp.trim().replace(/^\[|\]$/g, '')
+  if (!ip || ip === 'local') return 'local'
+  const v4Mapped = ip.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i)
+  if (v4Mapped?.[1]) return v4Mapped[1]
+  if (!ip.includes(':')) return ip.slice(0, 64)
+
+  const parts = ip.split('::')
+  if (parts.length > 2) return ip.toLowerCase().slice(0, 64)
+  const left = parts[0] ? parts[0].split(':') : []
+  const right = parts.length === 2 && parts[1] ? parts[1].split(':') : []
+  const validHex = (seg: string) => /^[0-9a-fA-F]{1,4}$/.test(seg)
+  if (!left.every(validHex) || !right.every(validHex)) {
+    return ip.toLowerCase().slice(0, 64)
+  }
+  const missing = 8 - left.length - right.length
+  if ((parts.length === 2 && missing < 1) || (parts.length === 1 && missing !== 0)) {
+    return ip.toLowerCase().slice(0, 64)
+  }
+  const full = [...left, ...Array<string>(missing).fill('0'), ...right]
+  const prefix64 = full
+    .slice(0, 4)
+    .map((h) => h.toLowerCase().padStart(4, '0'))
+    .join(':')
+  return `${prefix64}::/64`
+}
+
 export function clientIp(req: Request): string {
-  return (
+  const raw =
     req.headers.get('cf-connecting-ip')?.trim() ||
     req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     'local'
-  ).slice(0, 64)
+  return normalizeIpForRateLimit(raw)
 }
 
 export async function readJsonBody(req: Request, maxBytes = 200_000): Promise<Record<string, unknown> | null> {
+  const ct = (req.headers.get('content-type') ?? '').toLowerCase()
+  if (ct.includes('application/x-www-form-urlencoded') || ct.includes('multipart/form-data')) {
+    return null
+  }
+  if (!ct.includes('application/json')) {
+    const fetchSite = (req.headers.get('sec-fetch-site') ?? '').toLowerCase()
+    if (fetchSite === 'cross-site') return null
+    const origin = req.headers.get('origin')?.trim()
+    if (origin) {
+      try {
+        if (new URL(origin).host !== new URL(req.url).host) return null
+      } catch {
+        return null
+      }
+    }
+  }
   try {
     const raw = await req.text()
     if (raw.length > maxBytes) return null

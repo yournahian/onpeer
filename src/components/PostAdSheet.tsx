@@ -2,10 +2,21 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, usePublicClient } from 'wagmi'
-import { keccak256, toBytes } from 'viem'
+import { keccak256, parseEventLogs, toBytes } from 'viem'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { toast } from 'sonner'
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, Lock, ShieldCheck, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Lock,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   BUY_AD_MIN_COMPLETED,
@@ -14,7 +25,10 @@ import {
   DEFAULT_TTL_HOURS,
   DETAILS_MAX_BYTES,
   DETAILS_MODE,
+  MAX_FIAT_PRICE_E6,
+  MIN_GAS_WARNING_USDC,
   MIN_TAKER_OPTIONS,
+  NATIVE_USDC_GAS_BUFFER,
   P2P_ASSETS,
   SIDE_BUY,
   SIDE_SELL,
@@ -27,9 +41,10 @@ import {
   getEscrowConfig,
   merchantMarginFor,
   methodsForCountry,
+  truncateUtf8,
   type P2pAsset,
 } from '@/lib/p2p'
-import { parseUnitsExact } from '@/onchain-money'
+import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import {
   useListingFee,
   useP2pAsset,
@@ -43,7 +58,7 @@ import { CoinLogo, CountryFlag, MethodLogo } from '@/components/logos'
 import { useEligibility } from '@/hooks/useEligibility'
 import { BackendApiError } from '@/lib/api'
 import {
-  formatSavedMethodsBlock,
+  formatSavedMethodLine,
   useSavedPaymentMethods,
   type SavedPaymentMethod,
 } from '@/hooks/useAccount'
@@ -149,11 +164,12 @@ function PostAdForm({
   const [activeMarketAsset, setActiveMarketAsset] = useP2pAsset()
   const [asset, setAsset] = useState<P2pAsset>(activeMarketAsset)
   const balance = useUsdcBalance(asset)
+  const nativeUsdcBalance = useUsdcBalance('USDC')
   const allowance = useUsdcAllowance(asset)
   const listingFee = useListingFee(asset)
   const { sealedEnabled, isLoading: switchesLoading } = usePrivacySwitches(asset)
   const { sealDetails, bindAdDetails } = useVaultActions()
-  const { run, approveUsdc, writeContractAsync, pendingKey, busy } = useTx(asset)
+  const { runWithReceipt, approveUsdc, writeContractAsync, pendingKey, busy } = useTx(asset)
   const { blocked, account } = useEligibility(asset)
   const { methods: savedMethods } = useSavedPaymentMethods()
 
@@ -171,6 +187,20 @@ function PostAdForm({
   const [holderName, setHolderName] = useState('')
   const [details, setDetails] = useState('')
   const [publicTerms, setPublicTerms] = useState('')
+  const [methodDrafts, setMethodDrafts] = useState<
+    Record<
+      number,
+      {
+        holderName: string
+        accountNumber: string
+        bankOrBranch: string
+        branchName: string
+        routingNumber: string
+        notes: string
+      }
+    >
+  >({})
+  const [activeVaultIdx, setActiveVaultIdx] = useState(0)
   const [minTaker, setMinTaker] = useState(0)
   const [sealing, setSealing] = useState(false)
   const [step, setStep] = useState<1 | 2 | 3>(1)
@@ -185,7 +215,53 @@ function PostAdForm({
   const maxRaw = safe(max, tokenDecimals)
   const isSell = side === SIDE_SELL
   const useSealedVault = sealedEnabled && isSell
-  const onchainText = useSealedVault ? publicTerms : details
+
+  const safeVaultIdx = bits.length > 0 ? Math.min(activeVaultIdx, bits.length - 1) : 0
+  const activeVaultBit = bits[safeVaultIdx]
+  const activeVaultMethod = methods.find((m) => m.bit === activeVaultBit) ?? null
+  const activeVaultDraft =
+    activeVaultBit !== undefined
+      ? (methodDrafts[activeVaultBit] ?? {
+          holderName,
+          accountNumber: '',
+          bankOrBranch: '',
+          branchName: '',
+          routingNumber: '',
+          notes: '',
+        })
+      : null
+
+  const serializedVaultDetails = !useSealedVault
+    ? details
+    : bits
+        .map((b) => {
+          const mDef = methods.find((m) => m.bit === b)
+          const d = methodDrafts[b]
+          if (!mDef || !d || d.accountNumber.trim().length < 2) return null
+          return formatSavedMethodLine(
+            {
+              id: `draft_${b}`,
+              methodBit: b,
+              methodName: mDef.name,
+              holderName: d.holderName.trim() || holderName.trim(),
+              accountNumber: d.accountNumber.trim(),
+              bankOrBranch: d.bankOrBranch.trim(),
+              branchName: d.branchName.trim() || undefined,
+              routingNumber: d.routingNumber.trim() || undefined,
+              notes: d.notes.trim(),
+              updatedAt: '',
+            },
+            false,
+          )
+        })
+        .filter((x): x is string => x !== null)
+        .join('\n')
+
+  const effectiveHolderName = !useSealedVault
+    ? holderName
+    : bits.map((b) => methodDrafts[b]?.holderName?.trim()).find((h): h is string => !!h) ?? holderName.trim()
+
+  const onchainText = useSealedVault || !isSell ? publicTerms : details
   const detailBytes = useMemo(() => new TextEncoder().encode(onchainText).length, [onchainText])
   const requiredUsdc = (isSell ? totalRaw : 0n) + listingFee
 
@@ -197,7 +273,9 @@ function PostAdForm({
     account.ordersCompleted < BUY_AD_MIN_COMPLETED
 
   let problem: string | null = null
-  if (buyAdBlocked) {
+  if (priceE6 > MAX_FIAT_PRICE_E6) {
+    problem = 'Exchange rate exceeds the maximum supported limit.'
+  } else if (buyAdBlocked) {
     problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
   } else if (!isSell && isConnected && balance !== undefined && listingFee > balance) {
     problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
@@ -208,20 +286,39 @@ function PostAdForm({
       problem = `Insufficient wallet balance (${formatUsdcAmount(balance, undefined, asset)} ${asset} available; ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} needed with listing fee).`
   }
   if (!problem && detailBytes > DETAILS_MAX_BYTES) {
-    problem = useSealedVault ? 'Public maker terms exceed 200 bytes.' : 'Payment details exceed 200 bytes.'
+    problem = useSealedVault || !isSell ? 'Public maker terms exceed 200 bytes.' : 'Payment details exceed 200 bytes.'
   }
-  if (!problem && useSealedVault && details.trim().length > 400) {
-    problem = 'Encrypted receiving details exceed 400 characters.'
+  if (!problem && useSealedVault && serializedVaultDetails.trim().length > 1500) {
+    problem = 'Encrypted receiving details exceed 1,500 characters.'
   }
 
+  const lowNativeGas = isConnected && nativeUsdcBalance !== undefined && nativeUsdcBalance < MIN_GAS_WARNING_USDC
+
+  const fillMaxTotal = () => {
+    if (!isSell || balance === undefined) return
+    const gasReserve = asset === 'USDC' ? NATIVE_USDC_GAS_BUFFER : 0n
+    const usable = balance > listingFee + gasReserve ? balance - listingFee - gasReserve : 0n
+    const formatted = usable > 0n ? formatUnitsExact(usable, tokenDecimals) : ''
+    setTotal(formatted)
+    if (!max) setMax(formatted)
+  }
+
+  const missingSealedMethod =
+    useSealedVault &&
+    bits.some((b) => {
+      const d = methodDrafts[b]
+      return !d || d.accountNumber.trim().length < 2
+    })
+
   const sellDetailsReady = useSealedVault
-    ? holderName.trim().length >= 2 && details.trim().length >= 2
+    ? effectiveHolderName.length >= 2 && serializedVaultDetails.trim().length >= 2 && !missingSealedMethod
     : details.trim().length > 0
 
   const step1Ready =
     !blocked &&
     !buyAdBlocked &&
     priceE6 > 0n &&
+    priceE6 <= MAX_FIAT_PRICE_E6 &&
     totalRaw > 0n &&
     minRaw > 0n &&
     maxRaw > 0n &&
@@ -229,7 +326,7 @@ function PostAdForm({
     maxRaw <= totalRaw &&
     (balance === undefined || requiredUsdc <= balance)
 
-  const step2Ready = bits.length > 0 && ttlHours >= 1 && ttlHours <= 168
+  const step2Ready = bits.length > 0 && ttlHours >= 1 && ttlHours <= 168 && detailBytes <= DETAILS_MAX_BYTES
 
   const ready =
     !switchesLoading &&
@@ -238,24 +335,80 @@ function PostAdForm({
     !problem &&
     (!isSell || sellDetailsReady)
 
+  const updateActiveDraft = (
+    patch: Partial<{
+      holderName: string
+      accountNumber: string
+      bankOrBranch: string
+      branchName: string
+      routingNumber: string
+      notes: string
+    }>,
+  ) => {
+    if (activeVaultBit === undefined) return
+    setMethodDrafts((prev) => {
+      const cur = prev[activeVaultBit] ?? {
+        holderName,
+        accountNumber: '',
+        bankOrBranch: '',
+        branchName: '',
+        routingNumber: '',
+        notes: '',
+      }
+      const next = { ...cur, ...patch }
+      return { ...prev, [activeVaultBit]: next }
+    })
+    if (patch.holderName !== undefined) {
+      setHolderName(patch.holderName)
+    }
+  }
+
   const toggle = (bit: number) => {
-    const nextBits = bits.includes(bit) ? bits.filter((x) => x !== bit) : [...bits, bit]
+    const removing = bits.includes(bit)
+    const nextBits = removing ? bits.filter((x) => x !== bit) : [...bits, bit]
     setBits(nextBits)
+    if (nextBits.length > 0 && activeVaultIdx >= nextBits.length) {
+      setActiveVaultIdx(nextBits.length - 1)
+    }
 
     if (isSell) {
-      // Pick the first saved payment method for each selected bit (Binance-style auto-fill)
-      const picked: SavedPaymentMethod[] = []
-      for (const b of nextBits) {
-        const match = savedMethods.find((sm) => sm.methodBit === b)
-        if (match) picked.push(match)
+      if (!removing) {
+        const match = savedMethods.find((sm) => sm.methodBit === bit)
+        setMethodDrafts((prev) => {
+          if (prev[bit]?.accountNumber) return prev
+          return {
+            ...prev,
+            [bit]: match
+              ? {
+                  holderName: match.holderName,
+                  accountNumber: match.accountNumber,
+                  bankOrBranch: match.bankOrBranch,
+                  branchName: match.branchName ?? '',
+                  routingNumber: match.routingNumber ?? '',
+                  notes: match.notes,
+                }
+              : {
+                  holderName: holderName || savedMethods[0]?.holderName || '',
+                  accountNumber: '',
+                  bankOrBranch: '',
+                  branchName: '',
+                  routingNumber: '',
+                  notes: '',
+                },
+          }
+        })
+        if (match && !holderName) setHolderName(match.holderName)
       }
-      if (picked.length > 0) {
-        setHolderName(picked[0]!.holderName)
-        const block = formatSavedMethodsBlock(picked, !useSealedVault)
-        setDetails(useSealedVault ? block.slice(0, 400) : block.slice(0, DETAILS_MAX_BYTES))
-        const firstNotes = picked.find((p) => p.notes)?.notes
-        if (firstNotes && useSealedVault && !publicTerms.trim()) {
-          setPublicTerms(firstNotes.slice(0, DETAILS_MAX_BYTES))
+      if (!useSealedVault) {
+        const picked: SavedPaymentMethod[] = []
+        for (const b of nextBits) {
+          const match = savedMethods.find((sm) => sm.methodBit === b)
+          if (match) picked.push(match)
+        }
+        if (picked.length > 0) {
+          setHolderName(picked[0]!.holderName)
+          const block = picked.map((m) => formatSavedMethodLine(m, true)).join('\n')
+          setDetails(truncateUtf8(block, DETAILS_MAX_BYTES))
         }
       }
     }
@@ -263,13 +416,28 @@ function PostAdForm({
 
   const applySavedMethod = (item: SavedPaymentMethod) => {
     setHolderName(item.holderName)
-    const matchingForOtherBits = bits
-      .filter((b) => b !== item.methodBit)
-      .map((b) => savedMethods.find((sm) => sm.methodBit === b))
-      .filter((x): x is SavedPaymentMethod => !!x)
-    const combined = [item, ...matchingForOtherBits]
-    const block = formatSavedMethodsBlock(combined, !useSealedVault)
-    setDetails(useSealedVault ? block.slice(0, 400) : block.slice(0, DETAILS_MAX_BYTES))
+    setMethodDrafts((prev) => ({
+      ...prev,
+      [item.methodBit]: {
+        holderName: item.holderName,
+        accountNumber: item.accountNumber,
+        bankOrBranch: item.bankOrBranch,
+        branchName: item.branchName ?? '',
+        routingNumber: item.routingNumber ?? '',
+        notes: item.notes,
+      },
+    }))
+    const idx = bits.indexOf(item.methodBit)
+    if (idx >= 0) setActiveVaultIdx(idx)
+    if (!useSealedVault) {
+      const matchingForOtherBits = bits
+        .filter((b) => b !== item.methodBit)
+        .map((b) => savedMethods.find((sm) => sm.methodBit === b))
+        .filter((x): x is SavedPaymentMethod => !!x)
+      const combined = [item, ...matchingForOtherBits]
+      const block = combined.map((m) => formatSavedMethodLine(m, true)).join('\n')
+      setDetails(truncateUtf8(block, DETAILS_MAX_BYTES))
+    }
   }
 
   const submit = async () => {
@@ -282,7 +450,7 @@ function PostAdForm({
 
     let modeArg: number = DETAILS_MODE.PLAIN
     let hashArg: `0x${string}` = ZERO_BYTES32
-    let detailsArg = details.trim()
+    let detailsArg = isSell ? details.trim() : publicTerms.trim()
     let sealedBlobId: string | null = null
 
     if (sealedEnabled) {
@@ -292,8 +460,8 @@ function PostAdForm({
         try {
           const res = await sealDetails({
             kind: 'ad_details',
-            holderName: holderName.trim(),
-            accountDetails: details.trim(),
+            holderName: effectiveHolderName,
+            accountDetails: serializedVaultDetails.trim(),
             notes: publicTerms.trim(),
           })
           sealedBlobId = res.id
@@ -306,12 +474,12 @@ function PostAdForm({
         }
         setSealing(false)
       } else {
-        hashArg = keccak256(toBytes(`buy-ad-mode2:${address.toLowerCase()}:${details.trim()}`))
-        detailsArg = details.trim()
+        hashArg = keccak256(toBytes(`buy-ad-mode2:${address.toLowerCase()}:${publicTerms.trim()}`))
+        detailsArg = publicTerms.trim()
       }
     }
 
-    const ok = await run('createAd', 'Post ad', () =>
+    const receipt = await runWithReceipt('createAd', 'Post ad', () =>
       writeContractAsync({
         address: escrow,
         abi: p2pEscrowAbi,
@@ -334,21 +502,34 @@ function PostAdForm({
         chainId: CHAIN_ID,
       }),
     )
-    if (ok) {
+    if (receipt) {
       setActiveMarketAsset(asset)
-      if (sealedBlobId && publicClient) {
-        void publicClient
-          .readContract({
-            address: escrow,
+      if (sealedBlobId) {
+        let minedRawId: bigint | undefined
+        try {
+          const parsed = parseEventLogs({
             abi: p2pEscrowAbi,
-            functionName: 'getUserAdIds',
-            args: [address],
+            eventName: 'AdCreated',
+            logs: receipt.logs,
           })
-          .then((adIds) => {
-            const latest = adIds[adIds.length - 1]
-            if (latest !== undefined) return bindAdDetails(sealedBlobId!, encodeScopedId(asset, latest))
-          })
-          .catch(() => undefined)
+          minedRawId = parsed[0]?.args.adId
+        } catch {
+          minedRawId = undefined
+        }
+        if (minedRawId === undefined && publicClient) {
+          const adIds = await publicClient
+            .readContract({
+              address: escrow,
+              abi: p2pEscrowAbi,
+              functionName: 'getUserAdIds',
+              args: [address],
+            })
+            .catch(() => [] as readonly bigint[])
+          minedRawId = adIds[adIds.length - 1]
+        }
+        if (minedRawId !== undefined) {
+          await bindAdDetails(sealedBlobId, encodeScopedId(asset, minedRawId))
+        }
       }
       onDone()
     }
@@ -523,6 +704,15 @@ function PostAdForm({
                   placeholder={asset === 'cirBTC' ? '0.01' : asset === 'WETH' ? '0.1' : '100.00'}
                   className="p2p-mono w-full bg-transparent text-base font-bold text-[var(--p2p-ink)] outline-none"
                 />
+                {isSell && balance !== undefined && (
+                  <button
+                    type="button"
+                    onClick={fillMaxTotal}
+                    className="mr-2 text-xs font-bold text-[#FF5A00] hover:opacity-80"
+                  >
+                    Max
+                  </button>
+                )}
                 <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--p2p-ink)]">
                   <CoinLogo symbol={asset} size={14} /> {asset}
                 </span>
@@ -556,6 +746,15 @@ function PostAdForm({
               />
             </label>
           </div>
+
+          {lowNativeGas && (
+            <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs text-[var(--p2p-warn-ink)]">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Low native USDC gas balance ({formatUsdcAmount(nativeUsdcBalance ?? 0n)} USDC). Keep at least 0.05–0.10 USDC free on Arc for transaction gas.
+              </span>
+            </div>
+          )}
 
           {(problem || blocked) && (
             <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
@@ -680,6 +879,32 @@ function PostAdForm({
             </div>
           </div>
 
+          {/* Public Maker Terms — Separate & Public (NOT encrypted), shown as Advertisers' Terms */}
+          {(useSealedVault || !isSell) && (
+            <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--p2p-ink)]">
+                  Public Maker Terms (Advertisers&apos; Terms — Optional)
+                </span>
+                <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+                  {detailBytes}/{DETAILS_MAX_BYTES}B
+                </span>
+              </div>
+              <textarea
+                value={publicTerms}
+                onChange={(e) => setPublicTerms(e.target.value)}
+                rows={4}
+                placeholder="e.g. No third-party payments accepted. Send from your verified personal account only. Do not mention crypto in bank remarks."
+                className="p2p-input w-full resize-none rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2.5 text-xs leading-relaxed text-[var(--p2p-ink)]"
+              />
+              <p className="text-[11px] leading-relaxed text-[var(--p2p-muted)]">
+                Displayed publicly as <strong className="text-[var(--p2p-ink)]">Advertisers&apos; Terms</strong> before a
+                counterparty opens an order (stored onchain, not encrypted). Never put bank account or mobile wallet
+                numbers here — your payment method details are encrypted separately in the next step.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2.5 pt-1">
             <button
               type="button"
@@ -715,7 +940,10 @@ function PostAdForm({
                 {savedMethods
                   .filter((sm) => bits.includes(sm.methodBit))
                   .map((sm) => {
-                    const included = details.includes(sm.accountNumber)
+                    const draft = methodDrafts[sm.methodBit]
+                    const included = useSealedVault
+                      ? draft?.accountNumber === sm.accountNumber
+                      : details.includes(sm.accountNumber)
                     return (
                       <button
                         key={sm.id}
@@ -749,52 +977,140 @@ function PostAdForm({
                 </AppLink>
               </div>
               <p className="text-[11px] text-[var(--p2p-muted)]">
-                Your account number is encrypted offchain (AES-256-GCM) and revealed only to an active order&apos;s buyer
-                and arbiter. Only the ciphertext hash goes onchain.
+                Your receiving accounts are encrypted offchain (AES-256-GCM) and revealed only to an active order&apos;s
+                buyer and arbiter. Only the ciphertext hash goes onchain.
               </p>
-              <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                  Account Holder Full Name (Matched Against KYC)
-                </span>
-                <input
-                  value={holderName}
-                  onChange={(e) => setHolderName(e.target.value.slice(0, 80))}
-                  placeholder="Full name on your bank / mobile wallet"
-                  className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                  <span>Receiving Account / UPI / Wallet Number</span>
-                  <span className="p2p-mono normal-case">{details.length}/400</span>
-                </span>
-                <textarea
-                  value={details}
-                  onChange={(e) => setDetails(e.target.value.slice(0, 400))}
-                  rows={2}
-                  placeholder="e.g. bKash Personal 01XXXXXXXXX or name@okaxis"
-                  className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                  <span>Public Maker Terms (Optional — Never Put Account Numbers Here)</span>
-                  <span className="p2p-mono normal-case">
-                    {detailBytes}/{DETAILS_MAX_BYTES}B
-                  </span>
-                </span>
-                <input
-                  value={publicTerms}
-                  onChange={(e) => setPublicTerms(e.target.value)}
-                  placeholder="e.g. Send from verified personal account only; no remarks"
-                  className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
-                />
-              </label>
+
+              {/* Arrow Carousel Header for Multi-Method Vault Details */}
+              {activeVaultMethod && activeVaultDraft && (
+                <div className="space-y-3 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-3.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-[var(--p2p-border)] pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <MethodLogo name={activeVaultMethod.name} size={18} />
+                      <span className="text-xs font-bold text-[var(--p2p-ink)]">{activeVaultMethod.name}</span>
+                      <span className="p2p-mono rounded bg-[var(--p2p-tint)] px-1.5 py-0.5 text-[10px] font-bold text-[#FF5A00]">
+                        {safeVaultIdx + 1} / {bits.length}
+                      </span>
+                    </div>
+                    {bits.length > 1 && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label="Previous payment method"
+                          onClick={() => setActiveVaultIdx((i) => (i - 1 + bits.length) % bits.length)}
+                          className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                        >
+                          <ChevronLeft className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Next payment method"
+                          onClick={() => setActiveVaultIdx((i) => (i + 1) % bits.length)}
+                          className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-ink)] hover:border-[#FF5A00]"
+                        >
+                          <ChevronRight className="size-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                        Account Holder Full Name (KYC Match)
+                      </span>
+                      <input
+                        value={activeVaultDraft.holderName}
+                        onChange={(e) => updateActiveDraft({ holderName: e.target.value.slice(0, 80) })}
+                        placeholder="Full name on your bank / mobile wallet"
+                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                        {activeVaultMethod.name === 'Bank transfer'
+                          ? 'Bank Account Number / IBAN *'
+                          : `${activeVaultMethod.name} Number / ID *`}
+                      </span>
+                      <input
+                        value={activeVaultDraft.accountNumber}
+                        onChange={(e) => updateActiveDraft({ accountNumber: e.target.value.slice(0, 160) })}
+                        placeholder={
+                          activeVaultMethod.name === 'Bank transfer'
+                            ? 'e.g. 01234567896'
+                            : activeVaultMethod.name === 'UPI'
+                              ? 'e.g. name@okaxis'
+                              : 'e.g. 017XXXXXXXX'
+                        }
+                        className="p2p-input p2p-mono h-10 w-full rounded-lg px-3 text-xs font-bold"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                        {activeVaultMethod.name === 'Bank transfer' ? 'Bank Name' : 'Account Type'}
+                      </span>
+                      <input
+                        value={activeVaultDraft.bankOrBranch}
+                        onChange={(e) => updateActiveDraft({ bankOrBranch: e.target.value.slice(0, 120) })}
+                        placeholder={activeVaultMethod.name === 'Bank transfer' ? 'e.g. The City Bank' : 'e.g. Personal'}
+                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
+                      />
+                    </label>
+
+                    {activeVaultMethod.name === 'Bank transfer' && (
+                      <>
+                        <label className="block">
+                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                            Branch Name (Optional)
+                          </span>
+                          <input
+                            value={activeVaultDraft.branchName}
+                            onChange={(e) => updateActiveDraft({ branchName: e.target.value.slice(0, 120) })}
+                            placeholder="e.g. Gulshan Branch"
+                            className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                            Routing Number (Optional)
+                          </span>
+                          <input
+                            value={activeVaultDraft.routingNumber}
+                            onChange={(e) => updateActiveDraft({ routingNumber: e.target.value.slice(0, 60) })}
+                            placeholder="e.g. 225261729"
+                            className="p2p-input p2p-mono h-10 w-full rounded-lg px-3 text-xs"
+                          />
+                        </label>
+                      </>
+                    )}
+
+                    <label className="block sm:col-span-2">
+                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                        Method Remarks (Optional — Shown Only on {activeVaultMethod.name})
+                      </span>
+                      <input
+                        value={activeVaultDraft.notes}
+                        onChange={(e) => updateActiveDraft({ notes: e.target.value.slice(0, 160) })}
+                        placeholder="e.g. Send Money only"
+                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
+                      />
+                    </label>
+                  </div>
+
+                  {missingSealedMethod && (
+                    <p className="text-[11px] font-semibold text-[#FF5A00]">
+                      Use the arrows above to ensure every selected payment method has an account number.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-          ) : (
+          ) : isSell ? (
             <label className="block">
               <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                <span>{isSell ? 'Receiving Account Details' : 'Terms / Note for Sellers (Optional)'}</span>
+                <span>Receiving Account Details</span>
                 <span className="p2p-mono normal-case">
                   {detailBytes}/{DETAILS_MAX_BYTES}B
                 </span>
@@ -803,14 +1119,28 @@ function PostAdForm({
                 value={details}
                 onChange={(e) => setDetails(e.target.value)}
                 rows={2}
-                placeholder={
-                  isSell
-                    ? 'e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi'
-                    : 'e.g. Instant payment from verified account'
-                }
+                placeholder="e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi"
                 className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
               />
             </label>
+          ) : null}
+
+          {(useSealedVault || !isSell) && publicTerms.trim() && (
+            <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Public Advertisers&apos; Terms (Not Encrypted)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className="text-[11px] font-bold text-[#FF5A00] hover:underline"
+                >
+                  Edit
+                </button>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words text-[var(--p2p-ink)]">{publicTerms}</p>
+            </div>
           )}
 
           <div className="space-y-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
@@ -841,6 +1171,15 @@ function PostAdForm({
               </span>
             </div>
           </div>
+
+          {lowNativeGas && (
+            <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs text-[var(--p2p-warn-ink)]">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <span>
+                Low native USDC gas balance ({formatUsdcAmount(nativeUsdcBalance ?? 0n)} USDC). Keep at least 0.05–0.10 USDC free on Arc for transaction gas.
+              </span>
+            </div>
+          )}
 
           {(problem || blocked) && (
             <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">

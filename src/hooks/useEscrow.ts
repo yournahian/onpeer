@@ -8,7 +8,6 @@ import {
   CHAIN_ID,
   CIRBTC_DEPLOY_BLOCK,
   CIRBTC_ESCROW_ADDRESS,
-  DEFAULT_LISTING_FEE,
   DEPLOY_BLOCK,
   ESCROW_ADDRESS,
   EURC_DEPLOY_BLOCK,
@@ -246,9 +245,11 @@ export function useDebts(address: Address | undefined, assetOverride?: P2pAsset)
   return res.data ?? []
 }
 
-export function useDisputeWaived(address: Address | undefined) {
+export function useDisputeWaived(address: Address | undefined, assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
   const res = useReadContract({
-    ...base,
+    ...contractBase,
     functionName: 'disputeLimitWaived',
     args: [address as Address],
     query: { enabled: enabled && !!address, refetchInterval: POLL },
@@ -285,34 +286,41 @@ export function useListingFee(assetOverride?: P2pAsset) {
   return res.data ?? defaultListingFeeFor(target)
 }
 
-export function useFeeConfig() {
-  const fee = useReadContract({ ...base, functionName: 'listingFee', query: { enabled, refetchInterval: 15_000 } })
-  const recipient = useReadContract({ ...base, functionName: 'feeRecipient', query: { enabled, refetchInterval: 15_000 } })
-  const accrued = useReadContract({ ...base, functionName: 'feesAccrued', query: { enabled, refetchInterval: POLL } })
+export function useFeeConfig(assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const target = assetOverride ?? activeAsset
+  const contractBase = escrowBaseFor(target)
+  const fee = useReadContract({ ...contractBase, functionName: 'listingFee', query: { enabled, refetchInterval: 15_000 } })
+  const recipient = useReadContract({ ...contractBase, functionName: 'feeRecipient', query: { enabled, refetchInterval: 15_000 } })
+  const accrued = useReadContract({ ...contractBase, functionName: 'feesAccrued', query: { enabled, refetchInterval: POLL } })
   return {
-    listingFee: fee.data ?? DEFAULT_LISTING_FEE,
+    listingFee: fee.data ?? defaultListingFeeFor(target),
     feeRecipient: recipient.data,
     feesAccrued: accrued.data ?? 0n,
     isLoading: fee.isLoading || recipient.isLoading || accrued.isLoading,
   }
 }
 
-export function useVerifier() {
-  const res = useReadContract({ ...base, functionName: 'verifier', query: { enabled, refetchInterval: 20_000 } })
+export function useVerifier(assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
+  const res = useReadContract({ ...contractBase, functionName: 'verifier', query: { enabled, refetchInterval: 20_000 } })
   return res.data
 }
 
 export type KycInfo = { verified: boolean; level: number; expiry: bigint; isLoading?: boolean }
 
-export function useVerification(address: Address | undefined): KycInfo {
+export function useVerification(address: Address | undefined, assetOverride?: P2pAsset): KycInfo {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
   const ver = useReadContract({
-    ...base,
+    ...contractBase,
     functionName: 'verification',
     args: [address as Address],
     query: { enabled: enabled && !!address, refetchInterval: 15_000, placeholderData: (prev) => prev },
   })
   const ok = useReadContract({
-    ...base,
+    ...contractBase,
     functionName: 'isVerified',
     args: [address as Address],
     query: { enabled: enabled && !!address, refetchInterval: 15_000, placeholderData: (prev) => prev },
@@ -322,14 +330,16 @@ export function useVerification(address: Address | undefined): KycInfo {
   return { verified: ok.data === true, level, expiry, isLoading: ok.isLoading || ver.isLoading }
 }
 
-export function useVerifications(addresses: Address[]) {
+export function useVerifications(addresses: Address[], assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
   const unique = useMemo(
     () => Array.from(new Set(addresses.map((m) => m.toLowerCase()))) as Address[],
     [addresses],
   )
   const now = useNow()
   const res = useReadContracts({
-    contracts: unique.map((m) => ({ ...base, functionName: 'verification' as const, args: [m] as const })),
+    contracts: unique.map((m) => ({ ...contractBase, functionName: 'verification' as const, args: [m] as const })),
     query: { enabled: enabled && unique.length > 0, refetchInterval: 20_000 },
   })
   return useMemo(() => {
@@ -515,17 +525,23 @@ export function useClaimable(assetOverride?: P2pAsset) {
   return res.data ?? 0n
 }
 
-export function useArbiter() {
-  const res = useReadContract({ ...base, functionName: 'arbiter', query: { enabled, refetchInterval: 30_000 } })
+export function useArbiter(assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
+  const res = useReadContract({ ...contractBase, functionName: 'arbiter', query: { enabled, refetchInterval: 30_000 } })
   return res.data
 }
 
-export function useBackupArbiter() {
-  const res = useReadContract({ ...base, functionName: 'backupArbiter', query: { enabled, refetchInterval: 30_000 } })
+export function useBackupArbiter(assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
+  const res = useReadContract({ ...contractBase, functionName: 'backupArbiter', query: { enabled, refetchInterval: 30_000 } })
   return res.data
 }
 
-export function useOwner() {
-  const res = useReadContract({ ...base, functionName: 'owner', query: { enabled, refetchInterval: 30_000 } })
+export function useOwner(assetOverride?: P2pAsset) {
+  const [activeAsset] = useP2pAsset()
+  const contractBase = escrowBaseFor(assetOverride ?? activeAsset)
+  const res = useReadContract({ ...contractBase, functionName: 'owner', query: { enabled, refetchInterval: 30_000 } })
   return res.data
 }

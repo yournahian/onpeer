@@ -318,28 +318,61 @@ export async function processOnchainJobsBatch(
     try {
       const roles = await chain.getRoles()
       const clients = await createVerifierClients(env, roles)
+      const verifierAddr = clients.account.address.toLowerCase()
       executor = {
         async setVerification(wallet, level, expiry) {
-          const hash = await clients.walletClient.writeContract({
+          // C-05: Relay KYC verification sequentially across primary USDC + all secondary asset escrows where this relayer is `verifier`
+          const primaryHash = await clients.walletClient.writeContract({
             address: clients.escrow,
             abi: p2pEscrowAbi,
             functionName: 'setVerification',
             args: [wallet, level, expiry],
           })
-          const receipt = await clients.publicClient.waitForTransactionReceipt({ hash })
-          if (receipt.status !== 'success') throw new Error('tx_reverted')
-          return hash
+          const primaryReceipt = await clients.publicClient.waitForTransactionReceipt({ hash: primaryHash })
+          if (primaryReceipt.status !== 'success') throw new Error('tx_reverted')
+
+          for (const target of clients.secondaryEscrows) {
+            const cVerifier = await clients.publicClient
+              .readContract({ address: target, abi: p2pEscrowAbi, functionName: 'verifier' })
+              .catch(() => null)
+            if (!cVerifier || cVerifier.toLowerCase() !== verifierAddr) continue
+            const secHash = await clients.walletClient.writeContract({
+              address: target,
+              abi: p2pEscrowAbi,
+              functionName: 'setVerification',
+              args: [wallet, level, expiry],
+            })
+            const secReceipt = await clients.publicClient.waitForTransactionReceipt({ hash: secHash })
+            if (secReceipt.status !== 'success') throw new Error('tx_reverted')
+          }
+          return primaryHash
         },
         async revokeVerification(wallet) {
-          const hash = await clients.walletClient.writeContract({
-            address: clients.escrow,
-            abi: p2pEscrowAbi,
-            functionName: 'revokeVerification',
-            args: [wallet],
-          })
-          const receipt = await clients.publicClient.waitForTransactionReceipt({ hash })
-          if (receipt.status !== 'success') throw new Error('tx_reverted')
-          return hash
+          let lastHash: `0x${string}` | null = null
+          const allTargets = [clients.escrow, ...clients.secondaryEscrows]
+          for (const target of allTargets) {
+            const [cVerifier, isVer] = await Promise.all([
+              target === clients.escrow
+                ? Promise.resolve(clients.account.address)
+                : clients.publicClient
+                    .readContract({ address: target, abi: p2pEscrowAbi, functionName: 'verifier' })
+                    .catch(() => null),
+              clients.publicClient
+                .readContract({ address: target, abi: p2pEscrowAbi, functionName: 'isVerified', args: [wallet] })
+                .catch(() => false),
+            ])
+            if (!cVerifier || cVerifier.toLowerCase() !== verifierAddr || !isVer) continue
+            const h = await clients.walletClient.writeContract({
+              address: target,
+              abi: p2pEscrowAbi,
+              functionName: 'revokeVerification',
+              args: [wallet],
+            })
+            const receipt = await clients.publicClient.waitForTransactionReceipt({ hash: h })
+            if (receipt.status !== 'success') throw new Error('tx_reverted')
+            lastHash = h
+          }
+          return (lastHash ?? ('0x' + '00'.repeat(32))) as `0x${string}`
         },
       }
     } catch (err) {
@@ -405,7 +438,7 @@ export async function processOnchainJobsBatch(
         succeeded++
       } else {
         const currentlyVerified = await chain.isVerified(wallet)
-        if (!currentlyVerified) {
+        if (!currentlyVerified && customExecutor) {
           await db.query(
             `UPDATE public.onchain_jobs
                 SET status = 'done', last_error = 'already_unverified', updated_at = now()
@@ -416,6 +449,17 @@ export async function processOnchainJobsBatch(
           continue
         }
         const txHash = await executor.revokeVerification(wallet)
+        const zeroHash = '0x' + '00'.repeat(32)
+        if (txHash === zeroHash && !currentlyVerified) {
+          await db.query(
+            `UPDATE public.onchain_jobs
+                SET status = 'done', last_error = 'already_unverified', updated_at = now()
+              WHERE id = $1`,
+            [jobId],
+          )
+          succeeded++
+          continue
+        }
         await db.query(
           `UPDATE public.onchain_jobs
               SET status = 'done', tx_hash = $2, last_error = NULL, updated_at = now()

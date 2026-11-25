@@ -14,12 +14,14 @@
  */
 import {
   requireSession,
+  sha256Hex,
   signHmacToken,
   timingSafeEqualBytes,
   verifyHmacToken,
 } from './auth'
+import { formatScopedOrderLabel } from './chain'
 import { openText, sealText } from './crypto'
-import { checkRateLimit, writeAudit, type Queryable } from './db'
+import { checkRateLimit, withTx, writeAudit, type Queryable } from './db'
 import {
   clientIp,
   json,
@@ -220,14 +222,15 @@ export function buildTelegramAlertMessage(
   const targetUrl = orderId
     ? `${appOrigin}/p2p?order=${orderId.toString()}`
     : `${appOrigin}/p2p`
-  const btnLabel = orderId ? `Open Order #${orderId.toString()}` : 'Open OnPeer P2P'
+  const label = orderId ? formatScopedOrderLabel(orderId) : null
+  const btnLabel = label ? `Open Order ${label}` : 'Open OnPeer P2P'
   const buttons: TelegramInlineButton[][] = [[{ text: btnLabel, web_app: { url: targetUrl } }]]
 
   switch (event) {
     case 'order_opened':
       return {
         text: [
-          `🔔 New P2P Order${orderId ? ` #${orderId.toString()}` : ''} Opened`,
+          `🔔 New P2P Order${label ? ` ${label}` : ''} Opened`,
           '',
           'A counterparty opened an order on your OnPeer ad. Open the order room to review instructions and chat.',
         ].join('\n'),
@@ -236,16 +239,16 @@ export function buildTelegramAlertMessage(
     case 'order_paid':
       return {
         text: [
-          `💸 Order${orderId ? ` #${orderId.toString()}` : ''} Marked as Paid`,
+          `💸 Order${label ? ` ${label}` : ''} Marked as Paid`,
           '',
           'Log directly into your bank or mobile wallet app to confirm settled available balance before releasing crypto.',
         ].join('\n'),
-        buttons: [[{ text: orderId ? `Review & Release #${orderId.toString()}` : 'Review Order', web_app: { url: targetUrl } }]],
+        buttons: [[{ text: label ? `Review & Release ${label}` : 'Review Order', web_app: { url: targetUrl } }]],
       }
     case 'order_completed':
       return {
         text: [
-          `✅ Order${orderId ? ` #${orderId.toString()}` : ''} Completed`,
+          `✅ Order${label ? ` ${label}` : ''} Completed`,
           '',
           'Escrow settlement is complete on Arc.',
         ].join('\n'),
@@ -254,7 +257,7 @@ export function buildTelegramAlertMessage(
     case 'order_cancelled':
       return {
         text: [
-          `❌ Order${orderId ? ` #${orderId.toString()}` : ''} Cancelled`,
+          `❌ Order${label ? ` ${label}` : ''} Cancelled`,
           '',
           'This P2P trade order has been cancelled.',
         ].join('\n'),
@@ -263,7 +266,7 @@ export function buildTelegramAlertMessage(
     case 'order_disputed':
       return {
         text: [
-          `⚠️ Dispute Opened${orderId ? ` on Order #${orderId.toString()}` : ''}`,
+          `⚠️ Dispute Opened${label ? ` on Order ${label}` : ''}`,
           '',
           'Please open the order room to submit your dispute statement and evidence for the arbiter.',
         ].join('\n'),
@@ -272,7 +275,7 @@ export function buildTelegramAlertMessage(
     case 'dispute_filed':
       return {
         text: [
-          `📄 Dispute Evidence Submitted${orderId ? ` (Order #${orderId.toString()})` : ''}`,
+          `📄 Dispute Evidence Submitted${label ? ` (Order ${label})` : ''}`,
           '',
           'A dispute statement was filed. Open the order room to review.',
         ].join('\n'),
@@ -281,7 +284,7 @@ export function buildTelegramAlertMessage(
     case 'case_taken':
       return {
         text: [
-          `⚖️ Arbiter Reviewing${orderId ? ` Order #${orderId.toString()}` : ' Your Dispute'}`,
+          `⚖️ Arbiter Reviewing${label ? ` Order ${label}` : ' Your Dispute'}`,
           '',
           'An OnPeer arbiter has started reviewing the case.',
         ].join('\n'),
@@ -290,7 +293,7 @@ export function buildTelegramAlertMessage(
     case 'dispute_resolved':
       return {
         text: [
-          `🏛️ Dispute Ruling Issued${orderId ? ` (Order #${orderId.toString()})` : ''}`,
+          `🏛️ Dispute Ruling Issued${label ? ` (Order ${label})` : ''}`,
           '',
           'The arbiter has issued an onchain ruling on this order.',
         ].join('\n'),
@@ -299,7 +302,7 @@ export function buildTelegramAlertMessage(
     case 'order_chat':
       return {
         text: [
-          `💬 New Encrypted Message${orderId ? ` in Order #${orderId.toString()}` : ''}`,
+          `💬 New Encrypted Message${label ? ` in Order ${label}` : ''}`,
           '',
           'Your counterparty sent a message in the encrypted order chat.',
         ].join('\n'),
@@ -363,34 +366,36 @@ async function saveTelegramLink(
     computeTelegramIdHash(env, chatId),
   ])
 
-  // Ensure one Telegram chat is linked to one active wallet at a time so alerts never go to a stale wallet
-  await db.query(
-    `UPDATE public.accounts
-        SET telegram_chat_id_enc = NULL,
-            telegram_username_enc = NULL,
-            telegram_id_hash = NULL,
-            telegram_linked_at = NULL,
-            telegram_opt_in = false
-      WHERE telegram_id_hash = $1 AND wallet <> $2`,
-    [idHash, wallet],
-  )
+  // Atomic transaction so one Telegram chat is linked to at most one active wallet (H-05)
+  await withTx(db, async (tx) => {
+    await tx.query(
+      `UPDATE public.accounts
+          SET telegram_chat_id_enc = NULL,
+              telegram_username_enc = NULL,
+              telegram_id_hash = NULL,
+              telegram_linked_at = NULL,
+              telegram_opt_in = false
+        WHERE telegram_id_hash = $1 AND wallet <> $2`,
+      [idHash, wallet],
+    )
 
-  await db.query(
-    `INSERT INTO public.accounts (
-       wallet, telegram_chat_id_enc, telegram_username_enc, telegram_id_hash,
-       telegram_linked_at, telegram_opt_in, consent_at, deleted_at
-     )
-     VALUES ($1, $2, $3, $4, now(), true, now(), NULL)
-     ON CONFLICT (wallet) DO UPDATE
-       SET telegram_chat_id_enc = EXCLUDED.telegram_chat_id_enc,
-           telegram_username_enc = EXCLUDED.telegram_username_enc,
-           telegram_id_hash = EXCLUDED.telegram_id_hash,
-           telegram_linked_at = now(),
-           telegram_opt_in = true,
-           consent_at = COALESCE(public.accounts.consent_at, now()),
-           deleted_at = NULL`,
-    [wallet, chatEnc, userEnc, idHash],
-  )
+    await tx.query(
+      `INSERT INTO public.accounts (
+         wallet, telegram_chat_id_enc, telegram_username_enc, telegram_id_hash,
+         telegram_linked_at, telegram_opt_in, consent_at, deleted_at
+       )
+       VALUES ($1, $2, $3, $4, now(), true, now(), NULL)
+       ON CONFLICT (wallet) DO UPDATE
+         SET telegram_chat_id_enc = EXCLUDED.telegram_chat_id_enc,
+             telegram_username_enc = EXCLUDED.telegram_username_enc,
+             telegram_id_hash = EXCLUDED.telegram_id_hash,
+             telegram_linked_at = now(),
+             telegram_opt_in = true,
+             consent_at = COALESCE(public.accounts.consent_at, now()),
+             deleted_at = NULL`,
+      [wallet, chatEnc, userEnc, idHash],
+    )
+  })
 }
 
 export interface TelegramRouteOptions {
@@ -492,6 +497,40 @@ export async function handleTelegramRoutes(
           await sendTelegramBotMessage(env, {
             chatId: rawChatId,
             text: '⚠️ This link token has expired or is invalid.\n\nPlease generate a fresh Telegram link from OnPeer → User Center → Notifications.',
+            buttons: launchButtons,
+            fetchImpl: opts?.fetchImpl,
+          })
+          return json(200, { ok: true })
+        }
+
+        // H-05: Refuse linking to an explicitly deleted account
+        const acctRow = await loadTelegramAccountRow(db, wallet).catch(() => undefined)
+        if (acctRow?.deleted_at) {
+          await sendTelegramBotMessage(env, {
+            chatId: rawChatId,
+            text: '⚠️ This OnPeer account has been deleted. Re-activate your account inside the app first.',
+            buttons: launchButtons,
+            fetchImpl: opts?.fetchImpl,
+          })
+          return json(200, { ok: true })
+        }
+
+        // H-05: Atomically consume single-use `tg_link` token so leaked deep links cannot be replayed
+        const tokenJti =
+          typeof verified.jti === 'string' && verified.jti.length >= 8
+            ? verified.jti
+            : (await sha256Hex(rawToken)).slice(0, 36)
+        const ttlSec = Math.max(60, Math.ceil((Number(verified.exp) - nowMs) / 1000))
+        const consumed = await db.query(
+          `INSERT INTO public.rate_limits (bucket, count, reset_at)
+           VALUES ($1, 1, now() + make_interval(secs => $2))
+           ON CONFLICT (bucket) DO NOTHING`,
+          [`tg_link_used:${tokenJti}`, ttlSec],
+        )
+        if ((consumed.rowCount ?? 0) === 0) {
+          await sendTelegramBotMessage(env, {
+            chatId: rawChatId,
+            text: '⚠️ This Telegram link has already been used.\n\nGenerate a fresh link from OnPeer → User Center → Notifications if needed.',
             buttons: launchButtons,
             fetchImpl: opts?.fetchImpl,
           })
@@ -748,9 +787,14 @@ export async function handleTelegramRoutes(
     if (!botToken || !botUsername) {
       return json(503, { error: 'telegram_not_configured' })
     }
+    const existingAcct = await loadTelegramAccountRow(db, wallet).catch(() => undefined)
+    if (existingAcct?.deleted_at) {
+      return json(403, { error: 'account_deleted' })
+    }
     const token = await signHmacToken(env, {
       kind: 'tg_link',
       sub: wallet,
+      jti: crypto.randomUUID(),
       exp: nowMs + TELEGRAM_LINK_TTL_MS,
     })
     const deepLink = `https://t.me/${botUsername}?start=link_${encodeURIComponent(token)}`

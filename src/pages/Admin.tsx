@@ -2,13 +2,24 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { Activity, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
-import { TokenUSDC } from '@web3icons/react'
 import { zeroAddress } from 'viem'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
-import { CHAIN_ID, ESCROW_ADDRESS, STATUS, formatUsdcAmount, shortAddr } from '@/lib/p2p'
-import { useAds, useAccounts, useFeeConfig, useOrder, useOrders, usePaused, useVerifier } from '@/hooks/useEscrow'
+import {
+  CHAIN_ID,
+  ESCROW_ADDRESS,
+  EURC_ID_OFFSET,
+  P2P_ASSETS,
+  STATUS,
+  encodeScopedId,
+  formatScopedOrderLabel,
+  formatUsdcAmount,
+  shortAddr,
+  type P2pAsset,
+} from '@/lib/p2p'
+import { useAllAds, useAccounts, useFeeConfig, useOrder, useOrders, usePaused, useVerifier } from '@/hooks/useEscrow'
 import { useAdminRoles } from '@/hooks/useAdmin'
 import { SiteBar } from '@/components/SiteBar'
+import { CoinLogo } from '@/components/logos'
 import { Button, CopyButton, Empty, SkeletonRows, inputClass } from '@/components/ui'
 import { Reveal } from '@/components/fx/Reveal'
 import { RollingNumber } from '@/components/fx/RollingNumber'
@@ -58,13 +69,20 @@ function Gate({ title, body, connect }: { title: string; body: string; connect?:
 export default function AdminPage() {
   const roles = useAdminRoles()
   const { orders, isLoading } = useOrders()
-  const { ads } = useAds()
-  const paused = usePaused()
-  const feeConfig = useFeeConfig()
-  const verifier = useVerifier()
+  const { ads } = useAllAds()
+  const paused = usePaused('USDC')
+  const feeConfig = useFeeConfig('USDC')
+  const verifier = useVerifier('USDC')
   const [tab, setTab] = useState<Tab>('overview')
   const [caseQuery, setCaseQuery] = useState('')
-  const parsedCaseId = /^\d+$/.test(caseQuery.trim()) ? BigInt(caseQuery.trim()) : undefined
+  const [caseAsset, setCaseAsset] = useState<P2pAsset>('USDC')
+  const rawCaseNum = /^\d+$/.test(caseQuery.trim()) ? BigInt(caseQuery.trim()) : undefined
+  const parsedCaseId =
+    rawCaseNum !== undefined
+      ? rawCaseNum >= EURC_ID_OFFSET
+        ? rawCaseNum
+        : encodeScopedId(caseAsset, rawCaseNum)
+      : undefined
   const { order: lookedOrder } = useOrder(parsedCaseId)
 
   const disputed = useMemo(
@@ -102,17 +120,19 @@ export default function AdminPage() {
     let active = 0
     let completed = 0
     let settled = 0
-    let held = 0n
+    const heldByAsset: Record<P2pAsset, bigint> = { USDC: 0n, EURC: 0n, cirBTC: 0n, WETH: 0n }
     for (const o of orders) {
       if (o.status === STATUS.PENDING || o.status === STATUS.PAID || o.status === STATUS.DISPUTED) {
         active++
-        if (o.asset === 'USDC') held += o.amount
+        heldByAsset[o.asset] += o.amount
       }
       if (o.status === STATUS.COMPLETED) completed++
       if (o.status === STATUS.SETTLED) settled++
     }
-    for (const a of ads) if (a.side === 0 && !a.closed) held += a.available
-    return { active, completed, settled, held }
+    for (const a of ads) {
+      if (a.side === 0 && !a.closed) heldByAsset[a.asset] += a.available
+    }
+    return { active, completed, settled, held: heldByAsset.USDC, heldByAsset }
   }, [orders, ads])
 
   if (!ESCROW_ADDRESS) return (<><SiteBar /><Gate title="Contract not connected" body="The escrow contract address is not configured for this app." /></>)
@@ -190,9 +210,21 @@ export default function AdminPage() {
               </div>
               <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
                 <section className="glass rounded-3xl p-5">
-                  <h2 className="flex items-center gap-2 text-sm font-semibold"><TokenUSDC variant="branded" size={18} /> USDC held in escrow</h2>
-                  <p className="display mt-2 text-4xl font-bold tabular-nums"><RollingNumber value={formatUsdcAmount(stats.held)} /></p>
-                  <p className="mt-1 text-xs" style={{ color: 'var(--subtle)' }}>Active orders plus sell-ad inventory, from the latest 200 records. Listing fee: {formatUsdcAmount(feeConfig.listingFee)} USDC/ad.</p>
+                  <h2 className="flex items-center gap-2 text-sm font-semibold"><CoinLogo symbol="USDC" size={18} /> Assets held in escrow</h2>
+                  <p className="display mt-2 text-4xl font-bold tabular-nums"><RollingNumber value={formatUsdcAmount(stats.held)} /> <span className="text-lg font-semibold">USDC</span></p>
+                  <div className="mt-2.5 flex flex-wrap gap-2 text-xs">
+                    {(['EURC', 'cirBTC', 'WETH'] as const).map((a) => (
+                      <span
+                        key={a}
+                        className="mono inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold"
+                        style={{ background: 'var(--fill-2)', color: 'var(--text)' }}
+                      >
+                        <CoinLogo symbol={a} size={13} />
+                        {formatUsdcAmount(stats.heldByAsset[a], undefined, a)} {a}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs" style={{ color: 'var(--subtle)' }}>Active orders plus sell-ad inventory across all 4 markets (latest 200 records/market). Primary listing fee: {formatUsdcAmount(feeConfig.listingFee)} USDC/ad.</p>
                 </section>
                 <section className="glass rounded-3xl p-5">
                   <h2 className="flex items-center gap-2 text-sm font-semibold"><Activity className="size-4" /> Roles</h2>
@@ -252,22 +284,46 @@ export default function AdminPage() {
           {tab === 'disputes' && (
             <div className="space-y-5">
               <div className="glass rounded-3xl p-4 sm:p-5">
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em]" style={{ color: 'var(--subtle)' }}>
                     Offchain dispute / Paid order lookup (Take case or rule directly)
                   </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {P2P_ASSETS.map((a) => {
+                      const active = caseAsset === a
+                      return (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => setCaseAsset(a)}
+                          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
+                          style={{
+                            background: active ? 'var(--accent-bg)' : 'var(--fill-2)',
+                            color: active ? 'var(--on-accent)' : 'var(--muted)',
+                          }}
+                        >
+                          <CoinLogo symbol={a} size={12} />
+                          {a}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <label className="block">
                   <span className="relative block">
                     <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2" style={{ color: 'var(--subtle)' }} />
                     <input
                       value={caseQuery}
                       onChange={(e) => setCaseQuery(e.target.value)}
-                      placeholder="Enter Order ID (e.g. 12) to take case or rule from Paid / Disputed"
+                      placeholder={`Enter ${caseAsset} Order ID (e.g. 12) or full scoped ID`}
                       className={`${inputClass} mono pl-10 text-sm`}
                     />
                   </span>
                 </label>
                 {parsedCaseId !== undefined && !lookedOrder && (
-                  <p className="mt-2 text-xs" style={{ color: 'var(--subtle)' }}>Order #{parsedCaseId.toString()} not found.</p>
+                  <p className="mt-2 text-xs" style={{ color: 'var(--subtle)' }}>
+                    Order {formatScopedOrderLabel(parsedCaseId)} not found.
+                  </p>
                 )}
               </div>
 

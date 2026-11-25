@@ -1,12 +1,15 @@
 import { requireSession } from './auth'
 import {
+  ARBITER_PAID_DELAY_SECONDS,
   checkAdminAccess,
   checkOrderAccess,
+  isArbiterOrderReadAllowed,
   isBackupArbiterEligible,
   ORDER_STATUS,
   type ChainOrder,
   type ChainReader,
   type ChainRoles,
+  type OrderPartyRole,
 } from './chain'
 import { openText, sealText } from './crypto'
 import { checkRateLimit, writeAudit, type Queryable } from './db'
@@ -114,6 +117,17 @@ async function handleFileDispute(
   // H1: Offchain dispute filing allowed when order is PAID or DISPUTED (enables 0-USDC buyer filing)
   if (order.status !== ORDER_STATUS.PAID && order.status !== ORDER_STATUS.DISPUTED) {
     return json(400, { error: 'dispute_not_eligible' })
+  }
+
+  // M-04: Match contract rule — buyer must wait 15 minutes after `paidAt` before escalating a PAID order
+  const nowSec = Math.floor(Date.now() / 1000)
+  if (
+    order.status === ORDER_STATUS.PAID &&
+    wallet === order.buyer &&
+    order.paidAt > 0n &&
+    nowSec < Number(order.paidAt) + ARBITER_PAID_DELAY_SECONDS
+  ) {
+    return json(400, { error: 'too_early_to_dispute' })
   }
 
   const allowed = await checkRateLimit(db, `rl:dispute:${wallet}`, DISPUTE_RATE_LIMIT, DISPUTE_RATE_WINDOW)
@@ -246,6 +260,9 @@ async function handleGetDisputeFilings(
 
   const isArbiter = role === 'arbiter' || role === 'backup_arbiter'
   if (isArbiter) {
+    if (!isArbiterOrderReadAllowed(order, role as OrderPartyRole, rows.rows.length > 0)) {
+      return json(403, { error: 'forbidden' })
+    }
     await writeAudit(db, wallet, 'dispute.arbiter_read', `order:${orderIdStr}`)
   }
   const reviewTaken = order.reviewStartedAt > 0n
@@ -299,16 +316,23 @@ async function handleAdminDisputes(
   const limit = Math.min(Math.max(1, isNaN(limitRaw) ? 20 : limitRaw), 100)
   const afterId = url.searchParams.get('after') ?? null
 
-  // Reconcile any open/taken filings against live onchain order state so status tabs stay accurate
+  // Reconcile open/taken filings against live onchain order state in bounded parallel batches (M-05)
   const activeRows = await db.query<{ order_id: string; status: string }>(
     `SELECT DISTINCT order_id, status FROM public.dispute_filings WHERE status IN ('open', 'taken') LIMIT 100`,
   )
   const orderCache = new Map<string, ChainOrder | null>()
+  const uniqueOrderIds = Array.from(new Set(activeRows.rows.map((r) => r.order_id.toString())))
+  for (let i = 0; i < uniqueOrderIds.length; i += 10) {
+    const chunk = uniqueOrderIds.slice(i, i + 10)
+    const fetched = await Promise.all(
+      chunk.map(async (oid) => [oid, await chain.getOrder(BigInt(oid)).catch(() => null)] as const),
+    )
+    for (const [oid, ord] of fetched) {
+      orderCache.set(oid, ord)
+    }
+  }
   for (const r of activeRows.rows) {
     const oid = r.order_id.toString()
-    if (!orderCache.has(oid)) {
-      orderCache.set(oid, await chain.getOrder(BigInt(oid)).catch(() => null))
-    }
     const nextStatus = deriveFilingStatus(r.status, orderCache.get(oid) ?? null)
     if (nextStatus !== r.status) {
       await db
@@ -329,8 +353,8 @@ async function handleAdminDisputes(
         `SELECT id, order_id, filed_by, reason_code, text_enc, evidence_blob_ids, status, filed_at, closed_at
            FROM public.dispute_filings
           WHERE status IN ('resolved', 'settled', 'closed')
-            ${afterId && /^\d+$/.test(afterId) ? 'AND id > $2' : ''}
-          ORDER BY filed_at DESC
+            ${afterId && /^\d+$/.test(afterId) ? 'AND id < $2' : ''}
+          ORDER BY id DESC
           LIMIT $1`,
         afterId && /^\d+$/.test(afterId) ? [limit, afterId] : [limit],
       )
@@ -339,7 +363,7 @@ async function handleAdminDisputes(
            FROM public.dispute_filings
           WHERE status = $1
             ${afterId && /^\d+$/.test(afterId) ? 'AND id > $3' : ''}
-          ORDER BY filed_at ASC
+          ORDER BY id ASC
           LIMIT $2`,
         afterId && /^\d+$/.test(afterId) ? [statusFilter, limit, afterId] : [statusFilter, limit],
       )

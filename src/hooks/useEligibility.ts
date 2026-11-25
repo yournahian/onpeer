@@ -15,7 +15,7 @@ export function useEligibility(assetOverride?: P2pAsset): {
   const account = useMyAccount(asset)
   const paused = usePaused(asset)
   const { kycRequired } = usePrivacySwitches(asset)
-  const kyc = useVerification(address)
+  const kyc = useVerification(address, asset)
   const now = useNow()
 
   let blocked: string | null = null

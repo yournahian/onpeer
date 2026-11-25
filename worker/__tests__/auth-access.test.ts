@@ -23,7 +23,7 @@ import {
   type ChainRoles,
 } from '../chain'
 import { checkRateLimit, type Queryable } from '../db'
-import type { Env } from '../env'
+import { normalizeIpForRateLimit, type Env } from '../env'
 import { createWorkerApp } from '../index'
 
 const BUYER_ACCOUNT = privateKeyToAccount(
@@ -521,5 +521,60 @@ describe('Step 3: Wallet-Signature Auth, Sessions & Onchain Role Access', () => 
     const llmsRes = await worker.fetch(new Request('https://onpeer.xyz/llms.txt'), env)
     expect(llmsRes.status).toBe(200)
     expect(await llmsRes.text()).toContain('# OnPeer')
+  })
+
+  it('mints revocable DB sessions on /api/admin/login (H-06) and normalizes IPv6 /64 prefixes (M-05)', async () => {
+    expect(normalizeIpForRateLimit('2001:db8:abcd:0012::1')).toBe('2001:0db8:abcd:0012::/64')
+    expect(normalizeIpForRateLimit('2001:0db8:abcd:12:ffff:1111:2222:3333')).toBe('2001:0db8:abcd:0012::/64')
+    expect(normalizeIpForRateLimit('203.0.113.42')).toBe('203.0.113.42')
+
+    const db = new MemoryDb()
+    const env = makeTestEnv({
+      HYPERDRIVE: { connectionString: 'postgres://localhost/test' },
+    })
+    const chain = makeChainMock()
+    const worker = createWorkerApp({
+      runWithDb: async (_env, fn) => fn(db),
+      makeChain: () => chain,
+    })
+
+    const nonceRes = await worker.fetch(
+      new Request(`https://app.onpeer.xyz/api/admin/nonce?address=${OWNER_ACCOUNT.address}`),
+      env,
+    )
+    expect(nonceRes.status).toBe(200)
+    const { nonce, message } = (await nonceRes.json()) as { nonce: string; message: string }
+    expect(message).toContain(OWNER_ACCOUNT.address.toLowerCase())
+
+    const signature = await OWNER_ACCOUNT.signMessage({ message })
+    const loginRes = await worker.fetch(
+      new Request('https://app.onpeer.xyz/api/admin/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ address: OWNER_ACCOUNT.address, signature, nonce }),
+      }),
+      env,
+    )
+    expect(loginRes.status).toBe(200)
+    const { token } = (await loginRes.json()) as { token: string }
+    expect(token).toMatch(/^[0-9a-f]{64}$/)
+
+    // Revoking via /api/auth/logout invalidates the admin token immediately
+    const logoutRes = await worker.fetch(
+      new Request('https://app.onpeer.xyz/api/auth/logout', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    )
+    expect(logoutRes.status).toBe(200)
+
+    const afterRevoke = await worker.fetch(
+      new Request('https://app.onpeer.xyz/api/auth/me', {
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      env,
+    )
+    expect(afterRevoke.status).toBe(401)
   })
 })

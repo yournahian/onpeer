@@ -173,7 +173,8 @@ function formatFeedbackRow(row: RawFeedbackRow, viewerWallet?: string | null): F
   const hideAuthor = row.anonymous && !isAuthor
   return {
     id: String(row.id),
-    orderId: String(row.order_id),
+    // L-01b: Never expose `orderId` publicly when `hideAuthor` is true so anonymous profile reviews cannot be de-anonymized via onchain `getOrder(orderId)`
+    orderId: hideAuthor ? '' : String(row.order_id),
     fromWallet: hideAuthor ? maskAnonWallet(row.from_wallet) : row.from_wallet,
     fromDisplayName: hideAuthor ? 'Anonymous Trader' : row.from_display_name,
     toWallet: row.to_wallet,
@@ -341,7 +342,7 @@ export async function handleSocialRoutes(
 
     if (req.method === 'GET') {
       const session = await getSession(req, db).catch(() => null)
-      const viewer = session?.wallet ?? null
+      const viewer = session?.wallet?.toLowerCase() ?? null
       const rows = await db.query<RawFeedbackRow>(
         `SELECT f.id, f.order_id, f.from_wallet, a.display_name AS from_display_name,
                 f.to_wallet, f.rating, f.positive, f.comment, f.anonymous, f.created_at
@@ -351,9 +352,13 @@ export async function handleSocialRoutes(
           ORDER BY f.created_at ASC`,
         [orderIdStr],
       )
+      // L-01b: Hide anonymous per-order feedback from non-party probes so outsiders cannot correlate anonymous profile reviews
+      const visible = rows.rows.filter(
+        (r) => !r.anonymous || (viewer !== null && (r.from_wallet === viewer || r.to_wallet === viewer)),
+      )
       return json(200, {
         orderId: orderIdStr,
-        items: rows.rows.map((r) => formatFeedbackRow(r, viewer)),
+        items: visible.map((r) => formatFeedbackRow(r, viewer)),
       })
     }
 

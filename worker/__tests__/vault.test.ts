@@ -131,6 +131,7 @@ class VaultMemoryDb implements Queryable {
   blobs: VaultBlobStore[] = []
   audits: Array<{ actor: string; action: string; subject: string | null }> = []
   accounts = new Map<string, { kyc_status: string; kyc_name_enc: string | null }>()
+  deletedAccounts = new Set<string>()
   blobIdCounter = 1
 
   async seedSession(rawToken: string, wallet: string) {
@@ -177,7 +178,7 @@ class VaultMemoryDb implements Queryable {
     }
 
     // Insert vault blob — for /vault/details (kind, author, ciphertext, wrapped_key, content_hash, size, delete_after)
-    if (n.startsWith('INSERT INTO public.vault_blobs') && n.includes('RETURNING id') && !n.startsWith("INSERT INTO public.vault_blobs ( kind, order_id,")) {
+    if (n.startsWith('INSERT INTO public.vault_blobs') && n.includes('RETURNING id') && !n.startsWith('INSERT INTO public.vault_blobs ( kind, order_id,')) {
       const id = `a1b2c3d4-e5f6-7890-abcd-${String(this.blobIdCounter++).padStart(12, '0')}`
       this.blobs.push({
         id,
@@ -190,6 +191,60 @@ class VaultMemoryDb implements Queryable {
         delete_after: null,
         ad_id: null,
         order_id: null,
+        created_at: new Date(),
+      })
+      return { rows: [{ id } as unknown as R], rowCount: 1 }
+    }
+
+    // Idempotent payer proof lookup (H-04)
+    if (n.startsWith("SELECT id FROM public.vault_blobs WHERE order_id = $1 AND kind = 'payer' AND author = $2 AND content_hash = $3")) {
+      const [orderId, author, contentHash] = values as [string, string, string]
+      const found = this.blobs.find(
+        (b) =>
+          b.order_id === orderId &&
+          b.kind === 'payer' &&
+          b.author === author &&
+          b.content_hash.toLowerCase() === contentHash.toLowerCase(),
+      )
+      return found ? { rows: [{ id: found.id } as unknown as R], rowCount: 1 } : { rows: [], rowCount: 0 }
+    }
+
+    // Payer blob count & draft pruning (H-04)
+    if (n.startsWith("SELECT count(*)::int AS cnt FROM public.vault_blobs WHERE order_id = $1 AND kind = 'payer'")) {
+      const [orderId, author] = values as [string, string]
+      const cnt = this.blobs.filter((b) => b.order_id === orderId && b.kind === 'payer' && b.author === author).length
+      return { rows: [{ cnt } as unknown as R], rowCount: 1 }
+    }
+
+    if (n.startsWith('DELETE FROM public.vault_blobs WHERE id IN')) {
+      const [orderId, author, limit] = values as [string, string, number]
+      const matching = this.blobs.filter((b) => b.order_id === orderId && b.kind === 'payer' && b.author === author)
+      const toDrop = new Set(matching.slice(0, Number(limit)).map((b) => b.id))
+      const before = this.blobs.length
+      this.blobs = this.blobs.filter((b) => !toDrop.has(b.id))
+      return { rows: [], rowCount: before - this.blobs.length }
+    }
+
+    // Evidence blob count & insert (H-03)
+    if (n.startsWith("SELECT count(*)::int AS cnt FROM public.vault_blobs WHERE order_id = $1 AND kind = 'evidence'")) {
+      const orderId = String(values[0])
+      const cnt = this.blobs.filter((b) => b.order_id === orderId && b.kind === 'evidence').length
+      return { rows: [{ cnt } as unknown as R], rowCount: 1 }
+    }
+
+    if (n.startsWith('INSERT INTO public.vault_blobs') && n.includes("'evidence'") && n.includes('RETURNING id')) {
+      const id = `a1b2c3d4-e5f6-7890-abcd-${String(this.blobIdCounter++).padStart(12, '0')}`
+      this.blobs.push({
+        id,
+        kind: 'evidence',
+        order_id: String(values[0]),
+        author: String(values[1]),
+        ciphertext: values[3] as Buffer,
+        wrapped_key: values[4] as Buffer,
+        content_hash: String(values[5]),
+        size: Number(values[6]),
+        delete_after: null,
+        ad_id: null,
         created_at: new Date(),
       })
       return { rows: [{ id } as unknown as R], rowCount: 1 }
@@ -216,25 +271,71 @@ class VaultMemoryDb implements Queryable {
 
     // Update vault blob — bind-ad (kind='ad_details')
     if (n.startsWith('UPDATE public.vault_blobs') && n.includes("kind = 'ad_details'")) {
-      const blobId = String(values[0])
-      const author = String(values[1])
-      const adId = String(values[2])
-      const contentHash = String(values[4])
+      if (n.includes('id = $1::uuid')) {
+        const blobId = String(values[0])
+        const author = String(values[1])
+        const adId = String(values[2])
+        const contentHash = String(values[4])
+        const idx = this.blobs.findIndex(
+          (b) => b.id === blobId && b.author === author && b.kind === 'ad_details' && b.content_hash === contentHash,
+        )
+        if (idx === -1) return { rows: [], rowCount: 0 }
+        this.blobs[idx]!.ad_id = adId
+        return { rows: [], rowCount: 1 }
+      }
+      const [author, adId, , contentHash] = values as [string, string, number, string]
       const idx = this.blobs.findIndex(
-        (b) => b.id === blobId && b.author === author && b.kind === 'ad_details' && b.content_hash === contentHash,
+        (b) => b.author === author && b.kind === 'ad_details' && b.content_hash === contentHash,
       )
       if (idx === -1) return { rows: [], rowCount: 0 }
       this.blobs[idx]!.ad_id = adId
       return { rows: [], rowCount: 1 }
     }
 
-    // Update vault blob — extend retention (order vault GET uses GREATEST/COALESCE)
+    // Update vault blob — bind-order (kind='order_details') (C-06)
+    if (n.startsWith('UPDATE public.vault_blobs') && n.includes("kind = 'order_details'")) {
+      if (n.includes('id = $1::uuid')) {
+        const [blobId, author, orderId, adId, , contentHash] = values as [string, string, string, string, number, string]
+        const idx = this.blobs.findIndex(
+          (b) =>
+            b.id === blobId &&
+            b.author === author &&
+            b.kind === 'order_details' &&
+            b.content_hash.toLowerCase() === contentHash.toLowerCase(),
+        )
+        if (idx === -1) return { rows: [], rowCount: 0 }
+        this.blobs[idx]!.order_id = orderId
+        this.blobs[idx]!.ad_id = adId
+        return { rows: [], rowCount: 1 }
+      }
+      const [author, orderId, adId, , contentHash] = values as [string, string, string, number, string]
+      const idx = this.blobs.findIndex(
+        (b) => b.author === author && b.kind === 'order_details' && b.content_hash.toLowerCase() === contentHash.toLowerCase(),
+      )
+      if (idx === -1) return { rows: [], rowCount: 0 }
+      this.blobs[idx]!.order_id = orderId
+      this.blobs[idx]!.ad_id = adId
+      return { rows: [], rowCount: 1 }
+    }
+
+    // Check deleted account status before extending retention (H-02)
+    if (n.startsWith('SELECT deleted_at FROM public.accounts')) {
+      const wallet = String(values[0]).toLowerCase()
+      return this.deletedAccounts.has(wallet)
+        ? { rows: [{ deleted_at: new Date().toISOString() } as unknown as R], rowCount: 1 }
+        : { rows: [], rowCount: 0 }
+    }
+
+    // Update vault blob — extend retention without overwriting shared ad_details.order_id (H-02)
     if (n.startsWith('UPDATE public.vault_blobs') && n.includes('GREATEST(COALESCE')) {
       const blobId = String(values[0])
       const idx = this.blobs.findIndex((b) => b.id === blobId)
       if (idx !== -1) {
-        this.blobs[idx]!.order_id = String(values[1])
+        if (this.blobs[idx]!.kind === 'order_details' && !this.blobs[idx]!.order_id) {
+          this.blobs[idx]!.order_id = String(values[1])
+        }
         if (!this.blobs[idx]!.ad_id) this.blobs[idx]!.ad_id = String(values[2])
+        this.blobs[idx]!.delete_after = new Date(Date.now() + 90 * 86400_000)
       }
       return { rows: [], rowCount: 1 }
     }
@@ -244,12 +345,26 @@ class VaultMemoryDb implements Queryable {
       return { rows: [], rowCount: 0 }
     }
 
-    // SELECT vault blob by content_hash + author
+    // SELECT vault blob by content_hash + author (+ optional order_id for payer M-03)
     if (n.startsWith('SELECT id, kind, ad_id, order_id, author, ciphertext, wrapped_key, content_hash, size FROM public.vault_blobs WHERE content_hash')) {
       const contentHash = String(values[0]).toLowerCase()
       const author = String(values[1]).toLowerCase()
+      if (n.includes("AND order_id = $3 AND kind = 'payer'")) {
+        const orderId = String(values[2])
+        const blob = this.blobs.find(
+          (b) =>
+            b.content_hash.toLowerCase() === contentHash &&
+            b.author.toLowerCase() === author &&
+            b.order_id === orderId &&
+            b.kind === 'payer',
+        )
+        return blob ? { rows: [blob as unknown as R], rowCount: 1 } : { rows: [], rowCount: 0 }
+      }
       const blob = this.blobs.find(
-        (b) => b.content_hash.toLowerCase() === contentHash && b.author.toLowerCase() === author,
+        (b) =>
+          b.content_hash.toLowerCase() === contentHash &&
+          b.author.toLowerCase() === author &&
+          (b.kind === 'ad_details' || b.kind === 'order_details'),
       )
       if (!blob) return { rows: [], rowCount: 0 }
       return { rows: [blob as unknown as R], rowCount: 1 }
@@ -571,5 +686,143 @@ describe('vault — POST /api/vault/payer (seal payer proof)', () => {
     )
     expect(res!.status).toBe(400)
     expect(await res!.json()).toMatchObject({ error: 'invalid_vault_payload' })
+  })
+
+  it('enforces H-02, H-03, H-04, C-06, and M-03 vault security invariants', async () => {
+    const db = new VaultMemoryDb()
+    const env = makeEnv()
+    const buyerAuth = await authHeader(BUYER_ACCOUNT.address, db)
+    const sellerAuth = await authHeader(SELLER_ACCOUNT.address, db)
+
+    // 1. C-06: bind-order links order_details to mined orderId
+    const sealOrdRes = await handleVaultRoutes(
+      vaultPost('/vault/details', { kind: 'order_details', holderName: 'Seller BuyAd', accountDetails: '01700000099' }, sellerAuth),
+      env,
+      db,
+      makeChain(),
+      '/vault/details',
+    )
+    const sealedOrd = (await sealOrdRes!.json()) as { id: string; contentHash: `0x${string}` }
+    const bindOrdRes = await handleVaultRoutes(
+      vaultPost('/vault/bind-order', { blobId: sealedOrd.id, orderId: 1 }, sellerAuth),
+      env,
+      db,
+      makeChain({ order: makeOrder({ detailsHash: sealedOrd.contentHash }) }),
+      '/vault/bind-order',
+    )
+    expect(bindOrdRes!.status).toBe(200)
+    expect(db.blobs.find((b) => b.id === sealedOrd.id)?.order_id).toBe('1')
+
+    // 2. H-02: Buyer gets sellerDetails=null before Handshake detailsReady, and 403 after CANCELLED
+    const handshakeRes = await handleVaultRoutes(
+      vaultGet('/orders/1/vault', buyerAuth),
+      env,
+      db,
+      makeChain({ order: makeOrder({ detailsReady: false, detailsHash: sealedOrd.contentHash }) }),
+      '/orders/1/vault',
+    )
+    expect(handshakeRes!.status).toBe(200)
+    expect(((await handshakeRes!.json()) as { sellerDetails: unknown }).sellerDetails).toBeNull()
+
+    const cancelledRes = await handleVaultRoutes(
+      vaultGet('/orders/1/vault', buyerAuth),
+      env,
+      db,
+      makeChain({ order: makeOrder({ status: ORDER_STATUS.CANCELLED, detailsHash: sealedOrd.contentHash }) }),
+      '/orders/1/vault',
+    )
+    expect(cancelledRes!.status).toBe(403)
+
+    // Deleted seller account does NOT get delete_after extended on vault read
+    const sevenDays = new Date(Date.now() + 7 * 86400_000)
+    db.blobs[0]!.delete_after = sevenDays
+    db.deletedAccounts.add(SELLER_ACCOUNT.address.toLowerCase())
+    await handleVaultRoutes(
+      vaultGet('/orders/1/vault', buyerAuth),
+      env,
+      db,
+      makeChain({ order: makeOrder({ detailsReady: true, detailsHash: sealedOrd.contentHash }) }),
+      '/orders/1/vault',
+    )
+    expect(db.blobs[0]!.delete_after).toBe(sevenDays)
+
+    // 3. H-04 & M-03: Payer proof is idempotent on exact retry, prunes >5 PENDING drafts, and rejects cross-order replay
+    const chainTwoOrders: ChainReader = {
+      ...makeChain(),
+      getOrder: async (id: bigint) => {
+        if (id === 1n) return makeOrder({ id: 1n, status: ORDER_STATUS.PENDING })
+        if (id === 2n) return makeOrder({ id: 2n, status: ORDER_STATUS.PAID })
+        return null
+      },
+    }
+    let lastHash = ZERO_BYTES32 as `0x${string}`
+    for (let i = 1; i <= 6; i++) {
+      const r = await handleVaultRoutes(
+        vaultPost('/vault/payer', { orderId: 1, transferId: `TX-${i}`, senderName: 'Buyer Test' }, buyerAuth),
+        env,
+        db,
+        chainTwoOrders,
+        '/vault/payer',
+      )
+      expect(r!.status).toBe(200)
+      lastHash = ((await r!.json()) as { contentHash: `0x${string}` }).contentHash
+    }
+    expect(db.blobs.filter((b) => b.kind === 'payer' && b.order_id === '1')).toHaveLength(5)
+
+    // Cross-order replay of Order #1's payerProof hash onto Order #2 must return buyerPayer: null
+    const crossOrderChain: ChainReader = {
+      ...makeChain(),
+      getOrder: async (id: bigint) =>
+        id === 2n ? makeOrder({ id: 2n, status: ORDER_STATUS.PAID, payerProof: lastHash }) : null,
+    }
+    const crossRead = await handleVaultRoutes(
+      vaultGet('/orders/2/vault', sellerAuth),
+      env,
+      db,
+      crossOrderChain,
+      '/orders/2/vault',
+    )
+    expect(crossRead!.status).toBe(200)
+    expect(((await crossRead!.json()) as { buyerPayer: unknown }).buyerPayer).toBeNull()
+
+    // 4. H-03: Evidence upload rejects CANCELLED orders and caps active orders at 10 blobs
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00])
+    const makeEvReq = () =>
+      new Request('http://localhost/orders/1/evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/png', Authorization: buyerAuth },
+        body: pngBytes,
+      })
+    const evCancelled = await handleVaultRoutes(
+      makeEvReq(),
+      env,
+      db,
+      makeChain({ order: makeOrder({ status: ORDER_STATUS.CANCELLED }) }),
+      '/orders/1/evidence',
+    )
+    expect(evCancelled!.status).toBe(400)
+
+    for (let i = 0; i < 10; i++) {
+      // Clear rate-limit bucket so we specifically hit the per-order 10-blob cap on attempt 11
+      db.rateLimits.clear()
+      const okEv = await handleVaultRoutes(
+        makeEvReq(),
+        env,
+        db,
+        makeChain({ order: makeOrder({ status: ORDER_STATUS.DISPUTED }) }),
+        '/orders/1/evidence',
+      )
+      expect(okEv!.status).toBe(201)
+    }
+    db.rateLimits.clear()
+    const capEv = await handleVaultRoutes(
+      makeEvReq(),
+      env,
+      db,
+      makeChain({ order: makeOrder({ status: ORDER_STATUS.DISPUTED }) }),
+      '/orders/1/evidence',
+    )
+    expect(capEv!.status).toBe(429)
+    expect(await capEv!.json()).toMatchObject({ error: 'evidence_limit_reached' })
   })
 })

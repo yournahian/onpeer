@@ -20,6 +20,7 @@ import {
   MessageSquare,
   ShieldAlert,
   ShieldCheck,
+  X,
 } from 'lucide-react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
@@ -32,12 +33,15 @@ import {
   STATUS_META,
   ZERO_BYTES32,
   countryByCurrency,
+  currentUnixSeconds,
   formatDuration,
   formatFiat,
   formatPrice,
+  formatScopedOrderLabel,
   formatUsdcAmount,
   getEscrowConfig,
   hexToCurrency,
+  isActiveStatus,
   maskToMethods,
   sameAddr,
   shortAddr,
@@ -45,19 +49,25 @@ import {
 import {
   useArbiter,
   useBackupArbiter,
+  useMyAccount,
   useNow,
   useOrder,
-  useOrderMessages,
   usePrivacySwitches,
   type OrderWithId,
 } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
+import { useChat } from '@/hooks/useChat'
 import { OrderChat } from '@/components/OrderChat'
 import { DisputeFileSheet } from '@/components/DisputeFileSheet'
 import { OrderFeedbackCard } from '@/components/OrderFeedbackCard'
 import { MethodLogo } from '@/components/logos'
 import { BackendApiError } from '@/lib/api'
-import { useP2pAccount, useSavedPaymentMethods } from '@/hooks/useAccount'
+import {
+  loadOrderChosenMethod,
+  parseAccountDetailsEntries,
+  useP2pAccount,
+  useSavedPaymentMethods,
+} from '@/hooks/useAccount'
 import { traderLabel, useTraderProfiles } from '@/hooks/useSocial'
 import { useOrderVault, useVaultActions, type NameMatchBadgeData } from '@/hooks/useVault'
 
@@ -136,7 +146,7 @@ function OrderExecutionScreen({ orderId, onClose }: { orderId: bigint; onClose: 
   if (!order) {
     return (
       <div className="p2p-card rounded-xl p-8 text-center">
-        <p className="text-base font-bold text-[var(--p2p-ink)]">Order #{orderId.toString()} not found</p>
+        <p className="text-base font-bold text-[var(--p2p-ink)]">Order {formatScopedOrderLabel(orderId)} not found</p>
         <p className="mt-1 text-xs text-[var(--p2p-muted)]">
           This order ID does not exist on the active escrow contract.
         </p>
@@ -161,17 +171,18 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const arbiter = useArbiter()
   const backupArbiter = useBackupArbiter()
   const { payerProofRequired } = usePrivacySwitches(asset)
+  const myChainAccount = useMyAccount(asset)
   const { isSignedIn, signIn, signingIn } = useP2pAccount()
   const { methods: savedMethods } = useSavedPaymentMethods()
   const { sealPayerProof } = useVaultActions()
-  const { data: messages } = useOrderMessages(order.id)
+  const { messages: chatMessages } = useChat(isSignedIn ? order.id : null, isActiveStatus(order.status))
   const now = useNow()
   const { run, writeContractAsync, pendingKey, busy: txBusy } = useTx(asset)
 
   const [senderName, setSenderName] = useState('')
   const [last4, setLast4] = useState('')
   const [transferId, setTransferId] = useState('')
-  const [chosenMethodBit, setChosenMethodBit] = useState<number | null>(null)
+  const [chosenMethodBit, setChosenMethodBit] = useState<number | null>(() => loadOrderChosenMethod(order.id))
   const [sealingPayer, setSealingPayer] = useState(false)
   const [releaseModalMode, setReleaseModalMode] = useState<'paid' | 'early' | 'settle' | null>(null)
   const [releaseConfirmed, setReleaseConfirmed] = useState(false)
@@ -183,7 +194,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
   const busy = txBusy || sealingPayer
 
-  const totalMessages = messages?.length ?? 0
+  const totalMessages = chatMessages.length
   const unreadCount = Math.max(0, totalMessages - seenMessages)
 
   const currency = hexToCurrency(order.currency)
@@ -220,23 +231,40 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           ? 'Backup Arbiter'
           : 'Observer'
 
-  const deadline = Number(order.deadline)
-  const remaining = deadline - now
-  const pastDeadline = remaining <= 0
-  const hardExpired = now > deadline + GRACE_SECONDS
   const status = order.status
+  // M-07: Handshake mode (`detailsReady == false` in PENDING) uses `revealDeadline` before payment timer begins
+  const awaitingHandshake = status === STATUS.PENDING && !order.detailsReady
+  const revealRemaining = Number(order.revealDeadline) - now
+  const revealExpired = awaitingHandshake && revealRemaining <= 0
+  const deadline = Number(order.deadline)
+  const remaining = awaitingHandshake ? revealRemaining : deadline - now
+  const pastDeadline = !awaitingHandshake && remaining <= 0
+  const hardExpired = awaitingHandshake ? revealExpired : now > deadline + GRACE_SECONDS
+  const lateMarkBlocked = pastDeadline && !hardExpired && (myChainAccount?.lateMarks ?? 0) >= 2
   const inReview = order.reviewStartedAt > 0n
   const coolingOffLeft = Number(order.disputedAt) + COOLING_OFF_SECONDS - now
   const inCoolingOff = !inReview && coolingOffLeft >= 0
 
   const methods = maskToMethods(order.paymentMask)
   const effectiveMethod =
-    methods.length === 1
-      ? methods[0]!
-      : chosenMethodBit !== null
-        ? (methods.find((m) => m.bit === chosenMethodBit) ?? null)
-        : null
+    methods.length === 0
+      ? null
+      : (chosenMethodBit !== null ? methods.find((m) => m.bit === chosenMethodBit) : null) ?? methods[0]!
   const methodSelected = methods.length === 0 || effectiveMethod !== null
+
+  const parsedSellerEntries = sellerVault
+    ? parseAccountDetailsEntries(sellerVault.accountDetails, sellerVault.holderName)
+    : []
+  const displayMethodName = buyerVault?.paymentMethod || effectiveMethod?.name || ''
+  const selectedSellerEntry =
+    parsedSellerEntries.length === 0
+      ? null
+      : (displayMethodName
+          ? parsedSellerEntries.find(
+              (e) => e.methodName.toLowerCase() === displayMethodName.toLowerCase(),
+            )
+          : null) ??
+        (parsedSellerEntries.length === 1 ? parsedSellerEntries[0]! : parsedSellerEntries[0]!)
 
   const senderNameReady = senderName.trim().length >= 2
   const senderFieldsReady = senderNameReady && /^\d{4}$/.test(last4)
@@ -286,8 +314,33 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
     }
   }
 
+  const callShareDetails = () =>
+    run('shareDetails', 'Share payment details', () =>
+      writeContractAsync({
+        address: escrowAddress,
+        abi: p2pEscrowAbi,
+        functionName: 'shareDetails',
+        args: [order.rawId, order.detailsHash],
+        chainId: CHAIN_ID,
+      }),
+    )
+
   const callMarkPaid = async () => {
-    let proofArg: `0x${string}` = payerHash
+    const clickSec = currentUnixSeconds()
+    const clickPastDeadline = order.detailsReady && order.deadline > 0n && clickSec > Number(order.deadline)
+    if (clickPastDeadline && transferId.trim().length < 2) {
+      toast.error('Payment timer just elapsed — enter your Transfer ID to mark paid in the late recovery window.')
+      return
+    }
+    const onchainFallbackHash: `0x${string}` =
+      payerHash !== ZERO_BYTES32
+        ? payerHash
+        : keccak256(
+            toBytes(
+              `${order.id.toString()}|m:${effectiveMethod?.name ?? ''}|tx:${transferId.trim()}|${senderName.trim().toLowerCase()}|${last4}`,
+            ),
+          )
+    let proofArg: `0x${string}` = payerReady || clickPastDeadline || payerProofRequired ? onchainFallbackHash : ZERO_BYTES32
     if (payerReady && (payerProofRequired || isSignedIn)) {
       setSealingPayer(true)
       try {
@@ -299,17 +352,13 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           paymentMethod: effectiveMethod?.name,
         })
         proofArg = res.contentHash
-      } catch (err) {
+      } catch {
+        // C-01 & H-04: Never trap a buyer who already transferred fiat if `/api` is offline, rate-limited, or unsigned
+        toast.warning('Vault unavailable — submitting cryptographic proof hash directly onchain.')
+        proofArg = onchainFallbackHash
+      } finally {
         setSealingPayer(false)
-        if (payerProofRequired) {
-          toast.error(
-            err instanceof BackendApiError ? err.message : 'Sign in with your wallet to seal your payer proof.',
-          )
-          return
-        }
-        // Emergency fallback when payerProofRequired is off so a late-marking buyer is never trapped
       }
-      setSealingPayer(false)
     }
 
     await run('markPaid', 'Notify seller of payment', () =>
@@ -338,12 +387,19 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
   const disputeWaitLeft = Number(order.paidAt) + DISPUTE_WAIT - now
   const fiatPlain = formatFiat(order.fiatAmountE6)
 
+  const isCancelledOrder = status === STATUS.CANCELLED
+  const isReturnedSeller = status === STATUS.RESOLVED_SELLER
+  const isCompletedRelease =
+    status === STATUS.COMPLETED || status === STATUS.RESOLVED_BUYER || status === STATUS.SETTLED
+
   const stepIndex =
     status === STATUS.PENDING
       ? 2
       : status === STATUS.PAID || status === STATUS.DISPUTED
         ? 3
-        : 4
+        : isCompletedRelease
+          ? 4
+          : 1
 
   const escrowStatusLabel =
     status === STATUS.COMPLETED || status === STATUS.RESOLVED_BUYER
@@ -356,9 +412,13 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
   const mobileTitle =
     status === STATUS.PENDING
-      ? isBuyer
-        ? 'Pay the Seller'
-        : 'Awaiting Buyer'
+      ? awaitingHandshake
+        ? isSeller
+          ? 'Share Payment Details'
+          : 'Awaiting Seller Handshake'
+        : isBuyer
+          ? 'Pay the Seller'
+          : 'Awaiting Buyer'
       : status === STATUS.PAID
         ? isSeller
           ? 'Verify & Release'
@@ -376,82 +436,35 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
     setMobileChatOpen(true)
   }
 
-  // Gate order actions and chat behind a gasless wallet sign-in so users decrypt
-  // payment details and unlock free encrypted chat before interacting.
-  if (canReadVault && !isSignedIn) {
-    return (
-      <div className="mx-auto max-w-2xl space-y-4">
-        <div className="p2p-card flex flex-wrap items-center justify-between gap-3 rounded-xl px-5 py-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-1.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[var(--p2p-border-active)] hover:text-[#FF5A00]"
-            >
-              <ArrowLeft className="size-3.5" /> Market
-            </button>
-            <span className="p2p-mono text-sm font-bold text-[var(--p2p-ink)]">Order #{order.rawId.toString()} ({asset})</span>
-            <span className="rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
-              {STATUS_META[status]?.label ?? 'Unknown'}
-            </span>
-          </div>
-          <span className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2.5 py-1 text-xs text-[var(--p2p-muted)]">
-            Role: <strong className="text-[var(--p2p-ink)]">{role}</strong>
-          </span>
-        </div>
-
-        <section className="p2p-card rounded-xl p-5 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">{asset} Escrow</span>
-              <span className="p2p-mono mt-1 block text-base font-bold text-[var(--p2p-ink)]">
-                {formatUsdcAmount(order.amount, undefined, asset)} {asset}
-              </span>
-            </div>
-            <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">Fiat Amount</span>
-              <span className="p2p-mono mt-1 block text-base font-bold text-[#FF5A00]">
-                {country?.symbol ?? ''} {fiatPlain} {currency}
-              </span>
-            </div>
-            <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3">
-              <span className="block text-[10px] uppercase tracking-wider text-[var(--p2p-muted)]">Unit Rate</span>
-              <span className="p2p-mono mt-1 block text-base font-bold text-[var(--p2p-ink)]">
-                {formatPrice(order.priceE6)} {currency}
-              </span>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-5 text-center space-y-3">
-            <div className="mx-auto flex size-11 items-center justify-center rounded-xl bg-[#FF5A00]/15 text-[#FF5A00]">
-              <Lock className="size-5" />
-            </div>
-            <h2 className="text-base font-bold text-[var(--p2p-ink)]">Decrypt Order to Continue</h2>
-            <p className="mx-auto max-w-md text-xs leading-relaxed text-[var(--p2p-muted)]">
-              Sign a free, gasless message with your wallet to decrypt sealed payment details, unlock gasless
-              encrypted order chat, and access order actions.
-            </p>
-            <button
-              type="button"
-              disabled={signingIn}
-              onClick={() =>
-                void signIn().catch((err) =>
-                  toast.error(err instanceof BackendApiError ? err.message : 'Wallet signature was cancelled.'),
-                )
-              }
-              className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-50"
-            >
-              {signingIn ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-              {signingIn ? 'Decrypting...' : 'Sign In & Decrypt Order'}
-            </button>
-          </div>
-        </section>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-4 pb-24 md:space-y-5 md:pb-0">
+      {/* C-01: Non-blocking inline vault/chat unlock banner — onchain settlement actions remain live below even if /api is unreachable */}
+      {canReadVault && !isSignedIn && (
+        <div className="p2p-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-4 py-3">
+          <div className="flex items-start gap-2.5 text-xs">
+            <Lock className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
+            <div>
+              <p className="font-bold text-[var(--p2p-ink)]">Sign in to decrypt vault details &amp; order chat</p>
+              <p className="text-[var(--p2p-muted)]">
+                Free gasless signature unlocks encrypted payment details and chat. All onchain escrow settlement buttons remain available below at all times.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={signingIn}
+            onClick={() =>
+              void signIn().catch((err) =>
+                toast.error(err instanceof BackendApiError ? err.message : 'Wallet signature was cancelled.'),
+              )
+            }
+            className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3.5 text-xs font-bold text-[#FFFFFF] hover:opacity-90 disabled:opacity-50"
+          >
+            {signingIn ? <Loader2 className="size-3.5 animate-spin" /> : <KeyRound className="size-3.5" />}
+            {signingIn ? 'Signing...' : 'Sign In & Decrypt'}
+          </button>
+        </div>
+      )}
       {/* =====================================================================
           MOBILE TOP PINNED TIMER & FLOATING CHAT BUTTON (< 768px)
          ===================================================================== */}
@@ -474,16 +487,16 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {status === STATUS.PENDING && !pastDeadline && (
+          {status === STATUS.PENDING && !pastDeadline && !revealExpired && (
             <span className="p2p-mono inline-flex items-center gap-1 rounded-full bg-[#FF5A00] px-2.5 py-1 text-xs font-bold text-[#FFFFFF]">
               <Clock className="size-3" />
               {formatDuration(remaining)}
             </span>
           )}
-          {status === STATUS.PENDING && pastDeadline && (
+          {status === STATUS.PENDING && (pastDeadline || revealExpired) && (
             <span className="p2p-mono inline-flex items-center gap-1 rounded-full border border-red-500/60 bg-red-500/15 px-2.5 py-1 text-xs font-bold text-red-500">
               <AlertTriangle className="size-3" />
-              Time expired
+              {revealExpired ? 'Handshake expired' : 'Time expired'}
             </span>
           )}
 
@@ -494,9 +507,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           >
             <MessageSquare className="size-3.5" />
             <span>Chat</span>
-            {(unreadCount > 0 || totalMessages > 0) && (
+            {unreadCount > 0 && (
               <span className="p2p-mono rounded-full bg-[#FF5A00] px-1.5 py-0.5 text-[10px] font-bold leading-none text-[#FFFFFF]">
-                {unreadCount > 0 ? unreadCount : totalMessages}
+                {unreadCount}
               </span>
             )}
           </button>
@@ -561,26 +574,50 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <ol className="grid gap-3 sm:grid-cols-3">
               {[
                 { n: 1, title: 'Order Created', sub: `${asset} Locked in Escrow` },
-                { n: 2, title: 'Transfer Fiat', sub: 'Verify Payer & Notify' },
-                { n: 3, title: `Release ${asset}`, sub: 'Seller Confirms Receipt' },
+                {
+                  n: 2,
+                  title: 'Transfer Fiat',
+                  sub: isCancelledOrder ? 'Order Cancelled' : 'Verify Payer & Notify',
+                },
+                {
+                  n: 3,
+                  title: `Release ${asset}`,
+                  sub: isCancelledOrder
+                    ? 'Returned to Seller'
+                    : isReturnedSeller
+                      ? 'Returned to Seller'
+                      : 'Seller Confirms Receipt',
+                },
               ].map((s) => {
-                const done = stepIndex > s.n || status === STATUS.COMPLETED || status === STATUS.RESOLVED_BUYER
-                const active = stepIndex === s.n && status !== STATUS.CANCELLED && status !== STATUS.RESOLVED_SELLER
+                const cancelledStep =
+                  (isCancelledOrder && s.n > 1) || (isReturnedSeller && s.n === 3)
+                const done =
+                  !cancelledStep &&
+                  (s.n === 1 ||
+                    (s.n === 2 && (status === STATUS.PAID || status === STATUS.DISPUTED || isCompletedRelease || (isReturnedSeller && order.paidAt > 0n))) ||
+                    (s.n === 3 && isCompletedRelease))
+                const active = !cancelledStep && !done && stepIndex === s.n
                 return (
                   <li key={s.n} className="flex items-center gap-2.5">
                     <span
                       className={`p2p-mono flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                        done || active
-                          ? 'bg-[#FF5A00] text-[#FFFFFF]'
-                          : 'border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
+                        cancelledStep
+                          ? 'border border-red-500/40 bg-red-500/10 text-red-400'
+                          : done || active
+                            ? 'bg-[#FF5A00] text-[#FFFFFF]'
+                            : 'border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
                       }`}
                     >
-                      {done ? <Check className="size-3.5" /> : s.n}
+                      {cancelledStep ? <X className="size-3.5" /> : done ? <Check className="size-3.5" /> : s.n}
                     </span>
                     <div className="min-w-0">
                       <p
                         className={`truncate text-xs font-bold ${
-                          done || active ? 'text-[var(--p2p-ink)]' : 'text-[var(--p2p-muted)]'
+                          cancelledStep
+                            ? 'text-[var(--p2p-muted)] line-through'
+                            : done || active
+                              ? 'text-[var(--p2p-ink)]'
+                              : 'text-[var(--p2p-muted)]'
                         }`}
                       >
                         {s.title}
@@ -593,15 +630,19 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             </ol>
           </div>
 
-          {/* 2. Dynamic Countdown / Red Expired State (No grace countdown shown) */}
-          {status === STATUS.PENDING && pastDeadline && (
+          {/* 2. Dynamic Countdown / Handshake / Red Expired State (No grace countdown shown) */}
+          {status === STATUS.PENDING && (pastDeadline || revealExpired) && (
             <div className="p2p-card rounded-xl !border-red-500/70 !bg-red-500/10 p-3.5 md:hidden">
               <p className="flex items-start gap-2 text-xs font-bold text-red-500">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>
-                  {hardExpired
-                    ? 'Time expired. Order cancellation is now unlocked.'
-                    : 'Time expired. Already paid? Mark it as paid now and add your transfer ID.'}
+                  {revealExpired
+                    ? 'Seller handshake window expired. Either party may cancel this order Penalty-free.'
+                    : hardExpired
+                      ? 'Time expired. Order cancellation is now unlocked.'
+                      : lateMarkBlocked
+                        ? 'Time expired. Late payment marking is disabled (2 late marks per 30 days reached).'
+                        : 'Time expired. Already paid? Mark it as paid now and add your transfer ID.'}
                 </span>
               </p>
             </div>
@@ -610,31 +651,43 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           {status === STATUS.PENDING && (
             <div
               className={`p2p-card hidden rounded-xl p-4 md:block ${
-                pastDeadline ? '!border-red-500/70 !bg-red-500/10' : '!border-[var(--p2p-border-active)]'
+                pastDeadline || revealExpired ? '!border-red-500/70 !bg-red-500/10' : '!border-[var(--p2p-border-active)]'
               }`}
             >
-              {pastDeadline ? (
+              {pastDeadline || revealExpired ? (
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-sm font-bold text-red-500">
                     <AlertTriangle className="size-4 shrink-0" />
                     <span>
-                      {hardExpired
-                        ? 'Time expired. Order cancellation is now unlocked.'
-                        : 'Time expired. Already paid? Mark it as paid now and add your transfer ID.'}
+                      {revealExpired
+                        ? 'Seller handshake window expired. Either party may cancel this order penalty-free.'
+                        : hardExpired
+                          ? 'Time expired. Order cancellation is now unlocked.'
+                          : lateMarkBlocked
+                            ? 'Time expired. Late payment marking is disabled (2 late marks per 30 days reached).'
+                            : 'Time expired. Already paid? Mark it as paid now and add your transfer ID.'}
                     </span>
                   </div>
                   <span className="p2p-mono rounded-lg border border-red-500/50 bg-red-500/15 px-3 py-1 text-sm font-bold text-red-500">
-                    Time expired
+                    {revealExpired ? 'Handshake expired' : 'Time expired'}
                   </span>
                 </div>
               ) : (
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-bold text-[var(--p2p-ink)]">
-                      {isBuyer ? 'Complete fiat payment within' : 'Awaiting buyer fiat transfer'}
+                      {awaitingHandshake
+                        ? isSeller
+                          ? 'Approve & share payment details within'
+                          : 'Waiting for seller handshake approval'
+                        : isBuyer
+                          ? 'Complete fiat payment within'
+                          : 'Awaiting buyer fiat transfer'}
                     </p>
                     <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
-                      Escrow holds {formatUsdcAmount(order.amount, undefined, asset)} {asset} safely until release.
+                      {awaitingHandshake
+                        ? 'Payment countdown starts only after the seller approves revealing their receiving details.'
+                        : `Escrow holds ${formatUsdcAmount(order.amount, undefined, asset)} ${asset} safely until release.`}
                     </p>
                   </div>
                   <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3.5 py-2 text-right">
@@ -713,9 +766,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   </span>
                   {sellerVault && <NameMatchBadge match={sellerVault.kycNameMatch} />}
                 </div>
-                {(sellerVault?.accountDetails || order.paymentDetails) && (
+                {(selectedSellerEntry?.accountNumber || sellerVault?.accountDetails || order.paymentDetails) && (
                   <TapCopyButton
-                    text={sellerVault?.accountDetails ?? order.paymentDetails}
+                    text={selectedSellerEntry?.accountNumber || sellerVault?.accountDetails || order.paymentDetails}
                     label="Copy Account"
                     toastText="Payment account copied! Switch to your payment app."
                   />
@@ -773,7 +826,90 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               </div>
 
               <div className="mt-3 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
-                {sellerVault ? (
+                {sellerVault && selectedSellerEntry ? (
+                  <div className="space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--p2p-border)] pb-2">
+                      <div>
+                        <span className="block text-[11px] text-[var(--p2p-muted)]">Account Name</span>
+                        <strong className="mt-0.5 block text-sm font-bold text-[var(--p2p-ink)]">
+                          {selectedSellerEntry.holderName || sellerVault.holderName}
+                        </strong>
+                      </div>
+                      <TapCopyButton
+                        text={selectedSellerEntry.holderName || sellerVault.holderName}
+                        label="Copy Name"
+                        toastText="Account holder name copied!"
+                      />
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <span className="block text-[11px] text-[var(--p2p-muted)]">
+                          {selectedSellerEntry.methodName === 'Bank transfer'
+                            ? 'Account Number'
+                            : selectedSellerEntry.methodName
+                              ? `${selectedSellerEntry.methodName} Number / ID`
+                              : 'Account Number'}
+                        </span>
+                        <span className="p2p-mono mt-0.5 block text-sm font-bold text-[var(--p2p-ink)]">
+                          {selectedSellerEntry.accountNumber || selectedSellerEntry.rawLine}
+                        </span>
+                      </div>
+                      {selectedSellerEntry.accountNumber && (
+                        <TapCopyButton
+                          text={selectedSellerEntry.accountNumber}
+                          label="Copy"
+                          toastText="Account number copied!"
+                        />
+                      )}
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {selectedSellerEntry.bankOrType && (
+                        <div>
+                          <span className="block text-[11px] text-[var(--p2p-muted)]">
+                            {selectedSellerEntry.methodName === 'Bank transfer' ? 'Bank Name' : 'Account Type'}
+                          </span>
+                          <span className="mt-0.5 block font-semibold text-[var(--p2p-ink)]">
+                            {selectedSellerEntry.bankOrType}
+                          </span>
+                        </div>
+                      )}
+                      {selectedSellerEntry.branchName && (
+                        <div>
+                          <span className="block text-[11px] text-[var(--p2p-muted)]">Branch Name</span>
+                          <span className="mt-0.5 block font-semibold text-[var(--p2p-ink)]">
+                            {selectedSellerEntry.branchName}
+                          </span>
+                        </div>
+                      )}
+                      {selectedSellerEntry.routingNumber && (
+                        <div>
+                          <span className="block text-[11px] text-[var(--p2p-muted)]">Routing Number</span>
+                          <span className="p2p-mono mt-0.5 block font-semibold text-[var(--p2p-ink)]">
+                            {selectedSellerEntry.routingNumber}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedSellerEntry.remarks && (
+                      <div className="border-t border-[var(--p2p-border)] pt-2">
+                        <span className="block text-[11px] text-[var(--p2p-muted)]">Remarks</span>
+                        <p className="mt-0.5 text-[var(--p2p-ink)]">{selectedSellerEntry.remarks}</p>
+                      </div>
+                    )}
+
+                    {sellerVault.notes && (
+                      <div className="border-t border-[var(--p2p-border)] pt-2">
+                        <span className="block text-[11px] text-[var(--p2p-muted)]">Terms</span>
+                        <p className="mt-0.5 whitespace-pre-wrap break-words text-[var(--p2p-ink)]">
+                          {sellerVault.notes}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : sellerVault ? (
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <span className="text-[var(--p2p-muted)]">
@@ -822,8 +958,35 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             </div>
           )}
 
+          {/* 5a. BUYER IN HANDSHAKE WAIT (`!order.detailsReady`) */}
+          {status === STATUS.PENDING && isBuyer && awaitingHandshake && (
+            <div className="p2p-card space-y-3.5 rounded-xl p-4 sm:p-5">
+              <div>
+                <h3 className="text-sm font-bold text-[var(--p2p-ink)]">
+                  {revealExpired ? 'Seller Handshake Window Expired' : 'Waiting for Seller Handshake Approval'}
+                </h3>
+                <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
+                  {revealExpired
+                    ? 'The seller did not share payment details in time. You may cancel this order with 0 cancel strikes.'
+                    : 'Do not send any payment yet. Once the seller approves revealing their receiving account, your payment countdown and Mark Paid form will unlock automatically.'}
+                </p>
+              </div>
+              <div className="hidden md:flex">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void callSimple('cancelOrder', 'Cancel order')}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 text-sm font-semibold text-[var(--p2p-ink)] transition-colors hover:border-[var(--p2p-border-active)] disabled:opacity-40"
+                >
+                  {pendingKey === 'cancelOrder' && <Loader2 className="size-4 animate-spin" />}
+                  Cancel Order (0 Strikes)
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* 5. BUYER IN PENDING: Payer Verification + Transfer ID Inputs (+ Desktop Action Buttons) */}
-          {status === STATUS.PENDING && isBuyer && (
+          {status === STATUS.PENDING && isBuyer && !awaitingHandshake && (
             <div
               className={`p2p-card space-y-4 rounded-xl p-4 sm:p-5 ${
                 pastDeadline ? '!border-red-500/60' : ''
@@ -937,7 +1100,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               <div className="hidden gap-2.5 md:flex">
                 <button
                   type="button"
-                  disabled={!payerReady || hardExpired || busy}
+                  disabled={!payerReady || hardExpired || lateMarkBlocked || busy}
                   onClick={() => void callMarkPaid()}
                   className={`inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-lg px-5 text-sm font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${
                     pastDeadline ? 'bg-red-600' : 'bg-[#FF5A00]'
@@ -971,16 +1134,31 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             <div className="p2p-card space-y-3 rounded-xl p-4 sm:p-5">
               {isSeller && (
                 <p className="text-xs leading-relaxed text-[var(--p2p-muted)]">
-                  {hardExpired
-                    ? 'Payment window expired without payment confirmation. You may cancel the order now.'
-                    : pastDeadline
-                      ? 'Payment timer expired. Wait briefly in case the buyer is submitting a transfer ID, then cancellation unlocks.'
-                      : `Waiting for the buyer to send fiat and mark the order as paid. Only release ${asset} once you verify the exact amount inside your payment app.`}
+                  {awaitingHandshake
+                    ? revealExpired
+                      ? 'Your 10-minute handshake window expired. Cancel the order to return escrowed funds to your ad.'
+                      : 'Handshake mode active — approve sharing your payment details so the buyer can transfer fiat and start the payment timer.'
+                    : hardExpired
+                      ? 'Payment window expired without payment confirmation. You may cancel the order now.'
+                      : pastDeadline
+                        ? 'Payment timer expired. Wait briefly in case the buyer is submitting a transfer ID, then cancellation unlocks.'
+                        : `Waiting for the buyer to send fiat and mark the order as paid. Only release ${asset} once you verify the exact amount inside your payment app.`}
                 </p>
               )}
 
               <div className="hidden flex-wrap gap-2.5 md:flex">
-                {isSeller && (
+                {isSeller && awaitingHandshake && !revealExpired && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void callShareDetails()}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[#FF5A00] px-5 text-xs font-bold text-[#FFFFFF] transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {pendingKey === 'shareDetails' && <Loader2 className="size-4 animate-spin" />}
+                    Approve &amp; Share Payment Details
+                  </button>
+                )}
+                {isSeller && !awaitingHandshake && (
                   <button
                     type="button"
                     disabled={busy}
@@ -1087,6 +1265,15 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                   File Statement
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setDisputeSheetOpen(true)}
+                className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00] md:hidden"
+              >
+                <FileText className="size-3.5 text-[#FF5A00]" />
+                File Encrypted Dispute Statement
+              </button>
 
               <p className="text-[11px] text-[var(--p2p-muted)]">
                 Asymmetric Dispute Bond: <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond, undefined, asset)} {asset}</strong> (0 upfront cost; if an arbiter rules, the loser owes the bond from margin or recorded debt).
@@ -1338,7 +1525,20 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
       {/* =====================================================================
           MOBILE STICKY THUMB-ZONE BOTTOM ACTION BAR (< 768px)
          ===================================================================== */}
-      {status === STATUS.PENDING && isBuyer && (
+      {status === STATUS.PENDING && isBuyer && awaitingHandshake && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-3 backdrop-blur-2xl md:hidden">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void callSimple('cancelOrder', 'Cancel order')}
+            className="h-12 w-full rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-xs font-bold text-[var(--p2p-ink)] disabled:opacity-40"
+          >
+            Cancel Order (0 Strikes)
+          </button>
+        </div>
+      )}
+
+      {status === STATUS.PENDING && isBuyer && !awaitingHandshake && (
         <div className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-[3fr_7fr] gap-2.5 border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-3 backdrop-blur-2xl md:hidden">
           <button
             type="button"
@@ -1350,7 +1550,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           </button>
           <button
             type="button"
-            disabled={!payerReady || hardExpired || busy}
+            disabled={!payerReady || hardExpired || lateMarkBlocked || busy}
             onClick={() => void callMarkPaid()}
             className={`inline-flex h-12 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold text-[#FFFFFF] disabled:opacity-40 ${
               pastDeadline ? 'bg-red-600' : 'bg-[#FF5A00]'
@@ -1364,7 +1564,18 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
       {status === STATUS.PENDING && !isBuyer && (isSeller || hardExpired) && (
         <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2.5 border-t border-[var(--p2p-border)] bg-[var(--p2p-bar)] px-4 py-3 backdrop-blur-2xl md:hidden">
-          {isSeller && (
+          {isSeller && awaitingHandshake && !revealExpired && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void callShareDetails()}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
+            >
+              {pendingKey === 'shareDetails' && <Loader2 className="size-4 animate-spin" />}
+              Share Payment Details
+            </button>
+          )}
+          {isSeller && !awaitingHandshake && (
             <button
               type="button"
               disabled={busy}

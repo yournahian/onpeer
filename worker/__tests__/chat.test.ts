@@ -271,6 +271,28 @@ describe('chat — POST /api/orders/:id/chat', () => {
     expect(res!.status).toBe(400)
     expect(await res!.json()).toMatchObject({ error: 'message_too_long' })
   })
+
+  it('rejects POST on terminal CANCELLED or COMPLETED orders (H-03)', async () => {
+    const db = new ChatMemoryDb()
+    const env = makeEnv()
+    const auth = await authHeader(BUYER_ACCOUNT.address, db)
+
+    for (const status of [ORDER_STATUS.CANCELLED, ORDER_STATUS.COMPLETED]) {
+      const res = await handleChatRoutes(
+        new Request('http://localhost/orders/1/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: auth },
+          body: JSON.stringify({ body: 'Post-close spam' }),
+        }),
+        env,
+        db,
+        makeChain({ order: makeOrder({ status }) }),
+        '/orders/1/chat',
+      )
+      expect(res!.status).toBe(400)
+      expect(await res!.json()).toMatchObject({ error: 'invalid_order_status' })
+    }
+  })
 })
 
 // =========================================================================

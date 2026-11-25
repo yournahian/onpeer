@@ -19,6 +19,7 @@ import {
   countryByCurrency,
   formatFiat,
   formatPrice,
+  formatScopedOrderLabel,
   formatUsdcAmount,
   hexToCurrency,
   shortAddr,
@@ -47,6 +48,7 @@ const STATUS_COLORS: Record<string, string> = {
 function FilingRow({ filing }: { filing: DisputeFiling }) {
   const [expanded, setExpanded] = useState(false)
   const explorerBase = buildAddressExplorerUrl(CHAIN_ID, filing.filedBy as `0x${string}`)
+  const orderLabel = /^\d+$/.test(filing.orderId) ? formatScopedOrderLabel(BigInt(filing.orderId)) : `#${filing.orderId}`
 
   return (
     <li className="glass overflow-hidden rounded-2xl">
@@ -63,7 +65,7 @@ function FilingRow({ filing }: { filing: DisputeFiling }) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="text-sm font-semibold">Order #{filing.orderId} · Encrypted Statement</span>
+            <span className="text-sm font-semibold">Order {orderLabel} · Encrypted Statement</span>
             <span
               className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase"
               style={{ background: 'var(--fill-3)', color: STATUS_COLORS[filing.status] ?? 'var(--muted)' }}
@@ -159,14 +161,16 @@ function ResolvedOrderCard({ order }: { order: OrderWithId }) {
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <CheckCircle2 className="size-4" style={{ color: 'var(--success)' }} />
-            <span className="text-sm font-bold">Order #{order.id.toString()}</span>
-            <span className="mono text-sm font-semibold">{formatUsdcAmount(order.amount)} USDC</span>
+            <span className="text-sm font-bold">Order {formatScopedOrderLabel(order.id)}</span>
+            <span className="mono text-sm font-semibold">
+              {formatUsdcAmount(order.amount, undefined, order.asset)} {order.asset}
+            </span>
             <StatusBadge status={order.status} />
           </div>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
             {country && <CountryFlag code={country.code} size={15} />}
             <span>
-              {country?.symbol} {formatFiat(order.fiatAmountE6)} {currency} ({formatPrice(order.priceE6)} {currency}/USDC)
+              {country?.symbol} {formatFiat(order.fiatAmountE6)} {currency} ({formatPrice(order.priceE6)} {currency}/{order.asset})
             </span>
             <span>Buyer: <span className="mono">{shortAddr(order.buyer)}</span></span>
             <span>Seller: <span className="mono">{shortAddr(order.seller)}</span></span>

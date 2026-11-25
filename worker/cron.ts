@@ -12,7 +12,7 @@
  */
 import { type AbiEvent } from 'viem'
 import { p2pEscrowAbi } from '../src/abi/p2pEscrow'
-import { createArcPublicClient, requireEscrowAddress, type ChainReader } from './chain'
+import { createArcPublicClient, getConfiguredEscrows, type ChainReader } from './chain'
 import { writeAudit, type Queryable } from './db'
 import type { Env } from './env'
 import { queueNotification } from './notify'
@@ -21,7 +21,7 @@ const SWEEP_BATCH = 500
 const SCAN_WINDOW_BLOCKS = 2_000n
 const SCAN_MAX_WINDOWS_PER_TICK = 10
 const SCAN_TIME_BUDGET_MS = 12_000
-const CHAIN_CURSOR_NAME = 'escrow_events'
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000'
 
 function requireAbiEvent(name: string): AbiEvent {
   const item = p2pEscrowAbi.find((e) => e.type === 'event' && e.name === name)
@@ -134,7 +134,7 @@ export async function sweepExpiredRows(db: Queryable): Promise<SweepResult> {
       sql: `DELETE FROM public.notifications_outbox
              WHERE id IN (
                SELECT id FROM public.notifications_outbox
-                WHERE status IN ('sent', 'failed')
+                WHERE status IN ('sent', 'failed', 'skipped')
                   AND created_at < now() - interval '30 days'
                 LIMIT ${SWEEP_BATCH}
              )`,
@@ -182,12 +182,13 @@ export async function sweepExpiredSessions(db: Queryable): Promise<number> {
 
 interface KycExpiryRow {
   wallet: string
+  kyc_expires_at?: string | Date | null
 }
 
 /**
  * Find accounts with approved KYC whose `kyc_expires_at` has passed.
  * Marks them 'expired' in the DB, queues a revoke_verification onchain job,
- * and queues an email notification.
+ * and queues a per-renewal-cycle email/Telegram notification (M-06).
  */
 export async function checkKycExpiry(db: Queryable): Promise<number> {
   const res = await db.query<KycExpiryRow>(
@@ -203,11 +204,14 @@ export async function checkKycExpiry(db: Queryable): Promise<number> {
            AND deleted_at IS NULL
          LIMIT 50
       )
-      RETURNING wallet`,
+      RETURNING wallet, kyc_expires_at`,
   )
 
   for (const row of res.rows) {
     const wallet = row.wallet as `0x${string}`
+    const cycleStamp = row.kyc_expires_at
+      ? new Date(row.kyc_expires_at).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10)
 
     await db
       .query(
@@ -217,7 +221,9 @@ export async function checkKycExpiry(db: Queryable): Promise<number> {
       )
       .catch(() => undefined)
 
-    await queueNotification(db, wallet, 'kyc_expired').catch(() => undefined)
+    await queueNotification(db, wallet, 'kyc_expired', null, `kyc_expired:${wallet}:${cycleStamp}`).catch(
+      () => undefined,
+    )
     await writeAudit(db, 'cron', 'kyc.expired', wallet).catch(() => undefined)
   }
 
@@ -254,167 +260,192 @@ export async function scanChainEvents(
   windows: number
   queued: number
 }> {
-  const escrow = requireEscrowAddress(env)
+  const targets = getConfiguredEscrows(env)
   const client: ChainLogClient = rpcClient ?? createArcPublicClient()
   const latestBlock = await client.getBlockNumber()
 
-  const curRes = await db.query<{ last_block: string | number }>(
-    `SELECT last_block FROM public.chain_cursor WHERE name = $1 LIMIT 1`,
-    [CHAIN_CURSOR_NAME],
-  )
-
-  let startBlock: bigint
-  if (curRes.rows[0]) {
-    startBlock = BigInt(curRes.rows[0].last_block) + 1n
-  } else {
-    const deployBlock = env.VITE_P2P_DEPLOY_BLOCK ? BigInt(env.VITE_P2P_DEPLOY_BLOCK) : 0n
-    const recentFloor = latestBlock > 200n ? latestBlock - 200n : 0n
-    startBlock = deployBlock > recentFloor ? deployBlock : recentFloor
-  }
-
-  if (startBlock > latestBlock) {
-    return {
-      fromBlock: startBlock,
-      toBlock: latestBlock,
-      latestBlock,
-      lag: 0n,
-      windows: 0,
-      queued: 0,
-    }
-  }
-
   const startedAt = Date.now()
-  let windowStart = startBlock
-  let lastScanned = startBlock - 1n
-  let windows = 0
-  let queued = 0
+  let primaryFromBlock = latestBlock + 1n
+  let primaryToBlock = latestBlock
+  let primaryLag = 0n
+  let totalWindows = 0
+  let totalQueued = 0
   let rolesCache: Awaited<ReturnType<ChainReader['getRoles']>> | null = null
 
-  while (
-    windowStart <= latestBlock &&
-    windows < SCAN_MAX_WINDOWS_PER_TICK &&
-    Date.now() - startedAt < SCAN_TIME_BUDGET_MS
-  ) {
-    const windowEnd =
-      latestBlock - windowStart + 1n > SCAN_WINDOW_BLOCKS
-        ? windowStart + SCAN_WINDOW_BLOCKS - 1n
-        : latestBlock
-
-    // Single eth_getLogs call per window (Arc Testnet RPC accepts up to 5,000 blocks)
-    const logs = await client.getLogs({
-      address: escrow,
-      events: Object.values(SCANNED_EVENTS),
-      fromBlock: windowStart,
-      toBlock: windowEnd,
-    })
-
-    for (const log of logs) {
-      const orderId = (log.args as { orderId?: bigint } | undefined)?.orderId
-      if (!orderId) continue
-      const order = await chain.getOrder(orderId)
-      if (!order) continue
-
-      switch (log.eventName) {
-        case 'OrderOpened': {
-          const maker = order.taker === order.buyer ? order.seller : order.buyer
-          await queueNotification(db, maker, 'order_opened', orderId)
-          queued++
-          break
-        }
-        case 'OrderPaid': {
-          await queueNotification(db, order.seller, 'order_paid', orderId)
-          queued++
-          break
-        }
-        case 'OrderReleased': {
-          await db
-            .query(
-              `UPDATE public.dispute_filings
-                  SET status = 'settled', closed_at = COALESCE(closed_at, now())
-                WHERE order_id = $1 AND status IN ('open', 'taken')`,
-              [orderId.toString()],
-            )
-            .catch(() => undefined)
-          await queueNotification(db, order.buyer, 'order_completed', orderId)
-          await queueNotification(db, order.seller, 'order_completed', orderId)
-          queued += 2
-          break
-        }
-        case 'OrderCancelled': {
-          await db
-            .query(
-              `UPDATE public.dispute_filings
-                  SET status = 'settled', closed_at = COALESCE(closed_at, now())
-                WHERE order_id = $1 AND status IN ('open', 'taken')`,
-              [orderId.toString()],
-            )
-            .catch(() => undefined)
-          await queueNotification(db, order.buyer, 'order_cancelled', orderId)
-          await queueNotification(db, order.seller, 'order_cancelled', orderId)
-          queued += 2
-          break
-        }
-        case 'OrderDisputed': {
-          if (!rolesCache) rolesCache = await chain.getRoles()
-          const recipients = Array.from(new Set([order.buyer, order.seller, rolesCache.arbiter]))
-          for (const r of recipients) {
-            await queueNotification(db, r, 'order_disputed', orderId)
-            queued++
-          }
-          break
-        }
-        case 'CaseTaken': {
-          await db
-            .query(
-              `UPDATE public.dispute_filings
-                  SET status = 'taken'
-                WHERE order_id = $1 AND status = 'open'`,
-              [orderId.toString()],
-            )
-            .catch(() => undefined)
-          await queueNotification(db, order.buyer, 'case_taken', orderId)
-          await queueNotification(db, order.seller, 'case_taken', orderId)
-          queued += 2
-          break
-        }
-        case 'DisputeResolved': {
-          await db
-            .query(
-              `UPDATE public.dispute_filings
-                  SET status = 'resolved', closed_at = COALESCE(closed_at, now())
-                WHERE order_id = $1 AND status IN ('open', 'taken')`,
-              [orderId.toString()],
-            )
-            .catch(() => undefined)
-          await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
-          await queueNotification(db, order.seller, 'dispute_resolved', orderId)
-          queued += 2
-          break
-        }
-      }
-    }
-
-    await db.query(
-      `INSERT INTO public.chain_cursor (name, last_block, updated_at)
-       VALUES ($1, $2, now())
-       ON CONFLICT (name) DO UPDATE
-         SET last_block = EXCLUDED.last_block,
-             updated_at = now()`,
-      [CHAIN_CURSOR_NAME, windowEnd.toString()],
+  for (let tIdx = 0; tIdx < targets.length; tIdx++) {
+    const target = targets[tIdx]!
+    const curRes = await db.query<{ last_block: string | number }>(
+      `SELECT last_block FROM public.chain_cursor WHERE name = $1 LIMIT 1`,
+      [target.cursorName],
     )
 
-    lastScanned = windowEnd
-    windowStart = windowEnd + 1n
-    windows++
+    let startBlock: bigint
+    if (curRes.rows[0]) {
+      startBlock = BigInt(curRes.rows[0].last_block) + 1n
+    } else {
+      const recentFloor = latestBlock > 200n ? latestBlock - 200n : 0n
+      startBlock = target.deployBlock > recentFloor ? target.deployBlock : recentFloor
+    }
+
+    if (tIdx === 0) {
+      primaryFromBlock = startBlock
+      primaryToBlock = startBlock > latestBlock ? latestBlock : startBlock - 1n
+    }
+
+    if (startBlock > latestBlock) continue
+
+    let windowStart = startBlock
+    let lastScanned = startBlock - 1n
+    let targetWindows = 0
+
+    while (
+      windowStart <= latestBlock &&
+      targetWindows < SCAN_MAX_WINDOWS_PER_TICK &&
+      Date.now() - startedAt < SCAN_TIME_BUDGET_MS
+    ) {
+      const windowEnd =
+        latestBlock - windowStart + 1n > SCAN_WINDOW_BLOCKS
+          ? windowStart + SCAN_WINDOW_BLOCKS - 1n
+          : latestBlock
+
+      const logs = await client.getLogs({
+        address: target.address,
+        events: Object.values(SCANNED_EVENTS),
+        fromBlock: windowStart,
+        toBlock: windowEnd,
+      })
+
+      for (const log of logs) {
+        const rawOrderId = (log.args as { orderId?: bigint } | undefined)?.orderId
+        if (!rawOrderId) continue
+        // H-01: Convert raw contract orderId into numeric scoped ID (`rawId + offset`) for multi-asset markets
+        const orderId = rawOrderId + target.offset
+        const order = await chain.getOrder(orderId)
+        if (!order) continue
+
+        switch (log.eventName) {
+          case 'OrderOpened': {
+            // C-06: Safety-net auto-bind of seller payment details if browser closed before `/vault/bind-*`
+            if (order.detailsHash && order.detailsHash !== ZERO_BYTES32) {
+              await db
+                .query(
+                  `UPDATE public.vault_blobs
+                      SET order_id = CASE WHEN kind = 'order_details' THEN COALESCE(order_id, $3) ELSE order_id END,
+                          ad_id = COALESCE(ad_id, $4),
+                          delete_after = GREATEST(COALESCE(delete_after, now()), now() + interval '95 days')
+                    WHERE author = $1
+                      AND content_hash = $2
+                      AND kind IN ('ad_details', 'order_details')`,
+                  [order.seller, order.detailsHash, order.id.toString(), order.adId.toString()],
+                )
+                .catch(() => undefined)
+            }
+            const maker = order.taker === order.buyer ? order.seller : order.buyer
+            await queueNotification(db, maker, 'order_opened', orderId)
+            totalQueued++
+            break
+          }
+          case 'OrderPaid': {
+            await queueNotification(db, order.seller, 'order_paid', orderId)
+            totalQueued++
+            break
+          }
+          case 'OrderReleased': {
+            await db
+              .query(
+                `UPDATE public.dispute_filings
+                    SET status = 'settled', closed_at = COALESCE(closed_at, now())
+                  WHERE order_id = $1 AND status IN ('open', 'taken')`,
+                [orderId.toString()],
+              )
+              .catch(() => undefined)
+            await queueNotification(db, order.buyer, 'order_completed', orderId)
+            await queueNotification(db, order.seller, 'order_completed', orderId)
+            totalQueued += 2
+            break
+          }
+          case 'OrderCancelled': {
+            await db
+              .query(
+                `UPDATE public.dispute_filings
+                    SET status = 'settled', closed_at = COALESCE(closed_at, now())
+                  WHERE order_id = $1 AND status IN ('open', 'taken')`,
+                [orderId.toString()],
+              )
+              .catch(() => undefined)
+            await queueNotification(db, order.buyer, 'order_cancelled', orderId)
+            await queueNotification(db, order.seller, 'order_cancelled', orderId)
+            totalQueued += 2
+            break
+          }
+          case 'OrderDisputed': {
+            if (!rolesCache) rolesCache = await chain.getRoles()
+            const recipients = Array.from(new Set([order.buyer, order.seller, rolesCache.arbiter]))
+            for (const r of recipients) {
+              await queueNotification(db, r, 'order_disputed', orderId)
+              totalQueued++
+            }
+            break
+          }
+          case 'CaseTaken': {
+            await db
+              .query(
+                `UPDATE public.dispute_filings
+                    SET status = 'taken'
+                  WHERE order_id = $1 AND status = 'open'`,
+                [orderId.toString()],
+              )
+              .catch(() => undefined)
+            await queueNotification(db, order.buyer, 'case_taken', orderId)
+            await queueNotification(db, order.seller, 'case_taken', orderId)
+            totalQueued += 2
+            break
+          }
+          case 'DisputeResolved': {
+            await db
+              .query(
+                `UPDATE public.dispute_filings
+                    SET status = 'resolved', closed_at = COALESCE(closed_at, now())
+                  WHERE order_id = $1 AND status IN ('open', 'taken')`,
+                [orderId.toString()],
+              )
+              .catch(() => undefined)
+            await queueNotification(db, order.buyer, 'dispute_resolved', orderId)
+            await queueNotification(db, order.seller, 'dispute_resolved', orderId)
+            totalQueued += 2
+            break
+          }
+        }
+      }
+
+      await db.query(
+        `INSERT INTO public.chain_cursor (name, last_block, updated_at)
+         VALUES ($1, $2, now())
+         ON CONFLICT (name) DO UPDATE
+           SET last_block = EXCLUDED.last_block,
+               updated_at = now()`,
+        [target.cursorName, windowEnd.toString()],
+      )
+
+      lastScanned = windowEnd
+      windowStart = windowEnd + 1n
+      targetWindows++
+      totalWindows++
+    }
+
+    if (tIdx === 0) {
+      primaryToBlock = lastScanned
+      primaryLag = latestBlock > lastScanned ? latestBlock - lastScanned : 0n
+    }
   }
 
   return {
-    fromBlock: startBlock,
-    toBlock: lastScanned,
+    fromBlock: primaryFromBlock,
+    toBlock: primaryToBlock,
     latestBlock,
-    lag: latestBlock > lastScanned ? latestBlock - lastScanned : 0n,
-    windows,
-    queued,
+    lag: primaryLag,
+    windows: totalWindows,
+    queued: totalQueued,
   }
 }
 

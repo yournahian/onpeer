@@ -411,6 +411,40 @@ describe('disputes — POST /api/orders/:id/disputes', () => {
     )
     expect(arbiterRes!.status).toBe(403)
   })
+
+  it('enforces 15m PAID wait before buyer offchain filing and blocks arbiter snooping on privately settled orders (M-04)', async () => {
+    const db = new DisputeMemoryDb()
+    const env = makeEnv()
+    const buyerAuth = await authHeader(BUYER_ACCOUNT.address, db)
+    const arbiterAuth = await authHeader(ARBITER_ACCOUNT.address, db)
+
+    // Buyer filing 60s after markPaid (< 15m) is rejected with too_early_to_dispute
+    const freshPaidAt = BigInt(Math.floor(Date.now() / 1000) - 60)
+    const earlyRes = await handleDisputeRoutes(
+      new Request('http://localhost/orders/1/disputes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: buyerAuth },
+        body: JSON.stringify({ reasonCode: 'payment_not_received', statement: 'Only 1 minute passed.' }),
+      }),
+      env,
+      db,
+      makeChain({ order: makeOrder({ status: ORDER_STATUS.PAID, paidAt: freshPaidAt, disputedAt: 0n }) }),
+      '/orders/1/disputes',
+    )
+    expect(earlyRes!.status).toBe(400)
+    expect(await earlyRes!.json()).toMatchObject({ error: 'too_early_to_dispute' })
+
+    // Arbiter reading a privately settled order where reviewStartedAt === 0n gets 403
+    await db.seedFiling(env, '1', BUYER_ACCOUNT.address.toLowerCase(), 'Settled during cooling-off.')
+    const snoopRes = await handleDisputeRoutes(
+      new Request('http://localhost/orders/1/disputes', { headers: { Authorization: arbiterAuth } }),
+      env,
+      db,
+      makeChain({ order: makeOrder({ status: ORDER_STATUS.SETTLED, reviewStartedAt: 0n }) }),
+      '/orders/1/disputes',
+    )
+    expect(snoopRes!.status).toBe(403)
+  })
 })
 
 // =========================================================================

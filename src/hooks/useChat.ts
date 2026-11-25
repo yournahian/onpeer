@@ -57,21 +57,39 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
       const after = reset ? null : afterIdRef.current
       try {
         const qs = after ? `?after=${encodeURIComponent(after)}` : ''
-        const data = await apiFetch<{ messages: ChatMessage[]; hasMore: boolean }>(
+        const firstPage = await apiFetch<{ messages: ChatMessage[]; hasMore: boolean }>(
           `/orders/${orderId}/chat${qs}`,
         )
+        let combined = firstPage.messages
+        let more = firstPage.hasMore
+        // Auto-drain up to 4 additional pages on initial reset so long dispute threads are fully visible
+        if (reset && more && combined.length > 0) {
+          let cursor = combined[combined.length - 1]!.id
+          for (let page = 1; page < 5 && more; page++) {
+            const nextPage = await apiFetch<{ messages: ChatMessage[]; hasMore: boolean }>(
+              `/orders/${orderId}/chat?after=${encodeURIComponent(cursor)}`,
+            )
+            if (nextPage.messages.length === 0) {
+              more = false
+              break
+            }
+            combined = [...combined, ...nextPage.messages]
+            cursor = nextPage.messages[nextPage.messages.length - 1]!.id
+            more = nextPage.hasMore
+          }
+        }
         setState((prev) => {
           const prevMsgs = prev.key === key ? prev.messages : []
           if (reset) {
-            return { key, messages: data.messages, hasMore: data.hasMore, loading: false, error: null }
+            return { key, messages: combined, hasMore: more, loading: false, error: null }
           }
           const existing = new Set(prevMsgs.map((m) => m.id))
-          const fresh = data.messages.filter((m) => !existing.has(m.id))
+          const fresh = combined.filter((m) => !existing.has(m.id))
           const next = fresh.length > 0 ? [...prevMsgs, ...fresh] : prevMsgs
-          return { key, messages: next, hasMore: data.hasMore, loading: false, error: null }
+          return { key, messages: next, hasMore: more, loading: false, error: null }
         })
-        if (data.messages.length > 0) {
-          afterIdRef.current = data.messages[data.messages.length - 1]!.id
+        if (combined.length > 0) {
+          afterIdRef.current = combined[combined.length - 1]!.id
         }
       } catch (e) {
         if (e instanceof BackendApiError) {

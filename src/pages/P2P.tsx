@@ -62,7 +62,15 @@ export default function P2PPage() {
   const rawPost = params.get('post')
   const deepPostSide = rawPost === 'sell' ? SIDE_SELL : rawPost === 'buy' ? SIDE_BUY : undefined
   const { ads } = useAllAds()
-  const deepAd = deepTradeId !== null ? ads.find((a) => a.id === deepTradeId || a.rawId === deepTradeId) : undefined
+  const deepAssetParam = (params.get('asset') ?? '').trim().toLowerCase()
+  const deepAd =
+    deepTradeId !== null
+      ? ads.find(
+          (a) =>
+            a.id === deepTradeId ||
+            (deepAssetParam !== '' && a.asset.toLowerCase() === deepAssetParam && a.rawId === deepTradeId),
+        )
+      : undefined
 
   const openOrder = (id: bigint | null) =>
     replaceQuery((p) => {
@@ -154,7 +162,8 @@ export default function P2PPage() {
   }, [refetchAccount])
 
   const accountReady = isConnected && isSignedIn && !!profile?.exists && !!profile?.emailVerified
-  const needsOnboarding = !accountReady && !(isArbiter && orderId !== null)
+  // C-01: Never gate an active order URL (`?order=...`) behind offchain onboarding/API availability once wallet is connected
+  const needsOnboarding = !accountReady && !(isConnected && orderId !== null)
   const postSheetOpen = postOpen || (!needsOnboarding && deepPostSide !== undefined)
   const closePostSheet = () => {
     setPostOpen(false)

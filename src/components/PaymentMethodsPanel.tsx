@@ -35,6 +35,8 @@ export function PaymentMethodsPanel() {
   const [holderName, setHolderName] = useState('')
   const [accountNumber, setAccountNumber] = useState('')
   const [bankOrBranch, setBankOrBranch] = useState('')
+  const [branchName, setBranchName] = useState('')
+  const [routingNumber, setRoutingNumber] = useState('')
   const [notes, setNotes] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
@@ -47,6 +49,8 @@ export function PaymentMethodsPanel() {
     setHolderName(methods[0]?.holderName ?? '')
     setAccountNumber('')
     setBankOrBranch('')
+    setBranchName('')
+    setRoutingNumber('')
     setNotes('')
     setFormOpen(true)
   }
@@ -63,6 +67,8 @@ export function PaymentMethodsPanel() {
     setHolderName(item.holderName)
     setAccountNumber(item.accountNumber)
     setBankOrBranch(item.bankOrBranch)
+    setBranchName(item.branchName ?? '')
+    setRoutingNumber(item.routingNumber ?? '')
     setNotes(item.notes)
     setFormOpen(true)
   }
@@ -80,6 +86,8 @@ export function PaymentMethodsPanel() {
     const cleanHolder = holderName.trim()
     const cleanAcc = accountNumber.trim()
     const cleanBank = bankOrBranch.trim()
+    const cleanBranch = selectedMethodDef.name === 'Bank transfer' ? branchName.trim() : ''
+    const cleanRouting = selectedMethodDef.name === 'Bank transfer' ? routingNumber.trim() : ''
     const cleanNotes = notes.trim()
 
     if (cleanHolder.length < 2) {
@@ -98,6 +106,8 @@ export function PaymentMethodsPanel() {
       holderName: cleanHolder,
       accountNumber: cleanAcc,
       bankOrBranch: cleanBank,
+      ...(cleanBranch ? { branchName: cleanBranch } : {}),
+      ...(cleanRouting ? { routingNumber: cleanRouting } : {}),
       notes: cleanNotes,
       updatedAt: currentIsoTimestamp(),
     }
@@ -206,6 +216,13 @@ export function PaymentMethodsPanel() {
             </button>
           </div>
 
+          {/* KYC Name-Match Tip Banner */}
+          <div className="rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3.5 py-2.5 text-xs leading-relaxed text-[var(--p2p-warn-ink)]">
+            <strong className="font-bold">Tips:</strong> The added payment method will be shown to the buyer during the
+            transaction to accept fiat transfers. Please ensure that the information is correct, real, and matches your
+            KYC information on OnPeer.
+          </div>
+
           {/* 1. Country / Market Selector */}
           <div>
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
@@ -304,7 +321,7 @@ export function PaymentMethodsPanel() {
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
                 {selectedMethodDef.name === 'Bank transfer'
-                  ? 'Bank Name & Branch'
+                  ? 'Bank Name'
                   : 'Account Type (e.g. Personal / Agent)'}
               </span>
               <input
@@ -312,12 +329,40 @@ export function PaymentMethodsPanel() {
                 onChange={(e) => setBankOrBranch(e.target.value.slice(0, 120))}
                 placeholder={
                   selectedMethodDef.name === 'Bank transfer'
-                    ? 'e.g. City Bank, Gulshan Branch'
+                    ? 'e.g. The City Bank'
                     : 'e.g. Personal'
                 }
                 className="p2p-input h-10 w-full rounded-lg !bg-[var(--p2p-surface-solid)] px-3 text-xs text-[var(--p2p-ink)]"
               />
             </label>
+
+            {selectedMethodDef.name === 'Bank transfer' && (
+              <>
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                    Branch Name (Optional)
+                  </span>
+                  <input
+                    value={branchName}
+                    onChange={(e) => setBranchName(e.target.value.slice(0, 120))}
+                    placeholder="e.g. Gulshan Branch"
+                    className="p2p-input h-10 w-full rounded-lg !bg-[var(--p2p-surface-solid)] px-3 text-xs text-[var(--p2p-ink)]"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                    Routing Number / IFSC (Optional)
+                  </span>
+                  <input
+                    value={routingNumber}
+                    onChange={(e) => setRoutingNumber(e.target.value.slice(0, 60))}
+                    placeholder="e.g. 225261729"
+                    className="p2p-input p2p-mono h-10 w-full rounded-lg !bg-[var(--p2p-surface-solid)] px-3 text-xs text-[var(--p2p-ink)]"
+                  />
+                </label>
+              </>
+            )}
 
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
@@ -326,7 +371,7 @@ export function PaymentMethodsPanel() {
               <input
                 value={notes}
                 onChange={(e) => setNotes(e.target.value.slice(0, 160))}
-                placeholder="e.g. Send Money only, do not write crypto in note"
+                placeholder="e.g. Send Money only (shown only on this payment method)"
                 className="p2p-input h-10 w-full rounded-lg !bg-[var(--p2p-surface-solid)] px-3 text-xs text-[var(--p2p-ink)]"
               />
             </label>
@@ -432,7 +477,7 @@ export function PaymentMethodsPanel() {
                 </div>
               </div>
 
-              {/* Body Columns (SS 4: Wallet Number | Account Holder | Remarks) */}
+              {/* Body Columns (Wallet/Account | Account Holder | Bank/Branch/Routing | Remarks) */}
               <div className="grid gap-3 px-4 py-3.5 text-xs sm:grid-cols-3">
                 <div>
                   <span className="block text-[11px] text-[var(--p2p-muted)]">
@@ -441,6 +486,13 @@ export function PaymentMethodsPanel() {
                   <span className="p2p-mono mt-0.5 block font-semibold text-[var(--p2p-ink)]">
                     {m.accountNumber}
                   </span>
+                  {m.methodName === 'Bank transfer' && (m.branchName || m.routingNumber) && (
+                    <span className="mt-1 block text-[11px] text-[var(--p2p-muted)]">
+                      {[m.branchName ? `Branch: ${m.branchName}` : '', m.routingNumber ? `Routing: ${m.routingNumber}` : '']
+                        .filter(Boolean)
+                        .join(' • ')}
+                    </span>
+                  )}
                 </div>
 
                 <div>
@@ -450,7 +502,7 @@ export function PaymentMethodsPanel() {
 
                 <div>
                   <span className="block text-[11px] text-[var(--p2p-muted)]">Remarks</span>
-                  <span className="mt-0.5 block text-[var(--p2p-ink)]">{m.notes || m.bankOrBranch || '—'}</span>
+                  <span className="mt-0.5 block text-[var(--p2p-ink)]">{m.notes || '—'}</span>
                 </div>
               </div>
             </li>

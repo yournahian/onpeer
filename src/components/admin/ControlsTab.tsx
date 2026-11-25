@@ -6,25 +6,31 @@ import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
   COUNTRIES,
-  ESCROW_ADDRESS,
-  MAX_LISTING_FEE,
+  P2P_ASSETS,
   currencyToHex,
   formatUsdcAmount,
+  getEscrowConfig,
+  maxListingFeeFor,
   shortAddr,
+  type P2pAsset,
 } from '@/lib/p2p'
-import { parseUnitsExact } from '@/onchain-money'
+import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { useBackupArbiter, useFeeConfig, usePaused, usePrivacySwitches, useVerifier } from '@/hooks/useEscrow'
 import { useTx } from '@/hooks/useTx'
 import { Button, inputClass } from '@/components/ui'
-import { CountryFlag } from '@/components/logos'
+import { CoinLogo, CountryFlag } from '@/components/logos'
 
-const base = { address: ESCROW_ADDRESS, abi: p2pEscrowAbi, chainId: CHAIN_ID } as const
+const isValidDecimalInput = (v: string, maxDecimals: number): boolean => {
+  if (!/^\d*\.?\d*$/.test(v)) return false
+  const dot = v.indexOf('.')
+  return dot === -1 || v.length - dot - 1 <= maxDecimals
+}
 
-const parseFee = (v: string): bigint | null => {
+const parseFee = (v: string, decimals: number): bigint | null => {
   const trimmed = v.trim()
   if (!trimmed) return null
   try {
-    return parseUnitsExact(trimmed, 6)
+    return parseUnitsExact(trimmed, decimals)
   } catch {
     return null
   }
@@ -41,12 +47,20 @@ function Panel({ title, body, children }: { title: string; body: string; childre
 }
 
 export function ControlsTab({ isOwner }: { isOwner: boolean }) {
-  const paused = usePaused()
-  const backupArbiter = useBackupArbiter()
-  const verifier = useVerifier()
-  const feeConfig = useFeeConfig()
-  const privacy = usePrivacySwitches()
-  const { run, writeContractAsync, pendingKey } = useTx()
+  const [selectedAsset, setSelectedAsset] = useState<P2pAsset>('USDC')
+  const [applyAllAssets, setApplyAllAssets] = useState(false)
+  const selectedCfg = getEscrowConfig(selectedAsset)
+  const escrowAddress = selectedCfg.escrowAddress
+  const tokenDecimals = selectedCfg.decimals
+  const maxFee = maxListingFeeFor(selectedAsset)
+  const maxFeeDisplay = formatUnitsExact(maxFee, tokenDecimals)
+
+  const paused = usePaused(selectedAsset)
+  const backupArbiter = useBackupArbiter(selectedAsset)
+  const verifier = useVerifier(selectedAsset)
+  const feeConfig = useFeeConfig(selectedAsset)
+  const privacy = usePrivacySwitches(selectedAsset)
+  const { run, writeContractAsync, pendingKey } = useTx(selectedAsset)
 
   const [newArbiter, setNewArbiter] = useState('')
   const [newBackup, setNewBackup] = useState('')
@@ -56,35 +70,105 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
 
   const valid = isAddress(newArbiter.trim()) && newArbiter.trim() !== zeroAddress
   const validBackup = isAddress(newBackup.trim()) && newBackup.trim() !== zeroAddress
-  const parsedFee = parseFee(feeInput)
-  const validFee = parsedFee !== null && parsedFee <= MAX_LISTING_FEE
+  const parsedFee = parseFee(feeInput, tokenDecimals)
+  const validFee = parsedFee !== null && parsedFee <= maxFee
   const validRecipient = isAddress(newFeeRecipient.trim()) && newFeeRecipient.trim() !== zeroAddress
   const validVerifier = isAddress(newVerifier.trim())
 
   const supported = useReadContracts({
-    contracts: COUNTRIES.map((c) => ({ ...base, functionName: 'supportedCurrency' as const, args: [currencyToHex(c.currency)] as const })),
-    query: { enabled: !!ESCROW_ADDRESS, refetchInterval: 20_000 },
+    contracts: COUNTRIES.map((c) => ({
+      address: escrowAddress,
+      abi: p2pEscrowAbi,
+      chainId: CHAIN_ID,
+      functionName: 'supportedCurrency' as const,
+      args: [currencyToHex(c.currency)] as const,
+    })),
+    query: { enabled: !!escrowAddress, refetchInterval: 20_000 },
   })
+
+  const targetAddresses = applyAllAssets
+    ? P2P_ASSETS.map((a) => getEscrowConfig(a).escrowAddress)
+    : [escrowAddress]
+
+  const execAcrossTargets = (
+    key: string,
+    label: string,
+    callFor: (addr: Address) => Promise<`0x${string}`>,
+  ) =>
+    run(key, applyAllAssets ? `${label} (all 4 markets)` : `${label} (${selectedAsset})`, async () => {
+      let lastHash: `0x${string}` = '0x0'
+      for (const addr of targetAddresses) {
+        lastHash = await callFor(addr)
+      }
+      return lastHash
+    })
+
+  const marketSelectorBar = (
+    <div className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {P2P_ASSETS.map((a) => {
+          const active = selectedAsset === a
+          return (
+            <button
+              key={a}
+              type="button"
+              onClick={() => {
+                setSelectedAsset(a)
+                setFeeInput('')
+              }}
+              className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors"
+              style={{
+                background: active ? 'var(--accent-bg)' : 'var(--fill-2)',
+                color: active ? 'var(--on-accent)' : 'var(--muted)',
+              }}
+            >
+              <CoinLogo symbol={a} size={14} />
+              <span>{a} Escrow</span>
+            </button>
+          )
+        })}
+      </div>
+      {isOwner && (
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold" style={{ color: 'var(--muted)' }}>
+          <input
+            type="checkbox"
+            checked={applyAllAssets}
+            onChange={(e) => setApplyAllAssets(e.target.checked)}
+            className="size-4"
+          />
+          <span>Sync global governance switches across all 4 asset contracts</span>
+        </label>
+      )}
+    </div>
+  )
 
   if (!isOwner) {
     return (
       <div className="space-y-4">
+        {marketSelectorBar}
         <Panel
-          title="Accrued listing fees"
-          body={`Current listing fee: ${formatUsdcAmount(feeConfig.listingFee)} USDC per ad · Recipient: ${feeConfig.feeRecipient ? shortAddr(feeConfig.feeRecipient) : '...'}`}
+          title={`Accrued listing fees (${selectedAsset})`}
+          body={`Current listing fee: ${formatUsdcAmount(feeConfig.listingFee, undefined, selectedAsset)} ${selectedAsset} per ad · Recipient: ${feeConfig.feeRecipient ? shortAddr(feeConfig.feeRecipient) : '...'}`}
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="display text-2xl font-bold tabular-nums">{formatUsdcAmount(feeConfig.feesAccrued)} USDC</p>
+            <p className="display text-2xl font-bold tabular-nums">
+              {formatUsdcAmount(feeConfig.feesAccrued, undefined, selectedAsset)} {selectedAsset}
+            </p>
             <Button
               disabled={feeConfig.feesAccrued === 0n}
               loading={pendingKey === 'collect-fees'}
               onClick={() =>
-                void run('collect-fees', 'Collect accrued fees', () =>
-                  writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'collectFees' }),
+                void run('collect-fees', `Collect ${selectedAsset} accrued fees`, () =>
+                  writeContractAsync({
+                    address: escrowAddress,
+                    abi: p2pEscrowAbi,
+                    chainId: CHAIN_ID,
+                    functionName: 'collectFees',
+                  }),
                 )
               }
             >
-              <Coins className="size-4" /> Collect fees
+              <Coins className="size-4" /> Collect {selectedAsset} fees
             </Button>
           </div>
         </Panel>
@@ -96,14 +180,18 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
   }
 
   const send = (key: string, label: string, fn: 'pause' | 'unpause') =>
-    run(key, label, () => writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: fn }))
+    execAcrossTargets(key, label, (addr) =>
+      writeContractAsync({ address: addr, abi: p2pEscrowAbi, chainId: CHAIN_ID, functionName: fn }),
+    )
 
   const hasVerifier = verifier && verifier !== zeroAddress
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="space-y-4">
+      {marketSelectorBar}
+      <div className="grid gap-4 lg:grid-cols-2">
       <Panel
-        title={paused ? 'Marketplace is paused' : 'Marketplace is live'}
+        title={paused ? `${selectedAsset} marketplace is paused` : `${selectedAsset} marketplace is live`}
         body="Pausing stops new ads and new orders. Existing orders, releases, disputes, cancels and withdrawals keep working."
       >
         <Button variant={paused ? 'buy' : 'danger'} loading={pendingKey === 'pause'} onClick={() => void send('pause', paused ? 'Resume marketplace' : 'Pause marketplace', paused ? 'unpause' : 'pause')}>
@@ -113,20 +201,27 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
       </Panel>
 
       <Panel
-        title="Platform listing fee & revenue"
-        body={`Charged once when an ad is created (cap 0.50 USDC; refreshes & trades are free). Current: ${formatUsdcAmount(feeConfig.listingFee)} USDC · Recipient: ${feeConfig.feeRecipient ? shortAddr(feeConfig.feeRecipient) : '...'}`}
+        title={`Platform listing fee & revenue (${selectedAsset})`}
+        body={`Charged once when an ad is created (cap ${maxFeeDisplay} ${selectedAsset}; refreshes & trades are free). Current: ${formatUsdcAmount(feeConfig.listingFee, undefined, selectedAsset)} ${selectedAsset} · Recipient: ${feeConfig.feeRecipient ? shortAddr(feeConfig.feeRecipient) : '...'}`}
       >
         <div className="inner mb-3 flex flex-wrap items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">
           <div>
             <p className="text-xs" style={{ color: 'var(--subtle)' }}>Accrued fees ready to collect</p>
-            <p className="mono text-base font-bold tabular-nums">{formatUsdcAmount(feeConfig.feesAccrued)} USDC</p>
+            <p className="mono text-base font-bold tabular-nums">
+              {formatUsdcAmount(feeConfig.feesAccrued, undefined, selectedAsset)} {selectedAsset}
+            </p>
           </div>
           <Button
             disabled={feeConfig.feesAccrued === 0n}
             loading={pendingKey === 'collect-fees'}
             onClick={() =>
-              void run('collect-fees', 'Collect accrued fees', () =>
-                writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'collectFees' }),
+              void run('collect-fees', `Collect ${selectedAsset} accrued fees`, () =>
+                writeContractAsync({
+                  address: escrowAddress,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'collectFees',
+                }),
               )
             }
           >
@@ -139,19 +234,20 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
             <input
               inputMode="decimal"
               value={feeInput}
-              onChange={(e) => /^\d*\.?\d{0,6}$/.test(e.target.value) && setFeeInput(e.target.value)}
-              placeholder="New fee in USDC (0.00 – 0.50)"
+              onChange={(e) => isValidDecimalInput(e.target.value, tokenDecimals) && setFeeInput(e.target.value)}
+              placeholder={`New fee in ${selectedAsset} (0 – ${maxFeeDisplay})`}
               className={`${inputClass} mono flex-1 text-sm`}
-              aria-label="New listing fee in USDC"
+              aria-label={`New listing fee in ${selectedAsset}`}
             />
             <Button
               disabled={!validFee}
               loading={pendingKey === 'set-fee'}
               onClick={() =>
-                void run('set-fee', 'Update listing fee', () =>
+                void run('set-fee', `Update ${selectedAsset} listing fee`, () =>
                   writeContractAsync({
-                    ...base,
-                    address: ESCROW_ADDRESS!,
+                    address: escrowAddress,
+                    abi: p2pEscrowAbi,
+                    chainId: CHAIN_ID,
                     functionName: 'setListingFee',
                     args: [parsedFee!],
                   }),
@@ -175,10 +271,11 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
               disabled={!validRecipient}
               loading={pendingKey === 'set-fee-recipient'}
               onClick={() =>
-                void run('set-fee-recipient', 'Update fee recipient', () =>
+                void execAcrossTargets('set-fee-recipient', 'Update fee recipient', (addr) =>
                   writeContractAsync({
-                    ...base,
-                    address: ESCROW_ADDRESS!,
+                    address: addr,
+                    abi: p2pEscrowAbi,
+                    chainId: CHAIN_ID,
                     functionName: 'setFeeRecipient',
                     args: [newFeeRecipient.trim() as Address],
                   }),
@@ -193,7 +290,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
 
       <Panel
         title="KYC verifier & enforcement"
-        body={`The verifier key can only record or revoke KYC status and can never move funds. Current verifier: ${hasVerifier ? shortAddr(verifier) : 'Not set'}`}
+        body={`The verifier key can only record or revoke KYC status and can never move funds. Current verifier (${selectedAsset}): ${hasVerifier ? shortAddr(verifier) : 'Not set'}`}
       >
         <div className="inner mb-3 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">
           <div>
@@ -205,8 +302,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
             disabled={privacy.isLoading}
             loading={pendingKey === 'kyc-switch'}
             onClick={() =>
-              void run('kyc-switch', `${privacy.kycRequired ? 'Disable' : 'Enable'} KYC requirement`, () =>
-                writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setKycRequired', args: [!privacy.kycRequired] }),
+              void execAcrossTargets('kyc-switch', `${privacy.kycRequired ? 'Disable' : 'Enable'} KYC requirement`, (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setKycRequired',
+                  args: [!privacy.kycRequired],
+                }),
               )
             }
           >
@@ -228,10 +331,11 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
             disabled={!validVerifier}
             loading={pendingKey === 'set-verifier'}
             onClick={() =>
-              void run('set-verifier', 'Set KYC verifier', () =>
+              void execAcrossTargets('set-verifier', 'Set KYC verifier', (addr) =>
                 writeContractAsync({
-                  ...base,
-                  address: ESCROW_ADDRESS!,
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
                   functionName: 'setVerifier',
                   args: [newVerifier.trim() as Address],
                 }),
@@ -258,8 +362,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
               disabled={privacy.isLoading}
               loading={pendingKey === 'sealed-switch'}
               onClick={() =>
-                void run('sealed-switch', `${privacy.sealedEnabled ? 'Disable' : 'Enable'} sealed details`, () =>
-                  writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setSealedEnabled', args: [!privacy.sealedEnabled] }),
+                void execAcrossTargets('sealed-switch', `${privacy.sealedEnabled ? 'Disable' : 'Enable'} sealed details`, (addr) =>
+                  writeContractAsync({
+                    address: addr,
+                    abi: p2pEscrowAbi,
+                    chainId: CHAIN_ID,
+                    functionName: 'setSealedEnabled',
+                    args: [!privacy.sealedEnabled],
+                  }),
                 )
               }
             >
@@ -277,8 +387,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
               disabled={privacy.isLoading}
               loading={pendingKey === 'payer-proof-switch'}
               onClick={() =>
-                void run('payer-proof-switch', `${privacy.payerProofRequired ? 'Disable' : 'Enable'} payer proof`, () =>
-                  writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setPayerProofRequired', args: [!privacy.payerProofRequired] }),
+                void execAcrossTargets('payer-proof-switch', `${privacy.payerProofRequired ? 'Disable' : 'Enable'} payer proof`, (addr) =>
+                  writeContractAsync({
+                    address: addr,
+                    abi: p2pEscrowAbi,
+                    chainId: CHAIN_ID,
+                    functionName: 'setPayerProofRequired',
+                    args: [!privacy.payerProofRequired],
+                  }),
                 )
               }
             >
@@ -303,8 +419,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
           disabled={!valid}
           loading={pendingKey === 'arbiter'}
           onClick={() =>
-            void run('arbiter', 'Change arbiter', () =>
-              writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setArbiter', args: [newArbiter.trim() as Address] }),
+            void execAcrossTargets('arbiter', 'Change arbiter', (addr) =>
+              writeContractAsync({
+                address: addr,
+                abi: p2pEscrowAbi,
+                chainId: CHAIN_ID,
+                functionName: 'setArbiter',
+                args: [newArbiter.trim() as Address],
+              }),
             )
           }
         >
@@ -314,7 +436,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
 
       <Panel
         title="Backup arbiter (7-day fallback)"
-        body={`May take or rule on a case once 7 days have passed since dispute (or paidAt if not yet disputed). Current: ${backupArbiter ? shortAddr(backupArbiter) : '...'}`}
+        body={`May take or rule on a case once 7 days have passed since dispute (or paidAt if not yet disputed). Current (${selectedAsset}): ${backupArbiter ? shortAddr(backupArbiter) : '...'}`}
       >
         <input
           value={newBackup}
@@ -329,8 +451,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
           disabled={!validBackup}
           loading={pendingKey === 'backup-arbiter'}
           onClick={() =>
-            void run('backup-arbiter', 'Set backup arbiter', () =>
-              writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setBackupArbiter', args: [newBackup.trim() as Address] }),
+            void execAcrossTargets('backup-arbiter', 'Set backup arbiter', (addr) =>
+              writeContractAsync({
+                address: addr,
+                abi: p2pEscrowAbi,
+                chainId: CHAIN_ID,
+                functionName: 'setBackupArbiter',
+                args: [newBackup.trim() as Address],
+              }),
             )
           }
         >
@@ -339,7 +467,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
       </Panel>
 
       <div className="lg:col-span-2">
-        <Panel title="Supported currencies" body="Switch a local currency off to stop new ads in it. Existing orders are not affected.">
+        <Panel title={`Supported currencies (${selectedAsset})`} body="Switch a local currency off to stop new ads in it. Existing orders are not affected.">
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {COUNTRIES.map((c, i) => {
               const on = supported.data?.[i]?.status === 'success' ? supported.data[i].result === true : undefined
@@ -349,8 +477,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
                   <button
                     disabled={on === undefined || pendingKey === key}
                     onClick={() =>
-                      void run(key, `${on ? 'Disable' : 'Enable'} ${c.currency}`, () =>
-                        writeContractAsync({ ...base, address: ESCROW_ADDRESS!, functionName: 'setCurrency', args: [currencyToHex(c.currency), !on] }),
+                      void execAcrossTargets(key, `${on ? 'Disable' : 'Enable'} ${c.currency}`, (addr) =>
+                        writeContractAsync({
+                          address: addr,
+                          abi: p2pEscrowAbi,
+                          chainId: CHAIN_ID,
+                          functionName: 'setCurrency',
+                          args: [currencyToHex(c.currency), !on],
+                        }),
                       )
                     }
                     aria-pressed={on}
@@ -365,6 +499,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
             })}
           </ul>
         </Panel>
+      </div>
       </div>
     </div>
   )

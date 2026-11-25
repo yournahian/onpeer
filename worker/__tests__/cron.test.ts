@@ -421,4 +421,73 @@ describe('cron — SCANNED_EVENTS match deployed P2PEscrow ABI & decode real log
       dedupe_key: `order_paid:${seller}:7`,
     })
   })
+
+  it('scans secondary asset escrows (EURC) with per-asset cursors and queues scoped order IDs (H-01)', async () => {
+    const db = new CronMemoryDb()
+    db.cursors.set('escrow_events', '73721910')
+    db.cursors.set('escrow_events:EURC', '73721900')
+    db.cursors.set('escrow_events:cirBTC', '73734225')
+    db.cursors.set('escrow_events:WETH', '73734238')
+
+    const buyer = '0x1111111111111111111111111111111111111111' as const
+    const seller = '0x2222222222222222222222222222222222222222' as const
+
+    const chain: ChainReader = {
+      getRoles: async () => ({
+        owner: buyer,
+        arbiter: buyer,
+        backupArbiter: buyer,
+        verifier: buyer,
+        kycRequired: false,
+        sealedEnabled: false,
+        payerProofRequired: false,
+      }),
+      getAd: async () => null,
+      isVerified: async () => false,
+      getOpenOrderCount: async () => 0n,
+      getUserAdIds: async () => [],
+      getOrder: async (scopedId: bigint) => ({
+        id: scopedId,
+        adId: 1_000_000_000_001n,
+        buyer,
+        seller,
+        taker: buyer,
+        status: 2,
+        createdAt: 1000n,
+        deadline: 2000n,
+        paidAt: 1100n,
+        disputedAt: 0n,
+        reviewStartedAt: 0n,
+        amount: 25_000000n,
+        detailsReady: true,
+        detailsHash: ('0x' + '00'.repeat(32)) as `0x${string}`,
+        payerProof: ('0x' + '00'.repeat(32)) as `0x${string}`,
+        paidLate: false,
+      }),
+    }
+
+    const eurcEscrow = '0x0db2fbf8357617172a3b852bc2ac3054dba1d402'
+    const rpcClient = {
+      getBlockNumber: async () => 73721910n,
+      getLogs: async (params: { address: `0x${string}` }) =>
+        params.address.toLowerCase() === eurcEscrow
+          ? [{ eventName: 'OrderPaid', args: { orderId: 5n } }]
+          : [],
+    }
+
+    const env = {
+      VITE_P2P_ESCROW_ADDRESS: '0xf719ebbc5080aee09e38909764b897e0bf01a9b0',
+      VITE_P2P_EURC_ESCROW_ADDRESS: eurcEscrow,
+    } as unknown as Env
+
+    const res = await scanChainEvents(env, db, chain, rpcClient)
+    expect(res.queued).toBe(1)
+    expect(db.cursors.get('escrow_events:EURC')).toBe('73721910')
+    expect(db.outboxRows).toHaveLength(1)
+    expect(db.outboxRows[0]).toEqual({
+      wallet: seller,
+      event: 'order_paid',
+      dedupe_key: `order_paid:${seller}:1000000000005`,
+    })
+  })
 })

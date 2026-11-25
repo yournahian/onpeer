@@ -95,6 +95,19 @@ class TelegramMemoryDb implements Queryable {
   ): Promise<{ rows: R[]; rowCount: number | null }> {
     const n = sql.replace(/\s+/g, ' ').trim()
 
+    if (n === 'BEGIN' || n === 'COMMIT' || n === 'ROLLBACK') return { rows: [], rowCount: 0 }
+
+    if (n.startsWith('INSERT INTO public.rate_limits') && n.includes('ON CONFLICT (bucket) DO NOTHING')) {
+      const bucket = String(values[0])
+      const windowSec = Number(values[1])
+      const cur = this.rateLimits.get(bucket)
+      if (cur && cur.resetAtMs > this.nowMs) {
+        return { rows: [], rowCount: 0 }
+      }
+      this.rateLimits.set(bucket, { count: 1, resetAtMs: this.nowMs + windowSec * 1000 })
+      return { rows: [], rowCount: 1 }
+    }
+
     if (n.startsWith('INSERT INTO public.rate_limits')) {
       const bucket = String(values[0])
       const windowSec = Number(values[1])
@@ -113,6 +126,11 @@ class TelegramMemoryDb implements Queryable {
 
     if (n.startsWith('INSERT INTO public.audit_log')) {
       return { rows: [], rowCount: 1 }
+    }
+
+    if (n.startsWith('SELECT deleted_at FROM public.accounts')) {
+      const acc = this.accounts.get(String(values[0]))
+      return acc ? { rows: [{ deleted_at: acc.deleted_at } as unknown as R], rowCount: 1 } : { rows: [], rowCount: 0 }
     }
 
     if (n.startsWith('SELECT telegram_chat_id_enc, telegram_username_enc, telegram_linked_at, telegram_opt_in, deleted_at FROM public.accounts')) {
@@ -449,6 +467,40 @@ describe('Telegram Mini App & Live Order Notification Bot', () => {
     expect(startWh?.status).toBe(200)
     expect(db.accounts.get(TEST_WALLET)?.telegram_opt_in).toBe(true)
     expect(sentBotMsgs[sentBotMsgs.length - 1]?.text).toContain('Connected to OnPeer')
+
+    // 3b. Replaying the exact same single-use deep-link token from another Telegram account must fail (H-05)
+    await handleTelegramRoutes(
+      new Request('https://app.onpeer.xyz/api/telegram/webhook', {
+        method: 'POST',
+        headers: {
+          'x-telegram-bot-api-secret-token': WEBHOOK_SECRET,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: {
+            text: `/start ${startArg}`,
+            chat: { id: 99999999, type: 'private' },
+            from: { id: 99999999, username: 'attacker' },
+          },
+        }),
+      }),
+      env,
+      db,
+      '/telegram/webhook',
+      { fetchImpl: mockFetch, nowMs: db.nowMs },
+    )
+    expect(sentBotMsgs[sentBotMsgs.length - 1]?.text).toContain('already been used')
+
+    // 3c. Scoped EURC order ID formats cleanly as `#5 (EURC)` while preserving `?order=1000000000005`
+    await queueNotification(db, TEST_WALLET, 'order_paid', 1_000_000_000_005n)
+    const origFetch = globalThis.fetch
+    globalThis.fetch = mockFetch
+    try {
+      await processNotificationsOutbox(env, db)
+    } finally {
+      globalThis.fetch = origFetch
+    }
+    expect(sentBotMsgs[sentBotMsgs.length - 1]?.text).toContain('Order #5 (EURC) Marked as Paid')
 
     // 4. Test /mute command
     await handleTelegramRoutes(
