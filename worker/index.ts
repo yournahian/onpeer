@@ -18,6 +18,7 @@ import { handleVaultRoutes } from './vault'
 import { handleDisputeRoutes } from './disputes'
 import { handleSocialRoutes } from './social'
 import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
+import { handleTelegramRoutes, setupTelegramBotWebhook } from './telegram'
 import { handleSeoFileRequest, injectSeoIntoHtmlResponse } from './seo'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
@@ -307,6 +308,12 @@ async function handleApi(
     if (path.startsWith('/p2p/') || /^\/orders\/\d+\/feedback$/.test(path)) {
       const chain = makeChain(env)
       const res = await runDb(env, (db) => handleSocialRoutes(req, env, db, chain, path))
+      return res ?? json(404, { error: 'not_found' })
+    }
+
+    // ---- Telegram Mini App & Live Order Notification Bot (/api/telegram/*) ----
+    if (path.startsWith('/telegram/')) {
+      const res = await runDb(env, (db) => handleTelegramRoutes(req, env, db, path))
       return res ?? json(404, { error: 'not_found' })
     }
 
@@ -608,6 +615,18 @@ async function handleApi(
       }
     }
 
+    // ---- Admin 1-click Telegram Bot Webhook + Menu Button Setup (/api/admin/telegram/setup) ----
+    if (req.method === 'POST' && path === '/admin/telegram/setup') {
+      const chain = makeChain(env)
+      const adminWallet = await resolveAdminWallet(req, env, chain, runDb)
+      if (!adminWallet) return json(401, { error: 'unauthorized' })
+      const result = await setupTelegramBotWebhook(env, new URL(req.url))
+      if (!result.ok) {
+        return json(result.error === 'telegram_not_configured' ? 503 : 502, { error: result.error })
+      }
+      return json(200, result)
+    }
+
     return json(404, { error: 'not_found' })
   } catch (err) {
     if (err instanceof AuthConfigError || err instanceof DbUnavailableError || err instanceof VaultConfigError) {
@@ -637,14 +656,16 @@ function resolveHttpsOrigin(raw: string | undefined, fallback: string): string {
 export function buildAppCsp(env: Env): string {
   const widgetOrigin = resolveHttpsOrigin(env.ONRAMP_WIDGET_BASE_URL, SANDBOX_WIDGET_BASE_URL)
   const apiOrigin = resolveHttpsOrigin(env.ONRAMP_API_BASE_URL, SANDBOX_API_BASE_URL)
-  return `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; worker-src 'self' blob:; connect-src 'self' ${widgetOrigin} ${apiOrigin} https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${widgetOrigin}; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'`
+  return `default-src 'self'; script-src 'self' https://static.cloudflareinsights.com https://telegram.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob: https:; worker-src 'self' blob:; connect-src 'self' ${widgetOrigin} ${apiOrigin} https: wss:; frame-src https://verify.walletconnect.org https://verify.walletconnect.com ${widgetOrigin}; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org; object-src 'none'; base-uri 'self'; form-action 'self'`
 }
 
 function withSecurityHeaders(res: Response, isApi: boolean, env: Env): Response {
   const headers = new Headers(res.headers)
   headers.set('Content-Security-Policy', isApi ? API_CSP : buildAppCsp(env))
   headers.set('X-Content-Type-Options', 'nosniff')
-  headers.set('X-Frame-Options', 'DENY')
+  if (isApi) {
+    headers.set('X-Frame-Options', 'DENY')
+  }
   headers.set('Referrer-Policy', 'no-referrer')
   return new Response(res.body, {
     status: res.status,

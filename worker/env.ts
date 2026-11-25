@@ -34,6 +34,8 @@ export interface Env {
   VITE_ARC_TESTNET_EURC_ADDRESS?: string
   DIDIT_MODE?: 'sandbox' | 'live' | string
   PUBLIC_APP_URL?: string
+  TELEGRAM_BOT_USERNAME?: string
+  VITE_WALLETCONNECT_PROJECT_ID?: string
   ONRAMP_API_BASE_URL?: string
   ONRAMP_WIDGET_BASE_URL?: string
   ONRAMP_REFERRER_DOMAIN?: string
@@ -50,6 +52,9 @@ export interface Env {
   ADMIN_ALERT_EMAIL?: string
   CIRCLE_API_KEY?: string
   ONRAMP_DEV_PASS?: string
+  TELEGRAM_BOT_TOKEN?: string
+  TELEGRAM_WEBHOOK_SECRET?: string
+  TELEGRAM_ADMIN_CHAT_ID?: string
 
   // Legacy / AI assistant secrets
   ADMIN_SESSION_SECRET?: string

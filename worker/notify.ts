@@ -13,6 +13,7 @@ import type { ChainReader } from './chain'
 import { openText } from './crypto'
 import { type Queryable } from './db'
 import { publicAppOrigin, type Env } from './env'
+import { buildTelegramAlertMessage, sendTelegramBotMessage, tgChatAad } from './telegram'
 
 const MAX_ATTEMPTS = 3
 const BATCH_SIZE = 20
@@ -32,6 +33,7 @@ type NotifyEvent =
   | 'dispute_filed'
   | 'case_taken'
   | 'dispute_resolved'
+  | 'order_chat'
 
 function eventSubject(event: string): string {
   switch (event as NotifyEvent) {
@@ -46,6 +48,7 @@ function eventSubject(event: string): string {
     case 'dispute_filed':    return 'A dispute statement was filed on your OnPeer order'
     case 'case_taken':       return 'An arbiter has taken your OnPeer dispute case'
     case 'dispute_resolved': return 'A ruling has been issued on your OnPeer dispute'
+    case 'order_chat':       return 'New message in your OnPeer order chat'
     default:                 return 'OnPeer notification'
   }
 }
@@ -134,6 +137,13 @@ function eventBody(event: string, orderId: bigint | null, appOrigin: string): st
     case 'dispute_resolved':
       return [
         orderId ? `A ruling has been issued on order #${orderId.toString()}.` : 'A ruling has been issued on your dispute.',
+        '',
+        `View order: ${link}`,
+      ].join('\n')
+
+    case 'order_chat':
+      return [
+        orderId ? `You have a new message in order #${orderId.toString()} chat.` : 'You have a new message in your order chat.',
         '',
         `View order: ${link}`,
       ].join('\n')
@@ -245,7 +255,12 @@ export async function processNotificationsOutbox(
 
   const appOrigin = publicAppOrigin(env)
   const adminFallbackEmail = env.ADMIN_ALERT_EMAIL?.trim() || null
-  const roles = adminFallbackEmail && chain ? await chain.getRoles().catch(() => null) : null
+  const adminFallbackChatId = env.TELEGRAM_ADMIN_CHAT_ID?.trim() || null
+  const hasTelegramBot = !!env.TELEGRAM_BOT_TOKEN?.trim()
+  const roles =
+    (adminFallbackEmail || adminFallbackChatId) && chain
+      ? await chain.getRoles().catch(() => null)
+      : null
 
   for (const row of claimed.rows) {
     const wallet = row.wallet.toLowerCase() as `0x${string}`
@@ -254,7 +269,11 @@ export async function processNotificationsOutbox(
     let skipReason: string | null = null
 
     try {
-      // Load account email
+      const isArbiterWallet =
+        !!roles &&
+        (wallet === roles.arbiter.toLowerCase() || wallet === roles.backupArbiter.toLowerCase())
+
+      // 1. Load account email
       const accRes = await db.query<AccountEmailRow>(
         `SELECT email_enc, email_verified_at, email_opt_in
            FROM public.accounts
@@ -271,29 +290,66 @@ export async function processNotificationsOutbox(
           plainEmail = await openText(env, acc.email_enc, EMAIL_AAD(wallet))
         } catch {
           skipReason = 'email_decrypt_failed'
-          continue
         }
-      } else if (
-        adminFallbackEmail &&
-        roles &&
-        (wallet === roles.arbiter.toLowerCase() || wallet === roles.backupArbiter.toLowerCase())
-      ) {
-        // Fallback for arbiter alerts when arbiter wallet has no verified P2P account email
+      } else if (adminFallbackEmail && isArbiterWallet) {
         plainEmail = adminFallbackEmail
         includeUnsub = false
       }
 
-      if (!plainEmail) {
-        skipReason = 'no_verified_opt_in_email'
-      } else {
-        const subject = eventSubject(row.event)
-        const parts = [eventBody(row.event, orderId, appOrigin)]
-        if (includeUnsub) {
-          const unsubUrl = await mintUnsubscribeUrl(env, appOrigin, wallet)
-          parts.push('', '---', `Unsubscribe: ${unsubUrl}`)
+      // 2. Load account Telegram chat ID (when TELEGRAM_BOT_TOKEN is configured)
+      let tgChatId: string | null = null
+      if (hasTelegramBot) {
+        const tgRes = await db
+          .query<{ telegram_chat_id_enc: string | null; telegram_opt_in: boolean }>(
+            `SELECT telegram_chat_id_enc, telegram_opt_in
+               FROM public.accounts
+              WHERE wallet = $1 AND deleted_at IS NULL`,
+            [wallet],
+          )
+          .catch(() => ({ rows: [] as Array<{ telegram_chat_id_enc: string | null; telegram_opt_in: boolean }> }))
+        const tgAcc = tgRes.rows[0]
+        if (tgAcc?.telegram_chat_id_enc && tgAcc.telegram_opt_in) {
+          try {
+            tgChatId = await openText(env, tgAcc.telegram_chat_id_enc, tgChatAad(wallet))
+          } catch {
+            if (!plainEmail) skipReason = 'telegram_decrypt_failed'
+          }
+        } else if (adminFallbackChatId && isArbiterWallet) {
+          tgChatId = adminFallbackChatId
         }
-        success = await sendEmail(env, plainEmail, subject, parts.join('\n'))
-        if (!success) skipReason = 'send_failed'
+      }
+
+      if (!plainEmail && !tgChatId) {
+        if (!skipReason) skipReason = 'no_verified_opt_in_email'
+      } else {
+        let emailSent = false
+        let telegramSent = false
+
+        if (plainEmail) {
+          const subject = eventSubject(row.event)
+          const parts = [eventBody(row.event, orderId, appOrigin)]
+          if (includeUnsub) {
+            const unsubUrl = await mintUnsubscribeUrl(env, appOrigin, wallet)
+            parts.push('', '---', `Unsubscribe: ${unsubUrl}`)
+          }
+          emailSent = await sendEmail(env, plainEmail, subject, parts.join('\n'))
+        }
+
+        if (tgChatId) {
+          const alert = buildTelegramAlertMessage(row.event, orderId, appOrigin)
+          telegramSent = await sendTelegramBotMessage(env, {
+            chatId: tgChatId,
+            text: alert.text,
+            buttons: alert.buttons,
+          })
+        }
+
+        if (emailSent || telegramSent) {
+          success = true
+          skipReason = null
+        } else {
+          skipReason = 'send_failed'
+        }
       }
     } catch {
       skipReason = 'internal_error'

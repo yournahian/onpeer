@@ -14,7 +14,7 @@ import {
   polygonAmoy,
   sepolia,
 } from 'viem/chains'
-import { injected } from 'wagmi/connectors'
+import { injected, walletConnect } from 'wagmi/connectors'
 import { registerChain } from './tracing'
 
 // Pre-register chain RPC URLs so trace events show correct chain names immediately
@@ -31,9 +31,27 @@ export const supportedChains = [
   polygonAmoy,
 ] as const
 
+const wcProjectId = (import.meta.env.VITE_WALLETCONNECT_PROJECT_ID ?? '').trim()
+
+const connectors = wcProjectId
+  ? [
+      injected(),
+      walletConnect({
+        projectId: wcProjectId,
+        showQrModal: false,
+        metadata: {
+          name: 'OnPeer',
+          description: 'Non-Custodial P2P Crypto, Swap & Bridge for South Asia on Arc',
+          url: 'https://app.onpeer.xyz',
+          icons: ['https://onpeer.xyz/brand/icon-512.png'],
+        },
+      }),
+    ]
+  : [injected()]
+
 export const config = createConfig({
   chains: [...supportedChains, mainnet], // mainnet needed for ENS resolution
-  connectors: [injected()],
+  connectors,
   transports: {
     [arcTestnet.id]: fallback([
       http('https://rpc.testnet.arc.network', { batch: { wait: 50 }, retryCount: 1, timeout: 10_000 }),

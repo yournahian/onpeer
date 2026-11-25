@@ -42,6 +42,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   onramp_sandbox_only: 'OnPeer checkout is currently restricted to sandbox mode.',
   onramp_invalid_referrer_domain: 'Sandbox checkout is temporarily unavailable due to a server domain configuration issue.',
   onramp_provider_error: 'Could not start a sandbox checkout session right now. Please try again.',
+  telegram_not_configured: 'Telegram Bot is not configured on this server yet (set TELEGRAM_BOT_TOKEN & TELEGRAM_BOT_USERNAME).',
+  invalid_telegram_init_data: 'Could not verify Telegram Mini App session. Please reopen from Telegram and try again.',
+  telegram_not_linked: 'Connect your Telegram account first.',
+  telegram_send_failed: 'Telegram could not deliver the message. Make sure you pressed Start in the bot chat.',
   service_unavailable: 'Backend service is temporarily unavailable.',
   offline: 'Could not reach the OnPeer backend (/api). Make sure wrangler dev is running.',
 }

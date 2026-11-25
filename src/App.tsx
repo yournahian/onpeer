@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { MotionConfig } from 'framer-motion'
 import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
+import { useTelegramMiniAppBridge } from '@/lib/telegram'
 import { useTheme } from '@/lib/theme'
 import { AgentChat } from '@/components/AgentChat'
 import { AgentProvider } from '@/agent/AgentContext'
@@ -26,7 +27,9 @@ const RIBBON_ROUTES = new Set(['swap', 'bridge', 'buy', 'assistant', 'p2p'])
 export default function App() {
   const route = useRoute()
   const search = useSearch()
-  const { helixVisible, helixBlurred, setHelixBlurred } = useTheme()
+  const { resolved, helixVisible, helixBlurred, setHelixBlurred } = useTheme()
+
+  useTelegramMiniAppBridge(route, search, resolved)
 
   useEffect(() => {
     if (route !== 'swap' && route !== 'bridge') {

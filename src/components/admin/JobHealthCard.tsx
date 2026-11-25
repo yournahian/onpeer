@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, AlertTriangle, CheckCircle2, RefreshCw } from 'lucide-react'
-import { apiFetch, useBackendSession } from '@/lib/api'
+import { Activity, AlertTriangle, CheckCircle2, RefreshCw, Send } from 'lucide-react'
+import { toast } from 'sonner'
+import { BackendApiError, apiFetch, useBackendSession } from '@/lib/api'
 
 interface CronJobStatus {
   jobName: string
@@ -24,7 +25,20 @@ export function JobHealthCard() {
   const session = useBackendSession()
   const [data, setData] = useState<AdminHealthPayload | null>(null)
   const [loading, setLoading] = useState(false)
+  const [syncingTg, setSyncingTg] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  const syncTelegramWebhook = async () => {
+    setSyncingTg(true)
+    try {
+      const res = await apiFetch<{ ok: boolean; webhookUrl?: string }>('/admin/telegram/setup', { method: 'POST' })
+      toast.success(`Telegram Bot webhook & Mini App button synced (${res.webhookUrl ?? 'active'})`)
+    } catch (e) {
+      toast.error(e instanceof BackendApiError ? e.message : 'Could not sync Telegram Bot webhook.')
+    } finally {
+      setSyncingTg(false)
+    }
+  }
 
   const load = useCallback(async () => {
     if (!session) return
@@ -51,15 +65,26 @@ export function JobHealthCard() {
         <h2 className="flex items-center gap-2 text-sm font-semibold">
           <Activity className="size-4" /> Scheduled jobs &amp; queue health
         </h2>
-        <button
-          type="button"
-          disabled={loading || !session}
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold hover:opacity-80 disabled:opacity-40"
-          style={{ background: 'var(--fill-2)', color: 'var(--muted)' }}
-        >
-          <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={syncingTg || !session}
+            onClick={() => void syncTelegramWebhook()}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold hover:opacity-85 disabled:opacity-40"
+            style={{ background: 'rgba(255, 90, 0, 0.14)', border: '1px solid var(--border-strong)', color: 'var(--accent)' }}
+          >
+            <Send className="size-3" /> {syncingTg ? 'Syncing…' : 'Sync Telegram Bot'}
+          </button>
+          <button
+            type="button"
+            disabled={loading || !session}
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold hover:opacity-80 disabled:opacity-40"
+            style={{ background: 'var(--fill-2)', color: 'var(--muted)' }}
+          >
+            <RefreshCw className={`size-3 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        </div>
       </div>
 
       {!session ? (

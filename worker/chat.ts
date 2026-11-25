@@ -2,7 +2,8 @@ import { requireSession } from './auth'
 import { checkOrderAccess, isArbiterOrderReadAllowed, type ChainReader } from './chain'
 import { CryptoTamperError, openText, sealText } from './crypto'
 import { checkRateLimit, writeAudit, type Queryable } from './db'
-import { json, readJsonBody, type Env } from './env'
+import { json, publicAppOrigin, readJsonBody, type Env } from './env'
+import { buildTelegramAlertMessage, sendTelegramBotMessage, tgChatAad } from './telegram'
 
 const MAX_MSG_BYTES = 4_096
 const MAX_MSGS_PER_PAGE = 50
@@ -113,6 +114,59 @@ export async function handleChatRoutes(
     )
     const msgId = ins.rows[0]?.id ?? ''
     await writeAudit(db, wallet, 'chat.post', `order:${orderIdStr}`)
+
+    // Instant zero-PII counterparty Telegram push + 2-minute deduplicated outbox notification
+    const counterparty =
+      access.role === 'buyer'
+        ? access.order.seller
+        : access.role === 'seller'
+          ? access.order.buyer
+          : null
+
+    if (counterparty) {
+      const targetWallet = counterparty.toLowerCase() as `0x${string}`
+      const bucket = Math.floor(Date.now() / 120_000)
+      const dedupeKey = `order_chat:${targetWallet}:${orderIdStr}:${bucket}`
+
+      let deliveredInstant = false
+      if (env.TELEGRAM_BOT_TOKEN?.trim()) {
+        const tgRow = await db
+          .query<{ telegram_chat_id_enc: string | null; telegram_opt_in: boolean }>(
+            `SELECT telegram_chat_id_enc, telegram_opt_in
+               FROM public.accounts
+              WHERE wallet = $1 AND deleted_at IS NULL`,
+            [targetWallet],
+          )
+          .then((r) => r.rows[0])
+          .catch(() => undefined)
+
+        if (tgRow?.telegram_chat_id_enc && tgRow.telegram_opt_in) {
+          try {
+            const chatId = await openText(env, tgRow.telegram_chat_id_enc, tgChatAad(targetWallet))
+            const appOrigin = publicAppOrigin(env, new URL(req.url))
+            const alert = buildTelegramAlertMessage('order_chat', orderId, appOrigin)
+            deliveredInstant = await sendTelegramBotMessage(env, {
+              chatId,
+              text: alert.text,
+              buttons: alert.buttons,
+            })
+          } catch {
+            deliveredInstant = false
+          }
+        }
+      }
+
+      if (!deliveredInstant) {
+        await db
+          .query(
+            `INSERT INTO public.notifications_outbox (wallet, event, order_id, dedupe_key)
+             VALUES ($1, 'order_chat', $2, $3)
+             ON CONFLICT (dedupe_key) DO NOTHING`,
+            [targetWallet, orderIdStr, dedupeKey],
+          )
+          .catch(() => undefined)
+      }
+    }
 
     return json(201, { id: msgId })
   }

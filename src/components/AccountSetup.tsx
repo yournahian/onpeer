@@ -1,10 +1,17 @@
-import { useState } from 'react'
-import { CheckCircle2, KeyRound, Loader2, LogOut, Mail, ShieldCheck, Trash2, UserCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { BellRing, CheckCircle2, ExternalLink, KeyRound, Loader2, LogOut, Mail, Send, ShieldCheck, Trash2, Unlink, UserCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { AppLink } from '@/components/AppLink'
 import { COUNTRIES } from '@/lib/p2p'
 import { BackendApiError } from '@/lib/api'
-import { useP2pAccount, type P2pAccountProfile, type UpsertAccountInput } from '@/hooks/useAccount'
+import {
+  getTelegramInitData,
+  getTelegramMiniAppUser,
+  isTelegramMiniApp,
+  openTelegramUrl,
+  triggerTelegramHaptic,
+} from '@/lib/telegram'
+import { useP2pAccount, useTelegramAlerts, type P2pAccountProfile, type UpsertAccountInput } from '@/hooks/useAccount'
 
 export function AccountSetup() {
   const {
@@ -314,6 +321,8 @@ function AccountSetupForm({
         </p>
       </div>
 
+      <TelegramAlertsCard />
+
       <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
         <input
           type="checkbox"
@@ -381,5 +390,210 @@ function AccountSetupForm({
         )}
       </div>
     </section>
+  )
+}
+
+function TelegramAlertsCard() {
+  const [waitingForBotStart, setWaitingForBotStart] = useState(false)
+  const [pendingDeepLink, setPendingDeepLink] = useState<string | null>(null)
+  const {
+    status,
+    isLoading,
+    linkMiniApp,
+    linkingMiniApp,
+    mintLinkToken,
+    mintingToken,
+    setOptIn,
+    updatingOptIn,
+    sendTest,
+    sendingTest,
+    unlink,
+    unlinking,
+  } = useTelegramAlerts(waitingForBotStart)
+
+  const inMiniApp = isTelegramMiniApp()
+  const miniAppUser = getTelegramMiniAppUser()
+
+  useEffect(() => {
+    if (status?.linked && waitingForBotStart) {
+      // eslint-disable-next-line react/set-state-in-effect
+      setWaitingForBotStart(false)
+      setPendingDeepLink(null)
+      toast.success('Telegram Bot connected! Instant trade alerts are now active.')
+    }
+  }, [status?.linked, waitingForBotStart])
+
+  useEffect(() => {
+    if (!waitingForBotStart) return
+    const timer = window.setTimeout(() => {
+      setWaitingForBotStart(false)
+    }, 120_000)
+    return () => window.clearTimeout(timer)
+  }, [waitingForBotStart])
+
+  const handleLinkInMiniApp = async () => {
+    const initData = getTelegramInitData()
+    if (!initData) {
+      toast.error('Telegram session data unavailable. Reopen the Mini App from Telegram.')
+      return
+    }
+    try {
+      const res = await linkMiniApp(initData)
+      triggerTelegramHaptic('success')
+      toast.success(
+        res.allowsWriteToPm
+          ? 'Telegram connected! Check your bot chat for confirmation.'
+          : 'Telegram linked! Send /start to the bot chat once so it can message you.',
+      )
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not link Telegram Mini App.')
+    }
+  }
+
+  const handleConnectBotWeb = async () => {
+    try {
+      const res = await mintLinkToken()
+      setPendingDeepLink(res.deepLink)
+      setWaitingForBotStart(true)
+      openTelegramUrl(res.deepLink)
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not create Telegram link.')
+    }
+  }
+
+  const handleToggleOptIn = async (next: boolean) => {
+    try {
+      await setOptIn(next)
+      toast.success(next ? 'Telegram alerts enabled' : 'Telegram alerts paused')
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not update Telegram alert preference.')
+    }
+  }
+
+  const handleSendTest = async () => {
+    try {
+      await sendTest()
+      toast.success('Test alert sent to your Telegram!')
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not send Telegram test alert.')
+    }
+  }
+
+  const handleUnlink = async () => {
+    try {
+      await unlink()
+      setWaitingForBotStart(false)
+      setPendingDeepLink(null)
+      toast.success('Telegram disconnected.')
+    } catch (err) {
+      toast.error(err instanceof BackendApiError ? err.message : 'Could not unlink Telegram.')
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Send className="size-4 text-[#FF5A00]" />
+          <span className="text-xs font-bold text-[var(--p2p-ink)]">Telegram Instant Trade &amp; Chat Alerts</span>
+        </div>
+
+        {status?.linked && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px]">
+            {status.username && (
+              <span className="p2p-mono text-[var(--p2p-ink)]">@{status.username}</span>
+            )}
+            <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 font-bold text-[var(--p2p-ok-ink)]">
+              <CheckCircle2 className="size-3" /> Connected
+            </span>
+          </div>
+        )}
+      </div>
+
+      {isLoading && !status ? (
+        <p className="text-xs text-[var(--p2p-muted)]">Checking Telegram connection...</p>
+      ) : status?.linked ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-[var(--p2p-ink)]">
+            <input
+              type="checkbox"
+              checked={status.optIn}
+              disabled={updatingOptIn}
+              onChange={(e) => void handleToggleOptIn(e.target.checked)}
+              className="size-4 accent-[#FF5A00]"
+            />
+            <span>Instant push for orders, escrow releases, chat &amp; disputes</span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={sendingTest || !status.optIn}
+              onClick={() => void handleSendTest()}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-3 text-[11px] font-bold text-[#FF5A00] hover:opacity-90 disabled:opacity-40"
+            >
+              {sendingTest ? <Loader2 className="size-3 animate-spin" /> : <BellRing className="size-3" />}
+              Test Alert
+            </button>
+            <button
+              type="button"
+              disabled={unlinking}
+              onClick={() => void handleUnlink()}
+              className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[var(--p2p-border)] px-2.5 text-[11px] font-semibold text-[var(--p2p-muted)] hover:border-red-500/60 hover:text-red-400 disabled:opacity-40"
+            >
+              {unlinking ? <Loader2 className="size-3 animate-spin" /> : <Unlink className="size-3" />}
+              Unlink
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-xl text-xs text-[var(--p2p-muted)]">
+            Get real-time phone notifications with one-tap order room launch whenever someone opens an order, marks
+            payment as Paid, or sends an encrypted chat message.
+          </p>
+
+          {inMiniApp ? (
+            <button
+              type="button"
+              disabled={linkingMiniApp}
+              onClick={() => void handleLinkInMiniApp()}
+              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {linkingMiniApp ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+              {miniAppUser?.username ? `Link @${miniAppUser.username} (1-Tap)` : 'Link Telegram (1-Tap)'}
+            </button>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={mintingToken}
+                onClick={() => void handleConnectBotWeb()}
+                className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-4 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {mintingToken ? <Loader2 className="size-3.5 animate-spin" /> : <Send className="size-3.5" />}
+                {waitingForBotStart ? 'Waiting for /start in Telegram…' : 'Connect Telegram Bot'}
+                <ExternalLink className="size-3" />
+              </button>
+              {pendingDeepLink && waitingForBotStart && (
+                <a
+                  href={pendingDeepLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-semibold text-[#FF5A00] underline"
+                >
+                  Open link again
+                </a>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <p className="text-[11px] text-[var(--p2p-muted)]">
+        Zero-PII protection: Telegram IDs are AES-256-GCM encrypted at rest, and bot messages never include bank/mobile
+        account numbers, real names, or chat plaintext.
+      </p>
+    </div>
   )
 }

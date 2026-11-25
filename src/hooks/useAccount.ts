@@ -195,6 +195,90 @@ export async function unsubscribeEmailToken(token: string): Promise<void> {
   })
 }
 
+export interface TelegramAlertStatus {
+  configured: boolean
+  botUsername: string | null
+  linked: boolean
+  username: string | null
+  optIn: boolean
+  linkedAt: string | null
+}
+
+export function useTelegramAlerts(pollWhileWaiting = false) {
+  const { address, isConnected } = useAccount()
+  const session = useBackendSession()
+  const queryClient = useQueryClient()
+
+  const normalizedWallet = address?.toLowerCase() ?? null
+  const isSignedIn = !!(isConnected && normalizedWallet && session && session.wallet === normalizedWallet)
+  const queryKey = ['p2p-telegram', normalizedWallet, session?.token ?? null] as const
+
+  const statusQuery = useQuery({
+    queryKey,
+    queryFn: () => apiFetch<TelegramAlertStatus>('/telegram/status'),
+    enabled: isSignedIn,
+    staleTime: 10_000,
+    refetchInterval: pollWhileWaiting ? 3_000 : false,
+  })
+
+  const linkMiniAppMutation = useMutation({
+    mutationFn: (initData: string) =>
+      apiFetch<{ ok: boolean; linked: boolean; username: string | null; optIn: boolean; allowsWriteToPm: boolean }>(
+        '/telegram/link-miniapp',
+        { method: 'POST', body: { initData } },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey })
+    },
+  })
+
+  const mintLinkTokenMutation = useMutation({
+    mutationFn: () =>
+      apiFetch<{ botUsername: string; deepLink: string; expiresInSeconds: number }>('/telegram/link-token', {
+        method: 'POST',
+      }),
+  })
+
+  const toggleOptInMutation = useMutation({
+    mutationFn: (optIn: boolean) =>
+      apiFetch<{ ok: boolean; optIn: boolean }>('/telegram/preferences', {
+        method: 'PUT',
+        body: { optIn },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey })
+    },
+  })
+
+  const sendTestMutation = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean }>('/telegram/test', { method: 'POST' }),
+  })
+
+  const unlinkMutation = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean }>('/telegram/link', { method: 'DELETE' }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey })
+    },
+  })
+
+  return {
+    isSignedIn,
+    status: statusQuery.data ?? null,
+    isLoading: statusQuery.isLoading,
+    refetch: statusQuery.refetch,
+    linkMiniApp: linkMiniAppMutation.mutateAsync,
+    linkingMiniApp: linkMiniAppMutation.isPending,
+    mintLinkToken: mintLinkTokenMutation.mutateAsync,
+    mintingToken: mintLinkTokenMutation.isPending,
+    setOptIn: toggleOptInMutation.mutateAsync,
+    updatingOptIn: toggleOptInMutation.isPending,
+    sendTest: sendTestMutation.mutateAsync,
+    sendingTest: sendTestMutation.isPending,
+    unlink: unlinkMutation.mutateAsync,
+    unlinking: unlinkMutation.isPending,
+  }
+}
+
 export interface KycScenarioOption {
   slug: string
   label: string
