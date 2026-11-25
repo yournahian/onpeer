@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react'
 import { Maximize2, RotateCcw, Sparkles, X } from 'lucide-react'
-import { navigate } from '@/lib/router'
+import { isLandingDomain, navigate } from '@/lib/router'
 import { isTelegramMiniApp } from '@/lib/telegram'
 import { useAgentContext } from '@/agent/AgentContext'
 import { ChatThread } from '@/components/chat/ChatThread'
+import { LandingSupportWidget } from '@/components/LandingSupportWidget'
 import { useTelegramWalletModalOpen } from '@/components/TelegramWalletModal'
 
-/** Floating assistant: always on screen except on the dedicated assistant page or inside Telegram Mini App (where Menu → Assistant is used). */
+const LANDING_ROUTES = new Set(['home', 'brand-kit', 'privacy'])
+
+/**
+ * Floating assistant:
+ * - Landing site (`route === 'home'` / `onpeer.xyz`): Intercom-style Home / Messages / Help widget.
+ * - App pages (`/p2p`, `/swap`, `/bridge`, `/buy`, `/admin`): OnPeer AI Assistant pill & chat panel.
+ */
 export function AgentChat({ route }: { route: string }) {
   const [open, setOpen] = useState(false)
   const { items, reset } = useAgentContext()
   const walletModalOpen = useTelegramWalletModalOpen()
   const onPage = route === 'assistant'
   const inTgMiniApp = isTelegramMiniApp()
+  const useLandingWidget = route === 'home' || (isLandingDomain() && LANDING_ROUTES.has(route))
 
   useEffect(() => {
     if (!open) return
@@ -21,8 +29,14 @@ export function AgentChat({ route }: { route: string }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  // On the dedicated /assistant page or inside Telegram Mini App (when closed), step aside so mobile bottom text is never covered.
-  if (onPage || (inTgMiniApp && !open)) return null
+  if (onPage) return null
+
+  if (useLandingWidget) {
+    return <LandingSupportWidget />
+  }
+
+  // Inside Telegram Mini App (when closed), step aside so mobile bottom text is never covered.
+  if (inTgMiniApp && !open) return null
 
   return (
     <>

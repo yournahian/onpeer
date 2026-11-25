@@ -860,7 +860,7 @@ select option {
 
 /* ---------- Cinematic Motion Footer (Dark & Light OnPeer Theme) ---------- */
 .cinematic-footer-wrapper {
-  font-family: 'Plus Jakarta Sans', 'DM Sans', sans-serif;
+  font-family: inherit;
   -webkit-font-smoothing: antialiased;
   --pill-bg-1: rgba(255, 255, 255, 0.055);
   --pill-bg-2: rgba(255, 255, 255, 0.018);
@@ -878,9 +878,6 @@ select option {
   --footer-aurora-mid: rgba(255, 133, 51, 0.09);
   --footer-watermark-stroke: rgba(255, 90, 0, 0.14);
   --footer-watermark-top: rgba(255, 255, 255, 0.09);
-  --footer-heading-from: #ffffff;
-  --footer-heading-to: #ff9c59;
-  --footer-heading-glow: rgba(255, 90, 0, 0.24);
   --footer-marquee-bg: rgba(12, 12, 14, 0.78);
 }
 
@@ -901,9 +898,6 @@ select option {
   --footer-aurora-mid: rgba(255, 140, 66, 0.07);
   --footer-watermark-stroke: rgba(255, 90, 0, 0.16);
   --footer-watermark-top: rgba(21, 21, 21, 0.075);
-  --footer-heading-from: #151515;
-  --footer-heading-to: #FF5A00;
-  --footer-heading-glow: rgba(255, 90, 0, 0.16);
   --footer-marquee-bg: rgba(255, 255, 255, 0.82);
 }
 
@@ -975,21 +969,14 @@ select option {
 }
 
 .footer-giant-bg-text {
+  font-family: 'Fredoka', 'Space Grotesk', sans-serif;
   font-size: clamp(5rem, 21vw, 22rem);
   line-height: 0.78;
-  font-weight: 900;
-  letter-spacing: -0.05em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: transparent;
   -webkit-text-stroke: 1px var(--footer-watermark-stroke);
   background: linear-gradient(180deg, var(--footer-watermark-top) 0%, transparent 68%);
   -webkit-background-clip: text;
   background-clip: text;
-}
-
-.footer-text-glow {
-  background: linear-gradient(180deg, var(--footer-heading-from) 15%, var(--footer-heading-to) 105%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0px 0px 24px var(--footer-heading-glow));
 }

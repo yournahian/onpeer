@@ -246,7 +246,7 @@ export function CinematicFooter() {
           }}
         >
           <div
-            className="animate-footer-scroll-marquee flex w-max text-[11px] font-bold uppercase tracking-[0.26em] sm:text-xs md:text-sm"
+            className="animate-footer-scroll-marquee flex w-max text-xs font-semibold uppercase tracking-[0.14em] sm:text-sm"
             style={{ color: 'var(--muted)' }}
           >
             <MarqueeItem />
@@ -258,7 +258,8 @@ export function CinematicFooter() {
         <div className="relative z-10 mx-auto mt-16 flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-4 sm:mt-20 sm:px-6">
           <h2
             ref={headingRef}
-            className="footer-text-glow mb-7 pb-2 text-center text-4xl font-black leading-[1.08] tracking-tighter sm:mb-10 sm:text-6xl md:text-8xl"
+            className="display mb-7 text-center text-4xl font-bold sm:mb-10 sm:text-6xl md:text-7xl"
+            style={{ color: 'var(--accent)' }}
           >
             Ready to trade?
           </h2>
@@ -270,11 +271,11 @@ export function CinematicFooter() {
               <MagneticButton
                 href={p2pLink.href}
                 spaTo={p2pLink.spaTo}
-                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-bold sm:px-8 sm:py-4 sm:text-base"
+                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-semibold sm:px-7 sm:py-3.5 sm:text-sm"
                 style={{ color: 'var(--ink)' }}
               >
                 <ArrowLeftRight
-                  className="size-4 transition-transform duration-300 group-hover:scale-110 sm:size-5"
+                  className="size-4 transition-transform duration-300 group-hover:scale-110"
                   style={{ color: 'var(--accent)' }}
                 />
                 P2P market
@@ -283,11 +284,11 @@ export function CinematicFooter() {
               <MagneticButton
                 href={swapLink.href}
                 spaTo={swapLink.spaTo}
-                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-bold sm:px-8 sm:py-4 sm:text-base"
+                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-semibold sm:px-7 sm:py-3.5 sm:text-sm"
                 style={{ color: 'var(--ink)' }}
               >
                 <Repeat
-                  className="size-4 transition-transform duration-300 group-hover:scale-110 sm:size-5"
+                  className="size-4 transition-transform duration-300 group-hover:scale-110"
                   style={{ color: 'var(--accent)' }}
                 />
                 Swap
@@ -296,11 +297,11 @@ export function CinematicFooter() {
               <MagneticButton
                 href={bridgeLink.href}
                 spaTo={bridgeLink.spaTo}
-                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-bold sm:px-8 sm:py-4 sm:text-base"
+                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-semibold sm:px-7 sm:py-3.5 sm:text-sm"
                 style={{ color: 'var(--ink)' }}
               >
                 <Waypoints
-                  className="size-4 transition-transform duration-300 group-hover:scale-110 sm:size-5"
+                  className="size-4 transition-transform duration-300 group-hover:scale-110"
                   style={{ color: 'var(--accent)' }}
                 />
                 Bridge
@@ -309,11 +310,11 @@ export function CinematicFooter() {
               <MagneticButton
                 href={assistantLink.href}
                 spaTo={assistantLink.spaTo}
-                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-bold sm:px-8 sm:py-4 sm:text-base"
+                className="footer-glass-pill group flex items-center gap-2.5 rounded-full px-5 py-3 text-xs font-semibold sm:px-7 sm:py-3.5 sm:text-sm"
                 style={{ color: 'var(--ink)' }}
               >
                 <Sparkles
-                  className="size-4 transition-transform duration-300 group-hover:scale-110 sm:size-5"
+                  className="size-4 transition-transform duration-300 group-hover:scale-110"
                   style={{ color: 'var(--accent)' }}
                 />
                 Assistant
@@ -393,10 +394,7 @@ export function CinematicFooter() {
 
         {/* 3. Bottom Bar (Copyright only — Crafted-by badge & Back-to-top button omitted as requested) */}
         <div className="relative z-20 flex w-full items-center justify-center px-6 pb-7 sm:pb-8 md:px-12">
-          <div
-            className="text-center text-[10px] font-semibold uppercase tracking-[0.2em] md:text-xs"
-            style={{ color: 'var(--subtle)' }}
-          >
+          <div className="text-center text-xs" style={{ color: 'var(--subtle)' }}>
             © 2026 OnPeer. All rights reserved.
           </div>
         </div>
