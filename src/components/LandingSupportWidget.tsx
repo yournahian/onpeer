@@ -1,21 +1,32 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   HelpCircle,
   LifeBuoy,
+  Mail,
   MessageSquareText,
+  MoreHorizontal,
+  Paperclip,
   RotateCcw,
   Search,
   SendHorizontal,
+  Smile,
   Sparkles,
   X,
 } from 'lucide-react'
 import { useAgentContext } from '@/agent/AgentContext'
-import { ChatThread } from '@/components/chat/ChatThread'
+import type { Proposal } from '@/agent/tools'
+import type { UiItem } from '@/agent/useAgent'
+import { BridgeCard } from '@/components/chat/BridgeCard'
+import { SwapCard } from '@/components/chat/SwapCard'
 import { LogoMark } from '@/components/Logo'
+import { APP_URL, isLandingDomain, navigate } from '@/lib/router'
 import { useTheme } from '@/lib/theme'
 
 type WidgetTab = 'home' | 'messages' | 'help'
@@ -198,37 +209,33 @@ function HomeTabIcon({ active }: { active: boolean }) {
   )
 }
 
-/** Crisp illustrated avatar stack for the Home header (2 team portraits + live AI badge). */
-function SupportAvatarCluster() {
+/** Cute headset AI helper bot avatar matching the Askie/Intercom Fin digital helper style. */
+function AiHelperBotAvatar() {
   return (
-    <div className="flex items-center -space-x-2" aria-hidden="true">
-      {/* Specialist Avatar 1 */}
-      <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-full bg-[#fde68a] ring-2 ring-white/90 shadow-sm">
-        <svg viewBox="0 0 32 32" className="size-8">
-          <rect width="32" height="32" fill="#ffedd5" />
-          <circle cx="16" cy="12.5" r="5.5" fill="#ea580c" />
-          <path d="M7 29c1.4-5.4 5-8.2 9-8.2s7.6 2.8 9 8.2" fill="#9a3412" />
-          <circle cx="16" cy="13" r="4.6" fill="#fdba74" />
-          <path d="M11.2 11.8c.8-2.9 3.1-4.3 5.5-4.1 2.2.2 3.8 1.5 4.2 3.8-1.5-.8-3.1-1.1-4.9-1-1.8.1-3.4.5-4.8 1.3Z" fill="#431407" />
-        </svg>
-      </span>
-
-      {/* Specialist Avatar 2 */}
-      <span className="relative flex size-8 items-center justify-center overflow-hidden rounded-full bg-[#dbeafe] ring-2 ring-white/90 shadow-sm">
-        <svg viewBox="0 0 32 32" className="size-8">
-          <rect width="32" height="32" fill="#e0e7ff" />
-          <path d="M7.5 29c1.3-5.2 4.8-8 8.5-8s7.2 2.8 8.5 8" fill="#1e293b" />
-          <circle cx="16" cy="13" r="4.7" fill="#fed7aa" />
-          <path d="M11 12.5c.4-3.3 2.6-5.2 5.3-5.2 2.8 0 4.8 1.9 5.1 5.1-1.4-1.1-3.1-1.6-5.1-1.6-2 0-3.8.6-5.3 1.7Z" fill="#0f172a" />
-        </svg>
-      </span>
-
-      {/* Live AI Agent Avatar with emerald status indicator */}
-      <span className="relative flex size-8 items-center justify-center rounded-full bg-[#141417] text-white ring-2 ring-white/90 shadow-sm">
-        <Sparkles className="size-3.5 text-[#FF5A00]" />
-        <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full bg-emerald-400 ring-2 ring-[#d94b00]" />
-      </span>
-    </div>
+    <span className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[#FF5A00]/12 ring-1 ring-[#FF5A00]/25">
+      <svg viewBox="0 0 36 36" className="size-8" fill="none" aria-hidden="true">
+        {/* Headset band */}
+        <path
+          d="M8.5 19a9.5 9.5 0 0 1 19 0"
+          stroke="#FF5A00"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+        />
+        {/* Ear cups */}
+        <rect x="6" y="16.5" width="3.5" height="6.5" rx="1.75" fill="#FF5A00" />
+        <rect x="26.5" y="16.5" width="3.5" height="6.5" rx="1.75" fill="#FF5A00" />
+        {/* Bot head */}
+        <rect x="9.5" y="12" width="17" height="14" rx="6.5" fill="#18181b" stroke="#FF5A00" strokeWidth="1.4" />
+        {/* Visor eyes */}
+        <circle cx="14.8" cy="18.5" r="1.6" fill="#ffffff" />
+        <circle cx="21.2" cy="18.5" r="1.6" fill="#ffffff" />
+        {/* Friendly smile */}
+        <path d="M15.2 22c.8.8 1.75 1.15 2.8 1.15s2-.35 2.8-1.15" stroke="#FF5A00" strokeWidth="1.5" strokeLinecap="round" />
+        {/* Mic boom */}
+        <path d="M27.5 22.2c-.5 2.6-2.8 4.3-6.2 4.3" stroke="#FF5A00" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="20.8" cy="26.5" r="1.3" fill="#FF5A00" />
+      </svg>
+    </span>
   )
 }
 
@@ -261,6 +268,426 @@ const PANEL_VARIANTS = {
   },
 }
 
+function ConversationProposalCard({
+  proposal,
+  onCloseWidget,
+  onReport,
+  bubbleBg,
+  borderCol,
+  textPrimary,
+  textSecondary,
+}: {
+  proposal: Proposal
+  onCloseWidget: () => void
+  onReport: (text: string) => void
+  bubbleBg: string
+  borderCol: string
+  textPrimary: string
+  textSecondary: string
+}) {
+  const [inChat, setInChat] = useState(false)
+  const inline = proposal.inline
+
+  if (inChat && inline) {
+    return (
+      <div className="rounded-2xl p-3.5" style={{ backgroundColor: bubbleBg, border: `1px solid ${borderCol}` }}>
+        {inline.kind === 'swap' ? (
+          <SwapCard tokenIn={inline.tokenIn} tokenOut={inline.tokenOut} amount={inline.amount} onSettled={onReport} />
+        ) : (
+          <BridgeCard
+            from={inline.from}
+            to={inline.to}
+            token={inline.token}
+            amount={inline.amount}
+            onSettled={onReport}
+          />
+        )}
+      </div>
+    )
+  }
+
+  const openPage = () => {
+    if (isLandingDomain()) {
+      window.location.href = `${APP_URL}${proposal.url}`
+      return
+    }
+    navigate(proposal.url)
+    onCloseWidget()
+  }
+
+  return (
+    <div
+      className="max-w-[92%] rounded-2xl p-3.5"
+      style={{ backgroundColor: bubbleBg, border: `1px solid ${borderCol}`, color: textPrimary }}
+    >
+      <p className="display text-sm font-bold">{proposal.title}</p>
+      <ul className="mt-1.5 space-y-1 text-xs" style={{ color: textSecondary }}>
+        {proposal.lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      {inline && !isLandingDomain() ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setInChat(true)}
+            className="no-focus-ring rounded-xl bg-[#FF5A00] px-3 py-2 text-xs font-bold text-white transition-opacity hover:opacity-90"
+          >
+            Do it here
+          </button>
+          <button
+            type="button"
+            onClick={openPage}
+            className="no-focus-ring inline-flex items-center justify-center gap-1 rounded-xl px-3 py-2 text-xs font-semibold"
+            style={{ border: `1px solid ${borderCol}`, color: textPrimary }}
+          >
+            Open page <ArrowRight className="size-3.5" />
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openPage}
+          className="no-focus-ring mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#FF5A00] py-2.5 text-xs font-bold text-white transition-opacity hover:opacity-90"
+        >
+          {proposal.cta} <ArrowRight className="size-3.5" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Askie / Fin-style dedicated AI Agent conversation screen (matches Screenshot 2):
+ * - Header with `<` back chevron, AI bot headset avatar, `OnPeer AI` + `The team can also help`, `•••` menu & `×` close
+ * - Friendly greeting bubbles (`Hey! I'm your digital helper...` + `How can I help?`)
+ * - Rounded composer card with `Ask a question...` input, subtle helper icons, and circular `↑` send button
+ */
+function AskieConversationView({
+  active,
+  isDark,
+  cardSurface,
+  inputSurface,
+  borderCol,
+  textPrimary,
+  textSecondary,
+  onBack,
+  onClose,
+}: {
+  active: boolean
+  isDark: boolean
+  cardSurface: string
+  inputSurface: string
+  borderCol: string
+  textPrimary: string
+  textSecondary: string
+  onBack: () => void
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
+  const { items, busy, health, send, reset, refreshHealth, report } = useAgentContext()
+
+  useEffect(() => {
+    if (active) refreshHealth()
+  }, [active, refreshHealth])
+
+  useEffect(() => {
+    const el = listRef.current
+    if (!el || !active) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [items, busy, active])
+
+  const ready = health.state === 'loading' || (health.state === 'ready' && health.configured)
+  const canSend = draft.trim().length > 0 && !busy && health.state === 'ready' && health.configured
+
+  const submit = () => {
+    const trimmed = draft.trim()
+    if (!trimmed || busy || health.state !== 'ready' || !health.configured) return
+    setDraft('')
+    void send(trimmed)
+  }
+
+  const assistantBubbleBg = isDark ? '#252730' : '#f2f3f5'
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" style={{ backgroundColor: cardSurface }}>
+      {/* Top Conversation Header */}
+      <header
+        className="relative flex shrink-0 items-center justify-between gap-2 px-3.5 py-3"
+        style={{ borderBottom: `1px solid ${borderCol}` }}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="no-focus-ring flex size-8 shrink-0 items-center justify-center rounded-full transition-colors hover:opacity-75"
+            style={{ color: textSecondary }}
+          >
+            <ChevronLeft className="size-5" />
+          </button>
+
+          <AiHelperBotAvatar />
+
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-bold leading-tight" style={{ color: textPrimary }}>
+              OnPeer AI
+            </h2>
+            <p className="truncate text-[11.5px] leading-tight" style={{ color: textSecondary }}>
+              The team can also help
+            </p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-0.5">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Conversation options"
+              className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+              style={{ color: textSecondary }}
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+
+            {menuOpen && (
+              <div
+                className="absolute right-0 top-full z-20 mt-1 w-48 rounded-2xl p-1.5 shadow-xl"
+                style={{
+                  backgroundColor: cardSurface,
+                  border: `1px solid ${borderCol}`,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    reset()
+                    setMenuOpen(false)
+                  }}
+                  className="no-focus-ring flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-medium transition-opacity hover:opacity-80"
+                  style={{ color: textPrimary }}
+                >
+                  <RotateCcw className="size-3.5" style={{ color: '#FF5A00' }} />
+                  Clear conversation
+                </button>
+                <a
+                  href="mailto:support@onpeer.xyz?subject=OnPeer%20Human%20Support"
+                  onClick={() => setMenuOpen(false)}
+                  className="no-focus-ring flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-medium transition-opacity hover:opacity-80"
+                  style={{ color: textPrimary }}
+                >
+                  <Mail className="size-3.5" style={{ color: '#FF5A00' }} />
+                  Email human team
+                </a>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close messenger"
+            className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
+            style={{ color: textSecondary }}
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Scrollable Messages Stream */}
+      <div
+        ref={listRef}
+        data-lenis-prevent
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-5"
+        aria-live="polite"
+      >
+        {/* Default Welcome Greeting Bubbles (exact match to Screenshot 2) */}
+        <div className="flex flex-col items-start">
+          <div
+            className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-3 text-[13.5px] leading-relaxed"
+            style={{ backgroundColor: assistantBubbleBg, color: textPrimary }}
+          >
+            Hey! I’m your digital helper. Ask me anything! And if I ever get stuck, a real human is just a click away.
+          </div>
+          <div
+            className="mt-1.5 rounded-2xl rounded-tl-md px-4 py-2.5 text-[13.5px] leading-relaxed"
+            style={{ backgroundColor: assistantBubbleBg, color: textPrimary }}
+          >
+            How can I help?
+          </div>
+          <span className="mt-1.5 px-1 text-[11px]" style={{ color: textSecondary }}>
+            OnPeer AI • AI Agent • Just now
+          </span>
+        </div>
+
+        {health.state === 'offline' && (
+          <p
+            className="rounded-xl px-3.5 py-2.5 text-xs"
+            style={{ backgroundColor: assistantBubbleBg, color: textSecondary }}
+          >
+            Assistant is currently offline. You can reach our human team anytime at{' '}
+            <a href="mailto:support@onpeer.xyz" className="font-semibold underline" style={{ color: '#FF5A00' }}>
+              support@onpeer.xyz
+            </a>
+            .
+          </p>
+        )}
+
+        {items.map((item: UiItem) => {
+          if (item.kind === 'user') {
+            return (
+              <div key={item.id} className="flex justify-end">
+                <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-[#FF5A00] px-4 py-2.5 text-[13.5px] leading-relaxed text-white">
+                  {item.text}
+                </p>
+              </div>
+            )
+          }
+          if (item.kind === 'assistant') {
+            return (
+              <div key={item.id} className="flex flex-col items-start">
+                <p
+                  className="max-w-[88%] whitespace-pre-wrap break-words rounded-2xl rounded-bl-md px-4 py-3 text-[13.5px] leading-relaxed"
+                  style={{ backgroundColor: assistantBubbleBg, color: textPrimary }}
+                >
+                  {item.text}
+                </p>
+                <span className="mt-1 px-1 text-[11px]" style={{ color: textSecondary }}>
+                  OnPeer AI • AI Agent
+                </span>
+              </div>
+            )
+          }
+          if (item.kind === 'proposal') {
+            return (
+              <ConversationProposalCard
+                key={item.id}
+                proposal={item.proposal}
+                onCloseWidget={onClose}
+                onReport={report}
+                bubbleBg={assistantBubbleBg}
+                borderCol={borderCol}
+                textPrimary={textPrimary}
+                textSecondary={textSecondary}
+              />
+            )
+          }
+          if (item.kind === 'tool') {
+            return (
+              <p key={item.id} className="px-1 text-xs font-medium" style={{ color: textSecondary }}>
+                {item.text}…
+              </p>
+            )
+          }
+          if (item.kind === 'error') {
+            return (
+              <p
+                key={item.id}
+                role="alert"
+                className="rounded-xl px-3.5 py-2 text-xs text-red-400"
+                style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)' }}
+              >
+                {item.text}
+              </p>
+            )
+          }
+          return null
+        })}
+
+        {busy && (
+          <div className="flex items-center gap-1.5 px-1 text-xs" style={{ color: textSecondary }}>
+            <span className="flex gap-1" aria-hidden="true">
+              {[0, 1, 2].map((d) => (
+                <motion.span
+                  key={d}
+                  className="size-1.5 rounded-full bg-[#FF5A00]"
+                  animate={{ y: [0, -3, 0], opacity: [0.4, 1, 0.4] }}
+                  transition={{ duration: 0.9, repeat: Infinity, delay: d * 0.14 }}
+                />
+              ))}
+            </span>
+            <span>Thinking…</span>
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Rounded Composer Card (matches Screenshot 2) */}
+      <form
+        className="shrink-0 px-3.5 pb-3.5 pt-1.5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          submit()
+        }}
+      >
+        <div
+          className="rounded-2xl px-3.5 pb-2.5 pt-3 transition-colors"
+          style={{
+            backgroundColor: isDark ? inputSurface : '#ffffff',
+            border: `1px solid ${draft.trim() ? '#FF5A00' : borderCol}`,
+          }}
+        >
+          <textarea
+            rows={1}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                submit()
+              }
+            }}
+            disabled={!ready}
+            maxLength={1000}
+            placeholder={ready ? 'Ask a question...' : 'Assistant unavailable'}
+            aria-label="Ask a question"
+            className="no-focus-ring block max-h-24 w-full resize-none bg-transparent text-[13.5px] leading-snug outline-none disabled:opacity-50"
+            style={{ color: textPrimary }}
+          />
+
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex items-center gap-2.5" style={{ color: textSecondary }}>
+              <a
+                href="mailto:support@onpeer.xyz?subject=OnPeer%20Support%20Attachment"
+                title="Send attachment via email support"
+                aria-label="Send attachment to support"
+                className="no-focus-ring transition-opacity hover:opacity-80"
+              >
+                <Paperclip className="size-4" />
+              </a>
+              <button
+                type="button"
+                title="Insert wave"
+                aria-label="Insert wave emoji"
+                onClick={() => setDraft((prev) => `${prev}${prev ? ' ' : ''}👋`)}
+                className="no-focus-ring transition-opacity hover:opacity-80"
+              >
+                <Smile className="size-4" />
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={!canSend}
+              aria-label="Send message"
+              className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-all duration-150"
+              style={{
+                backgroundColor: canSend ? '#FF5A00' : isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb',
+                color: canSend ? '#ffffff' : textSecondary,
+              }}
+            >
+              <ArrowUp className="size-4 stroke-[2.3]" />
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 /**
  * Intercom-style Home / Messages / Help support & AI assistant messenger
  * rendered exclusively on the Landing site (`onpeer.xyz` / Home).
@@ -273,7 +700,7 @@ export function LandingSupportWidget() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null)
   const [selectedArticle, setSelectedArticle] = useState<HelpArticle | null>(null)
 
-  const { items, reset } = useAgentContext()
+  const { items } = useAgentContext()
   const { resolved } = useTheme()
   const isDark = resolved === 'dark'
 
@@ -286,7 +713,7 @@ export function LandingSupportWidget() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  const showChatThread = chatStarted || items.length > 0
+  const inConversation = tab === 'messages' && (chatStarted || items.length > 0)
 
   const filteredArticles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -365,59 +792,42 @@ export function LandingSupportWidget() {
             data-lenis-prevent
             className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
           >
-            {/* Layered Ambient Brand Gradient Backdrop (sits BEHIND content so nothing ever clips) */}
+            {/* Pure Solid #FF5A00 Brand Orange Backdrop with smooth bottom edge transition */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[272px]"
+              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[256px]"
               style={{
-                background: isDark
-                  ? 'radial-gradient(120% 90% at 15% 0%, #ff8533 0%, #FF5A00 42%, rgba(224, 78, 0, 0.42) 72%, rgba(18, 19, 23, 0) 100%)'
-                  : 'radial-gradient(120% 90% at 15% 0%, #ff7a2e 0%, #FF5A00 48%, rgba(255, 122, 46, 0.28) 76%, rgba(245, 246, 248, 0) 100%)',
-              }}
-            />
-            {/* Subtle top glass mesh highlight */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 top-0 z-0 h-[180px] opacity-25"
-              style={{
-                backgroundImage:
-                  'radial-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px)',
-                backgroundSize: '18px 18px',
-                maskImage: 'linear-gradient(to bottom, black 10%, transparent 90%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, black 10%, transparent 90%)',
+                background: `linear-gradient(180deg, #FF5A00 0%, #FF5A00 76%, ${widgetSurface} 100%)`,
               }}
             />
 
-            {/* Foreground Home Content (`relative z-10` — never covered by backdrop) */}
+            {/* Foreground Home Content (`relative z-10`) */}
             <div className="relative z-10 flex flex-col px-4 pb-5 pt-5">
-              {/* Top Bar */}
+              {/* Top Bar: Logo on left, Close X on right (avatars removed) */}
               <div className="flex items-center justify-between px-1.5">
                 <div className="flex items-center gap-2.5">
-                  <span className="flex size-8 items-center justify-center rounded-xl bg-white/20 p-0.5 shadow-sm backdrop-blur-md ring-1 ring-white/30">
+                  <span className="flex size-8 items-center justify-center rounded-xl bg-white/15 p-0.5">
                     <LogoMark size={28} />
                   </span>
-                  <span className="display text-lg font-bold tracking-tight text-white drop-shadow-sm">
+                  <span className="display text-lg font-bold tracking-tight text-white">
                     OnPeer
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <SupportAvatarCluster />
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    aria-label="Close messenger"
-                    className="no-focus-ring flex size-8 items-center justify-center rounded-full bg-black/15 text-white/95 backdrop-blur-sm transition-colors hover:bg-black/28 hover:text-white"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close messenger"
+                  className="no-focus-ring flex size-8 items-center justify-center rounded-full text-white/95 transition-colors hover:bg-black/15 hover:text-white"
+                >
+                  <X className="size-4" />
+                </button>
               </div>
 
               {/* Greeting */}
               <div className="mt-7 mb-5 px-1.5">
-                <p className="text-lg font-medium text-white/88">Hi there 👋</p>
-                <h2 className="display mt-0.5 text-[26px] font-bold leading-tight tracking-tight text-white drop-shadow-sm">
+                <p className="text-lg font-medium text-white/90">Hi there 👋</p>
+                <h2 className="display mt-0.5 text-[26px] font-bold leading-tight tracking-tight text-white">
                   How can we help?
                 </h2>
               </div>
@@ -446,7 +856,7 @@ export function LandingSupportWidget() {
                     <span>Search for help</span>
                     <Search
                       className="size-4 transition-transform duration-200 group-hover:scale-110"
-                      style={{ color: 'var(--accent)' }}
+                      style={{ color: '#FF5A00' }}
                     />
                   </button>
 
@@ -488,10 +898,7 @@ export function LandingSupportWidget() {
                   }}
                 >
                   <div className="flex items-center gap-3">
-                    <span
-                      className="flex size-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-                      style={{ background: 'var(--accent-bg)' }}
-                    >
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#FF5A00] text-white">
                       <Sparkles className="size-4" />
                     </span>
                     <div>
@@ -499,13 +906,13 @@ export function LandingSupportWidget() {
                         Ask a question
                       </p>
                       <p className="mt-0.5 text-xs" style={{ color: textSecondary }}>
-                        AI Agent and team can help instantly
+                        AI Agent and team can help
                       </p>
                     </div>
                   </div>
                   <SendHorizontal
                     className="size-4 shrink-0 transition-transform duration-200 group-hover:translate-x-0.5"
-                    style={{ color: 'var(--accent)' }}
+                    style={{ color: '#FF5A00' }}
                   />
                 </button>
 
@@ -522,7 +929,7 @@ export function LandingSupportWidget() {
                   <div className="flex items-center gap-3">
                     <span
                       className="flex size-10 shrink-0 items-center justify-center rounded-xl"
-                      style={{ backgroundColor: inputSurface, color: 'var(--accent)' }}
+                      style={{ backgroundColor: inputSurface, color: '#FF5A00' }}
                     >
                       <LifeBuoy className="size-4" />
                     </span>
@@ -540,67 +947,36 @@ export function LandingSupportWidget() {
                     style={{ color: textSecondary }}
                   />
                 </a>
-
-                {/* Subtle Live Status Card */}
-                <div
-                  className="flex items-center justify-between rounded-2xl px-4 py-3 text-[11px] font-medium"
-                  style={{
-                    backgroundColor: cardSurface,
-                    border: `1px solid ${borderCol}`,
-                  }}
-                >
-                  <span className="flex items-center gap-2" style={{ color: textSecondary }}>
-                    <span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-                    Arc Testnet Escrow &amp; CCTP Bridge operational
-                  </span>
-                </div>
               </div>
             </div>
           </div>
         )}
 
         {/* ==================== TAB 2: MESSAGES ==================== */}
-        {tab === 'messages' && (
-          <div className="flex min-h-0 flex-1 flex-col" style={{ backgroundColor: cardSurface }}>
-            <header
-              className="flex shrink-0 items-center justify-between px-4 py-3.5"
-              style={{ borderBottom: `1px solid ${borderCol}` }}
-            >
-              <div className="flex w-16 items-center">
-                {showChatThread && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (items.length === 0) setChatStarted(false)
-                      else setTab('home')
-                    }}
-                    aria-label="Back"
-                    className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
-                    style={{ color: textSecondary }}
-                  >
-                    <ArrowLeft className="size-4" />
-                  </button>
-                )}
-              </div>
-
-              <h2 className="text-sm font-bold">Messages</h2>
-
-              <div className="flex w-16 items-center justify-end gap-1">
-                {items.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      reset()
-                      setChatStarted(false)
-                    }}
-                    aria-label="Clear conversation"
-                    title="Clear chat"
-                    className="no-focus-ring flex size-8 items-center justify-center rounded-full transition-colors hover:opacity-75"
-                    style={{ color: textSecondary }}
-                  >
-                    <RotateCcw className="size-3.5" />
-                  </button>
-                )}
+        {tab === 'messages' &&
+          (inConversation ? (
+            <AskieConversationView
+              active={open && tab === 'messages'}
+              isDark={isDark}
+              cardSurface={cardSurface}
+              inputSurface={inputSurface}
+              borderCol={borderCol}
+              textPrimary={textPrimary}
+              textSecondary={textSecondary}
+              onBack={() => {
+                if (items.length === 0) setChatStarted(false)
+                else setTab('home')
+              }}
+              onClose={() => setOpen(false)}
+            />
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col" style={{ backgroundColor: cardSurface }}>
+              <header
+                className="flex shrink-0 items-center justify-between px-4 py-3.5"
+                style={{ borderBottom: `1px solid ${borderCol}` }}
+              >
+                <div className="w-8" />
+                <h2 className="text-sm font-bold">Messages</h2>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
@@ -610,12 +986,8 @@ export function LandingSupportWidget() {
                 >
                   <X className="size-4" />
                 </button>
-              </div>
-            </header>
+              </header>
 
-            {showChatThread ? (
-              <ChatThread variant="panel" active={open && tab === 'messages'} onNavigate={() => setOpen(false)} />
-            ) : (
               <div
                 data-lenis-prevent
                 className="flex flex-1 flex-col items-center justify-between overflow-y-auto overscroll-contain px-6 py-10 text-center"
@@ -623,7 +995,7 @@ export function LandingSupportWidget() {
                 <div className="my-auto flex flex-col items-center">
                   <span
                     className="flex size-14 items-center justify-center rounded-2xl p-3.5"
-                    style={{ backgroundColor: inputSurface, color: 'var(--accent)' }}
+                    style={{ backgroundColor: inputSurface, color: '#FF5A00' }}
                   >
                     <MessageSquareText className="size-6" />
                   </span>
@@ -636,16 +1008,14 @@ export function LandingSupportWidget() {
                 <button
                   type="button"
                   onClick={() => setChatStarted(true)}
-                  className="no-focus-ring btn-shine inline-flex h-10 items-center gap-2 rounded-full px-5 text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.03] active:scale-[0.98]"
-                  style={{ background: 'var(--accent-bg)' }}
+                  className="no-focus-ring inline-flex h-10 items-center gap-2 rounded-full bg-[#FF5A00] px-5 text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.03] active:scale-[0.98]"
                 >
                   <span>Ask a question</span>
                   <Sparkles className="size-3.5" />
                 </button>
               </div>
-            )}
-          </div>
-        )}
+            </div>
+          ))}
 
         {/* ==================== TAB 3: HELP ==================== */}
         {tab === 'help' && (
@@ -711,7 +1081,7 @@ export function LandingSupportWidget() {
                       <X className="size-3.5" />
                     </button>
                   ) : (
-                    <Search className="size-4 shrink-0" style={{ color: 'var(--accent)' }} />
+                    <Search className="size-4 shrink-0" style={{ color: '#FF5A00' }} />
                   )}
                 </div>
               </div>
@@ -738,9 +1108,9 @@ export function LandingSupportWidget() {
                       type="button"
                       onClick={startConversation}
                       className="no-focus-ring mt-2 inline-flex items-center gap-1.5 text-xs font-bold"
-                      style={{ color: 'var(--accent)' }}
+                      style={{ color: '#FF5A00' }}
                     >
-                      Ask our AI Assistant <ChevronRight className="size-3.5" />
+                      Ask OnPeer AI <ChevronRight className="size-3.5" />
                     </button>
                   </div>
                 </article>
@@ -751,7 +1121,7 @@ export function LandingSupportWidget() {
                   </p>
                   {filteredArticles.length === 0 ? (
                     <p className="py-8 text-center text-xs" style={{ color: textSecondary }}>
-                      No matching articles. Try asking our AI Assistant in Messages!
+                      No matching articles. Try asking OnPeer AI in Messages!
                     </p>
                   ) : (
                     <ul className="divide-y" style={{ borderColor: borderCol }}>
@@ -841,7 +1211,7 @@ export function LandingSupportWidget() {
                             <p className="mt-1 text-xs leading-relaxed" style={{ color: textSecondary }}>
                               {col.description}
                             </p>
-                            <p className="mt-1.5 text-[11px] font-medium" style={{ color: 'var(--accent)' }}>
+                            <p className="mt-1.5 text-[11px] font-medium" style={{ color: '#FF5A00' }}>
                               {col.articles.length} articles
                             </p>
                           </div>
@@ -859,54 +1229,55 @@ export function LandingSupportWidget() {
           </div>
         )}
 
-        {/* ==================== BOTTOM NAVIGATION BAR ==================== */}
-        <nav
-          aria-label="Messenger sections"
-          className="grid shrink-0 grid-cols-3 py-1.5"
-          style={{
-            backgroundColor: cardSurface,
-            borderTop: `1px solid ${borderCol}`,
-          }}
-        >
-          {(
-            [
-              { id: 'home', label: 'Home' },
-              { id: 'messages', label: 'Messages' },
-              { id: 'help', label: 'Help' },
-            ] as const
-          ).map((item) => {
-            const active = tab === item.id
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  if (item.id === 'help') setSelectedArticle(null)
-                  setTab(item.id)
-                }}
-                className="no-focus-ring relative flex flex-col items-center justify-center gap-1 py-1.5 text-[11px] font-semibold transition-colors"
-                style={{ color: active ? 'var(--accent)' : textSecondary }}
-              >
-                {active && (
-                  <motion.span
-                    layoutId="landing-messenger-tab-bar"
-                    transition={{ type: 'spring', stiffness: 480, damping: 36 }}
-                    className="absolute top-0 h-[2px] w-10 rounded-full"
-                    style={{ backgroundColor: 'var(--accent)' }}
-                  />
-                )}
-                {item.id === 'home' ? (
-                  <HomeTabIcon active={active} />
-                ) : item.id === 'messages' ? (
-                  <MessageSquareText className="size-5" />
-                ) : (
-                  <HelpCircle className="size-5" />
-                )}
-                <span>{item.label}</span>
-              </button>
-            )
-          })}
-        </nav>
+        {/* ==================== BOTTOM NAVIGATION BAR (hidden during active Askie chat) ==================== */}
+        {!inConversation && (
+          <nav
+            aria-label="Messenger sections"
+            className="grid shrink-0 grid-cols-3 py-1.5"
+            style={{
+              backgroundColor: cardSurface,
+              borderTop: `1px solid ${borderCol}`,
+            }}
+          >
+            {(
+              [
+                { id: 'home', label: 'Home' },
+                { id: 'messages', label: 'Messages' },
+                { id: 'help', label: 'Help' },
+              ] as const
+            ).map((item) => {
+              const active = tab === item.id
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    if (item.id === 'help') setSelectedArticle(null)
+                    setTab(item.id)
+                  }}
+                  className="no-focus-ring relative flex flex-col items-center justify-center gap-1 py-1.5 text-[11px] font-semibold transition-colors"
+                  style={{ color: active ? '#FF5A00' : textSecondary }}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="landing-messenger-tab-bar"
+                      transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                      className="absolute top-0 h-[2px] w-10 rounded-full bg-[#FF5A00]"
+                    />
+                  )}
+                  {item.id === 'home' ? (
+                    <HomeTabIcon active={active} />
+                  ) : item.id === 'messages' ? (
+                    <MessageSquareText className="size-5" />
+                  ) : (
+                    <HelpCircle className="size-5" />
+                  )}
+                  <span>{item.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+        )}
       </motion.section>
 
       {/* Smoothly morphing Circular Floating Launcher Button */}

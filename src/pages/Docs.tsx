@@ -117,7 +117,7 @@ const DOC_PAGES: DocPageItem[] = [
           'P2P Marketplace (/p2p): Multi-asset escrow orderbook supporting USDC, EURC, cirBTC, and WETH across 8 South Asian fiat corridors with 0% trade fees.',
           'Instant Token Swap (/swap): Permissionless on-chain swaps between USDC, EURC, cirBTC, and WETH on Arc Testnet powered by Circle App Kit.',
           'Cross-Chain Bridge (/bridge): Native burn-and-mint USDC transfers across 7 EVM networks via Circle CCTP, plus EURC, cirBTC, and WETH bridging via Circle CCTPx.',
-          'Sandbox Fiat Onramp (/buy) & AI Assistant (/assistant): Card/Apple Pay sandbox top-ups and natural-language trade preparation that never touches private keys.',
+          'AI Trading Assistant (/assistant): Natural-language P2P ad discovery, swap, and bridge preparation that never touches private keys.',
         ],
       },
       {

@@ -13,7 +13,7 @@ export const SUGGESTIONS = [
   'Find the best price to buy 100 USDC in India with UPI',
   'Swap 10 USDC to EURC',
   'Bridge 25 USDC from Arc to Base Sepolia',
-  'Buy USDC with card (sandbox)',
+  'Check my wallet balances and recent P2P orders',
 ]
 
 /** Messages, setup notices and the input box. Shared by the floating panel and the assistant page. */

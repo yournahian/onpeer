@@ -1,4 +1,4 @@
-import { ArrowLeft, CreditCard, Database, KeyRound, Lock, Mail, ShieldAlert, Trash2 } from 'lucide-react'
+import { ArrowLeft, Database, KeyRound, Lock, Mail, ShieldAlert, Trash2 } from 'lucide-react'
 import { SiteBar } from '@/components/SiteBar'
 import { AppLink } from '@/components/AppLink'
 import { Footer } from '@/components/Footer'
@@ -153,30 +153,6 @@ export default function PrivacyPage() {
             wallet was verified, <strong>immediately deletes your unbound vault blobs</strong>, and shortens retention
             on your remaining order-bound vault blobs, chat messages, and dispute filings to <strong>7 days</strong>.
             Public blockchain transactions and events on Arc Testnet are immutable and cannot be erased.
-          </p>
-        </Section>
-
-        <Section icon={CreditCard} title="6. Fiat On-Ramp Purchases (Circle Onramp Sandbox)">
-          <p>
-            Fiat-to-crypto purchases on{' '}
-            <AppLink to="/buy" className="underline">
-              /buy
-            </AppLink>{' '}
-            are processed directly inside Circle&apos;s hosted Onramp widget (currently restricted to{' '}
-            <strong>Circle Onramp Sandbox</strong> with dummy test data only—no real money moves).
-          </p>
-          <p>
-            When you start a checkout session, OnPeer&apos;s backend sends only your signed-in destination wallet
-            address and a correlation identifier (<code className="mono">wallet:&lt;lowercase address&gt;</code>) to
-            Circle&apos;s sandbox session API.{' '}
-            <strong>
-              OnPeer never receives, processes, or stores credit/debit card numbers, bank account credentials, billing
-              addresses, or payment partner identity documents.
-            </strong>
-          </p>
-          <p>
-            Any identity or payment verification requested inside the Circle widget is performed by Circle&apos;s
-            regulated payment partner under their own privacy policy and is separate from OnPeer&apos;s Didit P2P KYC.
           </p>
         </Section>
       </main>

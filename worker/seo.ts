@@ -73,13 +73,6 @@ const DOC_SLUGS: DocSlugMeta[] = [
     section: 'Core Products',
   },
   {
-    slug: 'fiat-onramp',
-    title: 'Fiat Onramp (Buy USDC with Card, Apple Pay & Bank Transfer) — OnPeer Docs',
-    description:
-      'Mint authenticated Circle Onramp sessions to purchase USDC directly into your non-custodial wallet with debit card, Apple Pay, Google Pay, or bank transfer.',
-    section: 'Core Products',
-  },
-  {
     slug: 'kyc-and-vault',
     title: 'Didit KYC Verification & AES-256-GCM Encrypted Payment Vault — OnPeer Docs',
     description:
@@ -113,7 +106,7 @@ const CORE_FAQS = [
   {
     question: 'What is OnPeer?',
     answer:
-      'OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, token swap, fiat onramp, and cross-chain bridge built on Arc (Circle Layer-1 blockchain) for South Asia. Users trade USDC, EURC, cirBTC, and WETH directly against BDT, INR, PKR, LKR, NPR, BTN, MVR, and AFN with smart contract escrow.',
+      'OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, token swap, and cross-chain bridge built on Arc (Circle Layer-1 blockchain) for South Asia. Users trade USDC, EURC, cirBTC, and WETH directly against BDT, INR, PKR, LKR, NPR, BTN, MVR, and AFN with smart contract escrow.',
   },
   {
     question: 'Which cryptocurrencies and South Asian fiat payment methods does OnPeer support?',
@@ -157,7 +150,7 @@ function baseOrganizationGraph() {
       },
       image: OG_IMAGE_URL,
       description:
-        'Non-custodial P2P crypto marketplace, swap, fiat onramp, and Circle CCTP/CCTPx cross-chain bridge for South Asia built on Arc.',
+        'Non-custodial P2P crypto marketplace, swap, and Circle CCTP/CCTPx cross-chain bridge for South Asia built on Arc.',
       sameAs: ['https://x.com/onpeerapp', APP_ORIGIN, DOCS_ORIGIN],
       areaServed: ['BD', 'IN', 'PK', 'LK', 'NP', 'BT', 'MV', 'AF'],
     },
@@ -578,14 +571,14 @@ ${items}
 
 export const LLMS_TXT = `# OnPeer
 
-> Non-custodial peer-to-peer (P2P) crypto marketplace, instant token swap, fiat onramp, and cross-chain bridge for South Asia built on Arc (Circle's Layer-1 blockchain where USDC is the native gas token).
+> Non-custodial peer-to-peer (P2P) crypto marketplace, instant token swap, and cross-chain bridge for South Asia built on Arc (Circle's Layer-1 blockchain where USDC is the native gas token).
 
 OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhutan, Maldives, and Afghanistan to buy and sell **USDC**, **EURC**, **cirBTC**, and **WETH** directly using local payment rails (bKash, Nagad, Rocket, UPI, IMPS, Paytm, Raast, JazzCash, Easypaisa, LankaQR, eSewa, Khalti, mBoB, BML, and bank transfers) protected by non-custodial smart contract escrow (\`P2PEscrow v2.1\`) with **0% trading fees**.
 
 ## Canonical Domains
 
 - [Landing Website](https://onpeer.xyz/): Product overview, regional corridors, and protocol highlights.
-- [Web Application](https://app.onpeer.xyz/p2p): Live P2P marketplace, Swap, Bridge, Buy USDC onramp, and AI Assistant.
+- [Web Application](https://app.onpeer.xyz/p2p): Live P2P marketplace, Swap, Bridge, and AI Assistant.
 - [Documentation Portal](https://docs.onpeer.xyz/): Complete protocol architecture, smart contract rules, CCTPx routes, and security reference.
 - [Full LLM Reference](https://onpeer.xyz/llms-full.txt): Single-file comprehensive technical specification for AI assistants and answer engines.
 
@@ -594,7 +587,6 @@ OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhuta
 - [P2P Marketplace](https://app.onpeer.xyz/p2p): Non-custodial Buy & Sell orderbook for \`USDC\`, \`EURC\`, \`cirBTC\`, and \`WETH\` across 8 South Asian fiat currencies (\`BDT\`, \`INR\`, \`PKR\`, \`LKR\`, \`NPR\`, \`BTN\`, \`MVR\`, \`AFN\`).
 - [Token Swap](https://app.onpeer.xyz/swap): Permissionless swaps among \`USDC\`, \`EURC\`, \`cirBTC\`, and \`WETH\` on Arc via Circle Swap Kit.
 - [Cross-Chain Bridge](https://app.onpeer.xyz/bridge): Native \`USDC\` bridging via Circle CCTP v2 and \`EURC\`, \`cirBTC\`, \`WETH\` bridging via Circle CCTPx (\`FAST\` and \`SLOW\` modes).
-- [Buy USDC Onramp](https://app.onpeer.xyz/buy): Hosted Circle Onramp widget for card, Apple Pay, Google Pay, and bank purchases.
 
 ## Documentation Pages
 
@@ -604,7 +596,6 @@ OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhuta
 - [P2P Marketplace](https://docs.onpeer.xyz/p2p-marketplace): Supported crypto assets, fiat corridors, and auto-filled payment methods.
 - [Escrow Smart Contract](https://docs.onpeer.xyz/escrow): \`P2PEscrow v2.1\` state machine, 0% trade fee, tiered caps, and merchant margin.
 - [Swap & Bridge (CCTP / CCTPx)](https://docs.onpeer.xyz/swap-and-bridge): Multi-token swaps and cross-chain routes.
-- [Fiat Onramp](https://docs.onpeer.xyz/fiat-onramp): Circle Onramp integration and session security.
 - [KYC & Encrypted Vault](https://docs.onpeer.xyz/kyc-and-vault): Didit identity verification and AES-256-GCM payment vault.
 - [Dispute Resolution](https://docs.onpeer.xyz/disputes): 30-minute cooling-off, 2-phone video proof, and asymmetric bonds.
 - [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Testnet.
@@ -619,7 +610,7 @@ export const LLMS_FULL_TXT = `# OnPeer — Full Technical & Product Reference (G
 
 ## 1. Executive Summary
 
-OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, swap terminal, fiat onramp, and cross-chain bridge built on **Arc** (Circle's EVM Layer-1 blockchain where USDC is the native gas token). OnPeer is purpose-built for South Asian fiat corridors where users rely on instant mobile-money and real-time banking rails.
+OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, swap terminal, and cross-chain bridge built on **Arc** (Circle's EVM Layer-1 blockchain where USDC is the native gas token). OnPeer is purpose-built for South Asian fiat corridors where users rely on instant mobile-money and real-time banking rails.
 
 ### Key Facts at a Glance
 - **Custody Model:** 100% non-custodial smart contract escrow (\`P2PEscrow.sol\` v2.1, Solidity 0.8.28). OnPeer operators and backend workers cannot move or freeze escrowed user funds.

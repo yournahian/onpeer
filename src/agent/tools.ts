@@ -76,7 +76,6 @@ export const TOOL_LABELS: Record<string, string> = {
   propose_bridge: 'Preparing bridge',
   propose_p2p_trade: 'Preparing P2P order',
   open_order: 'Finding your order',
-  propose_buy_usdc: 'Preparing sandbox Buy USDC',
   propose_cashout: 'Preparing cash-out options',
 }
 
@@ -400,29 +399,6 @@ async function openOrder(args: Record<string, unknown>, ctx: ToolContext): Promi
   }
 }
 
-function proposeBuyUsdc(args: Record<string, unknown>, ctx: ToolContext): ToolOutcome {
-  const amount = str(args.amount)
-  return {
-    result: {
-      status: 'card_shown',
-      sandbox: true,
-      note: 'Sandbox only (dummy data, no real money). South Asia coverage in Circle Onramp is not guaranteed.',
-    },
-    proposal: {
-      kind: 'buy',
-      title: amount && AMOUNT.test(amount) ? `Buy USDC (${amount} — Sandbox)` : 'Buy USDC with fiat (Sandbox)',
-      lines: [
-        'Sandbox. No real money. Use dummy data.',
-        'Destination is locked on the server to your signed-in wallet',
-        'South Asia is not guaranteed in Circle Onramp — use /p2p for UPI, bKash, Raast or eSewa',
-        ...walletLine(ctx),
-      ],
-      url: '/buy',
-      cta: 'Open Buy USDC',
-    },
-  }
-}
-
 function proposeCashout(args: Record<string, unknown>, ctx: ToolContext): ToolOutcome {
   const rawCur = str(args.currency).toUpperCase()
   const matched = rawCur ? COUNTRIES.find((c) => c.currency === rawCur) : undefined
@@ -464,8 +440,6 @@ export async function runTool(name: string, args: Record<string, unknown>, ctx: 
         return await proposeTrade(args, ctx)
       case 'open_order':
         return await openOrder(args, ctx)
-      case 'propose_buy_usdc':
-        return proposeBuyUsdc(args, ctx)
       case 'propose_cashout':
         return proposeCashout(args, ctx)
       default:
