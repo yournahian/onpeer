@@ -1,74 +1,135 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { ConnectKitButton } from 'connectkit'
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
-import { Check, Copy, ExternalLink, Loader2, LogOut, Smartphone, Wallet, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, Loader2, LogOut, X } from 'lucide-react'
 import { toast } from 'sonner'
+import WalletMetamask from '@web3icons/react/icons/wallets/WalletMetamask'
+import WalletTrust from '@web3icons/react/icons/wallets/WalletTrust'
+import WalletCoinbase from '@web3icons/react/icons/wallets/WalletCoinbase'
+import WalletOkx from '@web3icons/react/icons/wallets/WalletOkx'
+import WalletRainbow from '@web3icons/react/icons/wallets/WalletRainbow'
+import WalletZerion from '@web3icons/react/icons/wallets/WalletZerion'
+import WalletSafe from '@web3icons/react/icons/wallets/WalletSafe'
+import WalletArgent from '@web3icons/react/icons/wallets/WalletArgent'
+import WalletPhantom from '@web3icons/react/icons/wallets/WalletPhantom'
+import WalletRabby from '@web3icons/react/icons/wallets/WalletRabby'
+import WalletImtoken from '@web3icons/react/icons/wallets/WalletImtoken'
+import WalletTokenPocket from '@web3icons/react/icons/wallets/WalletTokenPocket'
+import WalletWalletConnect from '@web3icons/react/icons/wallets/WalletWalletConnect'
 import { shortAddr } from '@/lib/p2p'
+import { useTheme } from '@/lib/theme'
 import { isTelegramMiniApp, openExternalUrl, triggerTelegramHaptic } from '@/lib/telegram'
 
 const SAVED_WALLET_KEY = 'onpeer:tg:wallet_id'
 
+type Web3WalletIcon = ComponentType<{
+  variant?: 'branded' | 'mono' | 'background'
+  size?: number | string
+  className?: string
+}>
+
 interface TgWalletOption {
   id: string
   name: string
-  badge: string
-  accent: string
-  /** HTTPS Universal Link for WalletConnect v2 pairing (never a raw custom scheme, avoiding ERR_UNKNOWN_URL_SCHEME in Telegram WebView). */
-  buildWcUniversalLink: (wcUri: string) => string
-  /** HTTPS Universal Link to open the wallet app when confirming a transaction/signature. */
-  launchUrl: string
-  /** Optional HTTPS Universal Link to open OnPeer directly inside the wallet's built-in dApp browser. */
-  dappBrowserUrl?: (targetHttpsUrl: string) => string
+  Icon: Web3WalletIcon
+  /**
+   * Verified HTTPS Universal Link for WalletConnect v2 pairing.
+   * Never uses raw custom URL schemes (`wc:`, `metamask://`) so Android/iOS Telegram WebView
+   * never triggers `net::ERR_UNKNOWN_URL_SCHEME`.
+   * If omitted, tapping copies the WalletConnect URI so the user can paste it inside that wallet.
+   */
+  buildWcUniversalLink?: (wcUri: string) => string
+  /** HTTPS Universal Link to foreground the wallet app during transaction/signature prompts. */
+  launchUrl?: string
 }
 
 const TG_WALLETS: TgWalletOption[] = [
   {
     id: 'metamask',
     name: 'MetaMask',
-    badge: 'MM',
-    accent: '#F6851B',
+    Icon: WalletMetamask,
     buildWcUniversalLink: (uri) => `https://metamask.app.link/wc?uri=${encodeURIComponent(uri)}`,
     launchUrl: 'https://metamask.app.link/wc',
-    dappBrowserUrl: (url) => `https://metamask.app.link/dapp/${url.replace(/^https?:\/\//i, '')}`,
   },
   {
     id: 'trust',
-    name: 'Trust Wallet',
-    badge: 'TW',
-    accent: '#0500FF',
+    name: 'Trust',
+    Icon: WalletTrust,
     buildWcUniversalLink: (uri) => `https://link.trustwallet.com/wc?uri=${encodeURIComponent(uri)}`,
     launchUrl: 'https://link.trustwallet.com/wc',
-    dappBrowserUrl: (url) => `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(url)}`,
   },
   {
     id: 'coinbase',
-    name: 'Coinbase Wallet',
-    badge: 'CB',
-    accent: '#0052FF',
+    name: 'Coinbase',
+    Icon: WalletCoinbase,
     buildWcUniversalLink: (uri) => `https://go.cb-w.com/wc?uri=${encodeURIComponent(uri)}`,
     launchUrl: 'https://go.cb-w.com/wc',
-    dappBrowserUrl: (url) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}`,
+  },
+  {
+    id: 'okx',
+    name: 'OKX',
+    Icon: WalletOkx,
   },
   {
     id: 'rainbow',
     name: 'Rainbow',
-    badge: 'RB',
-    accent: '#174299',
+    Icon: WalletRainbow,
     buildWcUniversalLink: (uri) => `https://rnbwapp.com/wc?uri=${encodeURIComponent(uri)}`,
     launchUrl: 'https://rnbwapp.com/wc',
   },
   {
     id: 'zerion',
     name: 'Zerion',
-    badge: 'ZR',
-    accent: '#2962EF',
-    buildWcUniversalLink: (uri) => `https://wallet.zerion.io/wc?uri=${encodeURIComponent(uri)}`,
-    launchUrl: 'https://wallet.zerion.io/wc',
+    Icon: WalletZerion,
+    buildWcUniversalLink: (uri) => `https://app.zerion.io/wc?uri=${encodeURIComponent(uri)}`,
+    launchUrl: 'https://app.zerion.io/wc',
+  },
+  {
+    id: 'safe',
+    name: 'Safe',
+    Icon: WalletSafe,
+    buildWcUniversalLink: (uri) => `https://gnosis-safe.io/wc?uri=${encodeURIComponent(uri)}`,
+    launchUrl: 'https://gnosis-safe.io/wc',
+  },
+  {
+    id: 'argent',
+    name: 'Argent',
+    Icon: WalletArgent,
+    buildWcUniversalLink: (uri) => `https://argent.link/app/wc?uri=${encodeURIComponent(uri)}`,
+    launchUrl: 'https://argent.link/app/wc',
+  },
+  {
+    id: 'phantom',
+    name: 'Phantom',
+    Icon: WalletPhantom,
+  },
+  {
+    id: 'rabby',
+    name: 'Rabby',
+    Icon: WalletRabby,
+  },
+  {
+    id: 'imtoken',
+    name: 'imToken',
+    Icon: WalletImtoken,
+  },
+  {
+    id: 'tokenpocket',
+    name: 'TokenPocket',
+    Icon: WalletTokenPocket,
   },
 ]
 
-// Tiny external store so any button anywhere in the app can open the Telegram Wallet Modal
+// Tiny external store so any Connect button in the app can open the Telegram Wallet Modal
 let modalOpen = false
 const modalListeners = new Set<() => void>()
 
@@ -82,7 +143,7 @@ export function openTelegramWalletModal() {
   setModalOpen(true)
 }
 
-function useModalOpen(): boolean {
+export function useTelegramWalletModalOpen(): boolean {
   return useSyncExternalStore(
     (cb) => {
       modalListeners.add(cb)
@@ -112,8 +173,9 @@ interface CustomRenderProps {
 /**
  * Drop-in replacement for `<ConnectKitButton.Custom>`:
  * - In standard browsers: delegates directly to ConnectKit's modal.
- * - Inside Telegram Mini App: opens `TelegramWalletModal`, which uses HTTPS Universal Links via
- *   `Telegram.WebApp.openLink(...)` so Android/iOS WebView never hits `net::ERR_UNKNOWN_URL_SCHEME`.
+ * - Inside Telegram Mini App: opens `TelegramWalletModal` (ConnectKit-style Choose Wallet grid
+ *   backed by HTTPS Universal Links via `Telegram.WebApp.openLink` so Android/iOS WebView never
+ *   crashes with `net::ERR_UNKNOWN_URL_SCHEME`).
  */
 export function ConnectWalletCustom({
   children,
@@ -145,7 +207,9 @@ interface EventfulProvider {
 }
 
 export function TelegramWalletModal() {
-  const open = useModalOpen()
+  const open = useTelegramWalletModalOpen()
+  const { resolved } = useTheme()
+  const isDark = resolved === 'dark'
   const { address, isConnected, connector: activeConnector } = useAccount()
   const { connectors, connectAsync } = useConnect()
   const { disconnect } = useDisconnect()
@@ -159,14 +223,27 @@ export function TelegramWalletModal() {
 
   const wcConnector = connectors.find((c) => c.id === 'walletConnect')
 
-  const launchWalletWithUri = useCallback((wallet: TgWalletOption, uri: string) => {
-    try {
-      window.sessionStorage.setItem(SAVED_WALLET_KEY, wallet.id)
-    } catch {
-      /* ignore */
+  const deliverWalletAction = useCallback(async (wallet: TgWalletOption, uri: string) => {
+    if (wallet.buildWcUniversalLink) {
+      try {
+        window.sessionStorage.setItem(SAVED_WALLET_KEY, wallet.id)
+      } catch {
+        /* ignore */
+      }
+      triggerTelegramHaptic('light')
+      openExternalUrl(wallet.buildWcUniversalLink(uri))
+      return
     }
-    triggerTelegramHaptic('light')
-    openExternalUrl(wallet.buildWcUniversalLink(uri))
+
+    try {
+      await navigator.clipboard.writeText(uri)
+      setCopied(true)
+      triggerTelegramHaptic('success')
+      toast.success(`Link copied! Open ${wallet.name} and paste in WalletConnect.`)
+      window.setTimeout(() => setCopied(false), 2_500)
+    } catch {
+      toast.error('Could not copy WalletConnect link.')
+    }
   }, [])
 
   const startPairing = useCallback(async () => {
@@ -182,7 +259,7 @@ export function TelegramWalletModal() {
       if (pendingWalletRef.current) {
         const w = pendingWalletRef.current
         pendingWalletRef.current = null
-        launchWalletWithUri(w, uri)
+        void deliverWalletAction(w, uri)
       }
     }
 
@@ -196,7 +273,7 @@ export function TelegramWalletModal() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : ''
       if (msg && !/rejected|reset|closed/i.test(msg)) {
-        toast.error('Could not complete WalletConnect session. Try again or copy pairing link.')
+        toast.error('Connection interrupted. Tap a wallet to try again.')
       }
     } finally {
       provider?.removeListener?.('display_uri', onDisplayUri)
@@ -204,7 +281,7 @@ export function TelegramWalletModal() {
       setInitializing(false)
       setSelectedWalletId(null)
     }
-  }, [wcConnector, connectAsync, launchWalletWithUri])
+  }, [wcConnector, connectAsync, deliverWalletAction])
 
   const closeModal = () => {
     pendingWalletRef.current = null
@@ -227,7 +304,7 @@ export function TelegramWalletModal() {
   const handlePickWallet = (wallet: TgWalletOption) => {
     setSelectedWalletId(wallet.id)
     if (wcUri) {
-      launchWalletWithUri(wallet, wcUri)
+      void deliverWalletAction(wallet, wcUri)
       return
     }
     pendingWalletRef.current = wallet
@@ -242,7 +319,7 @@ export function TelegramWalletModal() {
       await navigator.clipboard.writeText(wcUri)
       setCopied(true)
       triggerTelegramHaptic('success')
-      toast.success('WalletConnect pairing link copied! Paste it inside your wallet app.')
+      toast.success('Copied to clipboard')
       window.setTimeout(() => setCopied(false), 2_500)
     } catch {
       toast.error('Could not copy link.')
@@ -254,49 +331,46 @@ export function TelegramWalletModal() {
       ? `https://app.onpeer.xyz${window.location.pathname}${window.location.search}`
       : 'https://app.onpeer.xyz/p2p'
 
+  const sheetBg = isDark ? '#1f2023' : '#ffffff'
+  const sheetBorder = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'
+  const subtleBg = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.045)'
+  const subtleHoverBg = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)'
+  const textPrimary = isDark ? '#f5f5f7' : '#111827'
+  const textSecondary = isDark ? '#9ca3af' : '#6b7280'
+
   return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/75 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs sm:items-center sm:p-4"
       onClick={closeModal}
     >
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Connect Wallet"
+        aria-label={isConnected ? 'Connected Wallet' : 'Choose Wallet'}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-t-3xl p-5 pb-7 sm:rounded-3xl sm:pb-6"
+        className="w-full max-w-[380px] rounded-t-[28px] px-5 pt-5 sm:rounded-[28px]"
         style={{
-          backgroundColor: 'var(--panel-solid)',
-          border: '1px solid var(--border-strong)',
-          boxShadow: 'var(--panel-shadow)',
-          color: 'var(--ink)',
+          backgroundColor: sheetBg,
+          border: `1px solid ${sheetBorder}`,
+          boxShadow: '0 -12px 48px rgba(0, 0, 0, 0.5)',
+          color: textPrimary,
+          paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))',
         }}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <span
-              className="flex size-9 items-center justify-center rounded-xl text-white"
-              style={{ background: 'var(--accent-bg)' }}
-            >
-              <Wallet className="size-4" />
-            </span>
-            <div>
-              <h2 className="display text-base font-bold">
-                {isConnected ? 'Connected Wallet' : 'Connect Mobile Wallet'}
-              </h2>
-              <p className="text-[11px]" style={{ color: 'var(--subtle)' }}>
-                {isConnected
-                  ? activeConnector?.name ?? 'Active session'
-                  : 'Opens your wallet app safely & returns to Telegram'}
-              </p>
-            </div>
-          </div>
+        {/* ConnectKit-style clean centered header */}
+        <div className="relative flex items-center justify-between">
+          <span className="flex size-8 items-center justify-center">
+            <WalletWalletConnect variant="branded" size={22} />
+          </span>
+          <h2 className="text-[17px] font-semibold tracking-tight">
+            {isConnected ? 'Connected' : 'Choose Wallet'}
+          </h2>
           <button
             type="button"
             onClick={closeModal}
-            aria-label="Close wallet modal"
-            className="inline-flex size-8 items-center justify-center rounded-full"
-            style={{ background: 'var(--fill-2)', color: 'var(--muted)' }}
+            aria-label="Close modal"
+            className="inline-flex size-8 items-center justify-center rounded-full transition-colors"
+            style={{ color: textSecondary, backgroundColor: subtleBg }}
           >
             <X className="size-4" />
           </button>
@@ -305,22 +379,27 @@ export function TelegramWalletModal() {
         {isConnected && address ? (
           <div className="mt-5 space-y-3">
             <div
-              className="flex items-center justify-between rounded-2xl px-4 py-3"
-              style={{ background: 'var(--fill-2)', border: '1px solid var(--border)' }}
+              className="flex items-center justify-between rounded-2xl px-4 py-3.5"
+              style={{ backgroundColor: subtleBg }}
             >
-              <span className="mono text-sm font-bold">{shortAddr(address)}</span>
+              <div>
+                <span className="mono block text-sm font-semibold">{shortAddr(address)}</span>
+                <span className="text-xs" style={{ color: textSecondary }}>
+                  {activeConnector?.name ?? 'WalletConnect'}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(address)
-                    toast.success('Wallet address copied')
+                    toast.success('Address copied')
                   } catch {
                     /* ignore */
                   }
                 }}
-                className="inline-flex items-center gap-1 text-xs font-semibold"
-                style={{ color: 'var(--accent)' }}
+                className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors"
+                style={{ backgroundColor: subtleHoverBg, color: textPrimary }}
               >
                 <Copy className="size-3.5" /> Copy
               </button>
@@ -333,10 +412,10 @@ export function TelegramWalletModal() {
                   const u = getSavedTelegramWalletLaunchUrl()
                   if (u) openExternalUrl(u)
                 }}
-                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl text-xs font-bold"
-                style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-semibold transition-colors"
+                style={{ backgroundColor: subtleBg, color: textPrimary }}
               >
-                Open Wallet App <ExternalLink className="size-3.5" />
+                Open Wallet <ExternalLink className="size-4" />
               </button>
             )}
 
@@ -347,40 +426,44 @@ export function TelegramWalletModal() {
                 setModalOpen(false)
                 toast.info('Wallet disconnected')
               }}
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/40 bg-red-500/10 text-xs font-bold text-red-400"
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-red-500/12 text-sm font-semibold text-red-400 transition-colors hover:bg-red-500/20"
             >
-              <LogOut className="size-3.5" /> Disconnect Wallet
+              <LogOut className="size-4" /> Disconnect
             </button>
           </div>
         ) : !wcConnector ? (
-          <div className="mt-5 space-y-3">
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              Open OnPeer directly inside your mobile wallet&apos;s built-in browser for instant one-tap signing:
-            </p>
+          <div className="mt-5 space-y-2.5">
             <button
               type="button"
               onClick={() => openExternalUrl(`https://metamask.app.link/dapp/${currentUrl.replace(/^https?:\/\//i, '')}`)}
-              className="flex min-h-11 w-full items-center justify-between rounded-xl px-4 text-xs font-bold text-white"
-              style={{ background: 'var(--accent-bg)' }}
+              className="flex h-12 w-full items-center justify-between rounded-2xl px-4 text-sm font-semibold"
+              style={{ backgroundColor: subtleBg, color: textPrimary }}
             >
-              <span>Open in MetaMask Browser</span>
-              <ExternalLink className="size-4" />
+              <span className="flex items-center gap-3">
+                <WalletMetamask variant="background" size={28} className="rounded-lg" />
+                <span>MetaMask</span>
+              </span>
+              <ExternalLink className="size-4" style={{ color: textSecondary }} />
             </button>
             <button
               type="button"
               onClick={() =>
                 openExternalUrl(`https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(currentUrl)}`)
               }
-              className="flex min-h-11 w-full items-center justify-between rounded-xl px-4 text-xs font-bold"
-              style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              className="flex h-12 w-full items-center justify-between rounded-2xl px-4 text-sm font-semibold"
+              style={{ backgroundColor: subtleBg, color: textPrimary }}
             >
-              <span>Open in Trust Wallet Browser</span>
-              <ExternalLink className="size-4" />
+              <span className="flex items-center gap-3">
+                <WalletTrust variant="background" size={28} className="rounded-lg" />
+                <span>Trust Wallet</span>
+              </span>
+              <ExternalLink className="size-4" style={{ color: textSecondary }} />
             </button>
           </div>
         ) : (
-          <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-1 gap-2">
+          <div className="mt-5">
+            {/* Standard 4-column Web3 wallet icon grid matching ConnectKit / WalletConnect */}
+            <div className="grid grid-cols-4 gap-x-2.5 gap-y-4">
               {TG_WALLETS.map((w) => {
                 const waiting = selectedWalletId === w.id && !wcUri
                 return (
@@ -388,95 +471,55 @@ export function TelegramWalletModal() {
                     key={w.id}
                     type="button"
                     onClick={() => handlePickWallet(w)}
-                    className="flex min-h-12 w-full items-center justify-between rounded-2xl px-3.5 py-2.5 text-left transition-colors hover:bg-[var(--fill-3)]"
-                    style={{
-                      background: selectedWalletId === w.id ? 'var(--fill-3)' : 'var(--fill-2)',
-                      border: `1px solid ${selectedWalletId === w.id ? 'var(--border-strong)' : 'var(--border)'}`,
-                    }}
+                    className="group flex flex-col items-center gap-1.5 rounded-2xl py-1 text-center transition-transform active:scale-95"
                   >
-                    <span className="flex items-center gap-3">
-                      <span
-                        className="flex size-8 shrink-0 items-center justify-center rounded-xl text-[11px] font-extrabold text-white"
-                        style={{ backgroundColor: w.accent }}
-                      >
-                        {w.badge}
-                      </span>
-                      <span>
-                        <span className="block text-sm font-bold">{w.name}</span>
-                        <span className="block text-[11px]" style={{ color: 'var(--subtle)' }}>
-                          {selectedWalletId === w.id && wcUri
-                            ? 'Approve in wallet, then switch back to Telegram'
-                            : 'Tap to connect via WalletConnect'}
+                    <span
+                      className="relative flex size-14 items-center justify-center overflow-hidden rounded-[16px] shadow-sm transition-transform group-hover:scale-105"
+                      style={{ border: `1px solid ${sheetBorder}` }}
+                    >
+                      <w.Icon variant="background" size={56} className="size-14" />
+                      {waiting && (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/55">
+                          <Loader2 className="size-5 animate-spin text-white" />
                         </span>
-                      </span>
+                      )}
                     </span>
-                    {waiting ? (
-                      <Loader2 className="size-4 animate-spin" style={{ color: 'var(--accent)' }} />
-                    ) : (
-                      <ExternalLink className="size-4" style={{ color: 'var(--subtle)' }} />
-                    )}
+                    <span
+                      className="w-full truncate text-[12px] font-medium leading-tight"
+                      style={{ color: selectedWalletId === w.id ? textPrimary : textSecondary }}
+                    >
+                      {w.name}
+                    </span>
                   </button>
                 )
               })}
             </div>
 
-            {/* Copy Pairing URI for OKX, Bybit, Bitget, Rabby, SafePal, etc. */}
+            {/* Standard Copy to Clipboard bar */}
             <button
               type="button"
               disabled={!wcUri}
               onClick={() => void handleCopyUri()}
-              className="flex min-h-10 w-full items-center justify-center gap-2 rounded-xl text-xs font-semibold transition-opacity disabled:opacity-50"
-              style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--ink)' }}
+              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[14px] font-medium transition-opacity disabled:opacity-50"
+              style={{ backgroundColor: subtleBg, color: textPrimary }}
             >
               {initializing && !wcUri ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" style={{ color: 'var(--accent)' }} />
-                  <span>Preparing secure pairing link…</span>
+                  <Loader2 className="size-4 animate-spin" style={{ color: textSecondary }} />
+                  <span style={{ color: textSecondary }}>Connecting…</span>
                 </>
               ) : copied ? (
                 <>
-                  <Check className="size-3.5" style={{ color: 'var(--success)' }} />
-                  <span>Copied! Paste in OKX / Bitget / Bybit / Rabby</span>
+                  <Check className="size-4 text-emerald-400" />
+                  <span>Copied to Clipboard</span>
                 </>
               ) : (
                 <>
-                  <Copy className="size-3.5" style={{ color: 'var(--accent)' }} />
-                  <span>Copy link (OKX, Bybit, Bitget, Rabby, SafePal)</span>
+                  <Copy className="size-4" style={{ color: textSecondary }} />
+                  <span>Copy to Clipboard</span>
                 </>
               )}
             </button>
-
-            {/* Fallback: Open directly inside MetaMask / Trust in-app dApp browser */}
-            <div className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
-              <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold" style={{ color: 'var(--subtle)' }}>
-                <Smartphone className="size-3.5" style={{ color: 'var(--accent)' }} />
-                Prefer zero app-switching? Open inside wallet browser:
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    openExternalUrl(`https://metamask.app.link/dapp/${currentUrl.replace(/^https?:\/\//i, '')}`)
-                  }
-                  className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-bold"
-                  style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-                >
-                  MetaMask Browser <ExternalLink className="size-3" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() =>
-                    openExternalUrl(
-                      `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(currentUrl)}`,
-                    )
-                  }
-                  className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl text-[11px] font-bold"
-                  style={{ background: 'var(--fill-2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
-                >
-                  Trust Browser <ExternalLink className="size-3" />
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>

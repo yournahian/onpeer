@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Maximize2, RotateCcw, Sparkles, X } from 'lucide-react'
 import { navigate } from '@/lib/router'
+import { isTelegramMiniApp } from '@/lib/telegram'
 import { useAgentContext } from '@/agent/AgentContext'
 import { ChatThread } from '@/components/chat/ChatThread'
+import { useTelegramWalletModalOpen } from '@/components/TelegramWalletModal'
 
-/** Floating assistant: always on screen except on the dedicated assistant page. */
+/** Floating assistant: always on screen except on the dedicated assistant page or inside Telegram Mini App (where Menu → Assistant is used). */
 export function AgentChat({ route }: { route: string }) {
   const [open, setOpen] = useState(false)
   const { items, reset } = useAgentContext()
+  const walletModalOpen = useTelegramWalletModalOpen()
   const onPage = route === 'assistant'
+  const inTgMiniApp = isTelegramMiniApp()
 
   useEffect(() => {
     if (!open) return
@@ -17,29 +21,32 @@ export function AgentChat({ route }: { route: string }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open])
 
-  // The page is the assistant, so the floating one steps aside (the conversation is shared).
-  if (onPage) return null
+  // On the dedicated /assistant page or inside Telegram Mini App (when closed), step aside so mobile bottom text is never covered.
+  if (onPage || (inTgMiniApp && !open)) return null
 
   return (
     <>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        aria-label={open ? 'Close assistant' : 'Open assistant'}
-        aria-expanded={open}
-        className={`launcher-ring glow-accent btn-shine fixed right-4 z-[9999] flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold transition-transform duration-200 hover:scale-105 active:scale-95 sm:min-h-12 sm:px-5 ${route === 'p2p' ? 'bottom-20 md:bottom-4' : 'bottom-4'
+      {!walletModalOpen && (
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? 'Close assistant' : 'Open assistant'}
+          aria-expanded={open}
+          className={`launcher-ring glow-accent btn-shine fixed right-4 z-30 flex size-11 items-center justify-center gap-2 rounded-full p-0 text-sm font-semibold transition-transform duration-200 hover:scale-105 active:scale-95 sm:h-12 sm:w-auto sm:px-5 ${
+            route === 'p2p' ? 'bottom-20 md:bottom-4' : 'bottom-4'
           }`}
-        style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
-      >
-        {open ? <X className="size-4" /> : <Sparkles className="size-4" />}
-        <span className={route === 'p2p' ? 'hidden sm:inline' : ''}>{open ? 'Close' : 'Ask assistant'}</span>
-      </button>
+          style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}
+        >
+          {open ? <X className="size-4" /> : <Sparkles className="size-4" />}
+          <span className="hidden sm:inline">{open ? 'Close' : 'Ask assistant'}</span>
+        </button>
+      )}
 
       {/* Always mounted so in-progress swaps and bridges survive closing the panel. */}
       <section
         role="dialog"
         aria-label="Assistant"
         hidden={!open}
-        className="panel-in fixed inset-x-3 bottom-20 z-[9998] flex h-[min(620px,calc(100dvh-6.5rem))] flex-col overflow-hidden rounded-3xl data-[hidden=true]:hidden sm:inset-x-auto sm:right-4 sm:w-[400px]"
+        className="panel-in fixed inset-x-3 bottom-20 z-40 flex h-[min(620px,calc(100dvh-6.5rem))] flex-col overflow-hidden rounded-3xl data-[hidden=true]:hidden sm:inset-x-auto sm:right-4 sm:w-[400px]"
         data-hidden={!open}
         style={{
           background: 'var(--panel-bg)',
