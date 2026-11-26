@@ -16,7 +16,7 @@ import {
 import {
   BUY_AD_MIN_COMPLETED,
   COUNTRIES,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   SIDE_BUY,
   SIDE_SELL,
   STATUS,
@@ -42,6 +42,7 @@ import {
   useTraderProfiles,
   type SavedP2pFilterState,
 } from '@/hooks/useSocial'
+import { useOnlineStatus } from '@/hooks/usePresence'
 
 function parseFiatFilter(raw: string): bigint | null {
   if (!raw) return null
@@ -162,6 +163,7 @@ export function Market({
   const verifications = useVerifications(makerAddresses, activeAsset)
   const accounts = useAccounts(makerAddresses, activeAsset)
   const traderProfiles = useTraderProfiles(makerAddresses)
+  const onlineMap = useOnlineStatus(makerAddresses)
 
   const fiatFilter = parseFiatFilter(amount)
   const userCap = viewerAccount ? viewerAccount.orderCap : tier0CapFor(activeAsset)
@@ -383,7 +385,7 @@ export function Market({
         {/* Quick Mobile Inline Dropdowns */}
         {mobileQuickPanel === 'asset' && (
           <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-2.5">
-            {P2P_ASSETS.map((a) => {
+            {VISIBLE_P2P_ASSETS.map((a) => {
               const active = a === activeAsset
               return (
                 <button
@@ -548,7 +550,7 @@ export function Market({
 
             {/* Cryptocurrency Tabs: USDC | EURC (Exact 2nd Screenshot Green-Marked Section) */}
             <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Cryptocurrency">
-              {P2P_ASSETS.map((a) => {
+              {VISIBLE_P2P_ASSETS.map((a) => {
                 const active = activeAsset === a
                 return (
                   <button
@@ -817,6 +819,7 @@ export function Market({
                 account={accounts.get(ad.maker.toLowerCase())}
                 makerKyc={verifications.get(ad.maker.toLowerCase())}
                 makerProfile={traderProfiles.get(ad.maker.toLowerCase())}
+                isOnline={onlineMap.get(ad.maker.toLowerCase()) ?? false}
                 viewerAccount={viewerAccount}
                 own={sameAddr(ad.maker, address)}
                 onSelectAd={setSelectedAd}
@@ -844,6 +847,7 @@ export function Market({
                   account={accounts.get(ad.maker.toLowerCase())}
                   makerKyc={verifications.get(ad.maker.toLowerCase())}
                   makerProfile={traderProfiles.get(ad.maker.toLowerCase())}
+                  isOnline={onlineMap.get(ad.maker.toLowerCase()) ?? false}
                   viewerAccount={viewerAccount}
                   own={sameAddr(ad.maker, address)}
                   onSelectAd={setSelectedAd}

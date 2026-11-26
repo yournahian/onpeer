@@ -4,6 +4,8 @@ import { useAccount } from 'wagmi'
 import {
   AlertTriangle,
   ArrowLeft,
+  Check,
+  CheckCheck,
   Clock,
   FileText,
   Loader2,
@@ -21,6 +23,7 @@ import { BackendApiError, useBackendSession } from '@/lib/api'
 import { useChat } from '@/hooks/useChat'
 import { useNow } from '@/hooks/useEscrow'
 import { traderInitial, traderLabel, useTraderProfiles } from '@/hooks/useSocial'
+import { useOnlineStatus } from '@/hooks/usePresence'
 import {
   fetchOrderEvidenceBlob,
   uploadOrderEvidence,
@@ -167,6 +170,8 @@ export function OrderChat({
   const [text, setText] = useState('')
   const [attachment, setAttachment] = useState<PreparedEvidenceFile | null>(null)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [warningDismissed, setWarningDismissed] = useState(false)
+  const [disputeTipDismissed, setDisputeTipDismissed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(0)
@@ -183,10 +188,11 @@ export function OrderChat({
     orderStatus !== STATUS.RESOLVED_BUYER &&
     orderStatus !== STATUS.RESOLVED_SELLER &&
     orderStatus !== STATUS.SETTLED
-  const { messages: encMessages, isLoading, send: sendEnc, sending } = useChat(
+  const { messages: encMessages, isLoading, send: sendEnc, sending, counterpartyReadAt } = useChat(
     session ? orderId : null,
     isLive,
   )
+  const cpReadMs = counterpartyReadAt ? Date.parse(counterpartyReadAt) : 0
 
   const isBusy = sending || uploadingFile
   const useEncrypted = session !== null
@@ -200,6 +206,8 @@ export function OrderChat({
       : buyer
 
   const profiles = useTraderProfiles([buyer, seller])
+  const onlineMap = useOnlineStatus([counterparty])
+  const counterpartyOnline = onlineMap.get(counterparty.toLowerCase()) ?? false
   const cpProfile = profiles.get(counterparty.toLowerCase()) ?? null
   const cpDisplay = traderLabel(counterparty, cpProfile)
   const cpInit = traderInitial(counterparty, cpProfile)
@@ -333,9 +341,11 @@ export function OrderChat({
           <div>
             <p className="flex items-center gap-2 text-xs font-bold text-[var(--p2p-ink)]">
               <span>{cpDisplay}</span>
-              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#FF5A00]">
-                <span className="size-1.5 rounded-full bg-[#FF5A00]" /> Live
-              </span>
+              {counterpartyOnline && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+                  <span className="size-1.5 rounded-full bg-emerald-400" /> Online
+                </span>
+              )}
             </p>
             <p className="text-[11px] text-[var(--p2p-muted)]">Order {formatScopedOrderLabel(orderId)} Chat</p>
           </div>
@@ -346,12 +356,12 @@ export function OrderChat({
         </span>
       </div>
 
-      {/* Top Dispute Opened Banner (shown immediately at the top when disputed) */}
+      {/* Top Appeal Opened Banner (shown immediately at the top when appealed) */}
       {isDisputed && (
         <div className="mx-3 mt-3 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--p2p-danger-border)] bg-[var(--p2p-danger-bg)] px-3 py-2 text-xs font-bold text-[var(--p2p-danger-ink)]">
           <span className="inline-flex items-center gap-1.5">
             <ShieldAlert className="size-4 shrink-0" />
-            Dispute Opened — Submit Proof Within 2 Hours
+            Appeal Opened — Submit Proof Within 2 Hours
           </span>
           {orderStatus === STATUS.DISPUTED && disputedAt !== undefined && disputedAt > 0n && (
             <span className="p2p-mono inline-flex items-center gap-1 rounded bg-[var(--p2p-surface-solid)] px-2 py-0.5 text-[11px] text-[var(--p2p-danger-ink)]">
@@ -362,18 +372,28 @@ export function OrderChat({
         </div>
       )}
 
-      {/* Anti-Scam & Name-Mismatch Liability Pinned Banner */}
-      <div
-        className="mx-3 mt-2.5 flex shrink-0 items-start gap-2 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3 py-2 text-xs text-[var(--p2p-ink)]"
-        style={{ borderLeft: '3px solid #FF5A00' }}
-      >
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#FF5A00]" />
-        <p className="text-[11px] leading-relaxed">
-          <strong className="text-[#FF5A00]">Name Mismatch Warning:</strong> Do <strong>NOT</strong> transfer fiat or
-          release USDC if the sender/recipient account name mismatches (no third-party payments). If you still proceed,{' '}
-          <strong>OnPeer is not responsible or liable</strong>.
-        </p>
-      </div>
+      {/* Compact Dismissible Safety Warning */}
+      {!warningDismissed && (
+        <div
+          className="mx-3 mt-2.5 flex shrink-0 items-start justify-between gap-2 rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] px-3 py-2 text-[11px] leading-relaxed text-[var(--p2p-ink)]"
+          style={{ borderLeft: '3px solid #FF5A00' }}
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#FF5A00]" />
+            <p>
+              <strong className="text-[#FF5A00]">Safety:</strong> No third-party payments. Verify funds inside your bank/wallet app before releasing — OnPeer is not liable for name-mismatch transfers.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss safety warning"
+            onClick={() => setWarningDismissed(true)}
+            className="shrink-0 rounded p-0.5 text-[var(--p2p-muted)] transition-colors hover:bg-[var(--p2p-surface)] hover:text-[var(--p2p-ink)]"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Scrollable Message Stream */}
       <div ref={streamRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3.5">
@@ -383,47 +403,24 @@ export function OrderChat({
           </span>
         </div>
 
-        {/* Automatic Official Anti-Triangulation & Name-Mismatch System Message */}
-        <div className="rounded-xl border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] p-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
-          <div className="flex items-center gap-1.5 font-bold text-[#FF5A00]">
-            <ShieldAlert className="size-4 shrink-0" />
-            <span>OnPeer System • Mandatory Name-Match &amp; Anti-Scam Policy</span>
-          </div>
-          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-[11px] text-[var(--p2p-ink)]">
-            <li>
-              <strong>Buyers:</strong> Send payment strictly from your own personal account. If the seller&apos;s
-              account name mismatches, <strong>do NOT transfer</strong>.
-            </li>
-            <li>
-              <strong>Sellers:</strong> Always verify inside your actual banking/mobile app (never trust SMS or chat
-              screenshots). If money arrives from a third-party or <strong>mismatched name</strong>,{' '}
-              <strong>do NOT release USDC</strong> — open a dispute immediately.
-            </li>
-            <li className="font-semibold text-[#FF5A00]">
-              Liability Notice: If you transfer funds or release USDC despite a name mismatch or third-party payment,
-              you act entirely at your own risk and OnPeer will not be responsible or liable for any loss, chargeback,
-              or bank freeze.
-            </li>
-          </ul>
-        </div>
-
-        {/* Automatic Official Dispute System Message (2-hour deadline + 2-Phone Raw Video Proof Rule) */}
-        {isDisputed && (
-          <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
+        {/* Compact Dismissible Dispute Proof Tip */}
+        {isDisputed && !disputeTipDismissed && (
+          <div className="relative rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 pr-8 text-[11px] leading-relaxed text-[var(--p2p-ink)]">
+            <button
+              type="button"
+              aria-label="Dismiss dispute instructions"
+              onClick={() => setDisputeTipDismissed(true)}
+              className="absolute right-2.5 top-2.5 rounded p-0.5 text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
+            >
+              <X className="size-3.5" />
+            </button>
             <div className="flex items-center gap-1.5 font-bold text-[var(--p2p-warn-ink)]">
-              <Video className="size-4 shrink-0" />
-              <span>OnPeer System • Mandatory Dispute Evidence (2-Hour Window)</span>
+              <Video className="size-3.5 shrink-0" />
+              <span>Appeal Active — Share All Proof Here (2-Hour Window)</span>
             </div>
-            <p className="mt-1.5 text-[11px] font-medium text-[var(--p2p-ink)]">
-              Dispute opened! Both Buyer and Seller have <strong>2 hours</strong> to prove their claim with genuine
-              payment / banking evidence for the arbiter.
+            <p className="mt-1 text-[var(--p2p-muted)]">
+              Upload your screenshots or PDF receipts directly in this chat — the arbiter reviews and replies here. For bank appeals, record a raw, unedited back-camera video of your banking app on a 2nd phone.
             </p>
-            <div className="mt-2 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] p-2.5 text-[11px] text-[var(--p2p-ink)]">
-              <strong className="block text-[var(--p2p-accent-ink)]">2-Phone Raw Video Proof Instruction:</strong>
-              Record a video using your phone’s back camera while your bank account is open in the app on 2nd Phone.
-              Make sure you start by showing your phone’s home screen, then open your banking app and show your
-              transactions. Ensure there are no cuts or edits. The video must be completely raw and unedited.
-            </div>
           </div>
         )}
 
@@ -440,10 +437,25 @@ export function OrderChat({
         ) : (
           encMessages.map((m) => {
             const mine = sameAddr(m.author, address)
+            const msgMs = Date.parse(m.createdAt)
+            const seen = mine && cpReadMs > 0 && Number.isFinite(msgMs) && cpReadMs >= msgMs
             return (
               <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                <span className="p2p-mono mb-1 text-[10px] text-[var(--p2p-muted)]">
-                  {label(m.author)} · {new Date(m.createdAt).toLocaleTimeString()}
+                <span className="p2p-mono mb-1 flex items-center gap-1 text-[10px] text-[var(--p2p-muted)]">
+                  <span>
+                    {label(m.author)} · {new Date(m.createdAt).toLocaleTimeString()}
+                  </span>
+                  {mine && (
+                    <span
+                      title={seen ? 'Seen by counterparty' : 'Sent'}
+                      className={`inline-flex items-center gap-0.5 font-semibold ${
+                        seen ? 'text-emerald-400' : 'text-[var(--p2p-muted)]'
+                      }`}
+                    >
+                      {seen ? <CheckCheck className="size-3" /> : <Check className="size-3" />}
+                      <span>{seen ? 'Seen' : 'Sent'}</span>
+                    </span>
+                  )}
                 </span>
                 <div
                   className={`max-w-[85%] break-words rounded-xl px-3.5 py-2.5 text-xs leading-relaxed ${

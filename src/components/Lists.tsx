@@ -20,7 +20,7 @@ import {
   COUNTRIES,
   DEFAULT_TTL_HOURS,
   MAX_FIAT_PRICE_E6,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   SIDE_SELL,
   STATUS,
   STATUS_META,
@@ -398,7 +398,7 @@ export function MyOrders({
                 value={assetFilter}
                 onChange={(e) =>
                   setAssetFilter(
-                    (P2P_ASSETS as readonly string[]).includes(e.target.value)
+                    (VISIBLE_P2P_ASSETS as readonly string[]).includes(e.target.value)
                       ? (e.target.value as P2pAsset)
                       : 'ALL',
                   )
@@ -406,7 +406,7 @@ export function MyOrders({
                 className="bg-transparent font-bold text-[var(--p2p-ink)] outline-none"
               >
                 <option value="ALL">All coins</option>
-                {P2P_ASSETS.map((a) => (
+                {VISIBLE_P2P_ASSETS.map((a) => (
                   <option key={a} value={a}>
                     {a}
                   </option>

@@ -10,9 +10,6 @@ import {
   ArrowUpDown,
   BadgeCheck,
   ChevronRight,
-  Clock,
-  ExternalLink,
-  Hourglass,
   Loader2,
   Lock,
   RefreshCw,
@@ -20,7 +17,6 @@ import {
   X,
 } from 'lucide-react'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
-import { buildAddressExplorerUrl } from '@/onchain-facts'
 import {
   BUY_AD_MIN_COMPLETED,
   CHAIN_ID,
@@ -33,11 +29,9 @@ import {
   SIDE_SELL,
   TIER_TABLE,
   ZERO_BYTES32,
-  computeBond,
   countryByCurrency,
   encodeScopedId,
   fiatFor,
-  formatDuration,
   hasMethodBit,
   formatFiat,
   formatOrderCap,
@@ -922,11 +916,11 @@ function MobileOrderScreen({
 
 export function InlineOrderDrawer({
   ad,
-  makerAccount,
+  makerAccount: _makerAccount,
   initialUsdc,
   onCancel,
   onOpened,
-  onOpenTrader,
+  onOpenTrader: _onOpenTrader,
 }: {
   ad: AdWithId
   makerAccount?: Account
@@ -936,48 +930,41 @@ export function InlineOrderDrawer({
   onOpenTrader?: (wallet: string) => void
 }) {
   const s = useOrderFormState(ad, initialUsdc)
+  const [extendedTerms, setExtendedTerms] = useState<string | null>(null)
 
-  const ttlLeft = Math.max(0, Number(ad.expiresAt) - s.now)
-  const ttlText = ttlLeft >= 3600 ? `${Math.ceil(ttlLeft / 3600)}h left` : formatDuration(ttlLeft)
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/ads/${ad.id.toString()}/terms`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { terms?: string | null } | null) => {
+        if (!cancelled && data?.terms?.trim()) setExtendedTerms(data.terms.trim())
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [ad.id])
+
+  const displayTerms = extendedTerms || ad.details?.trim() || ''
   const methods = maskToMethods(ad.paymentMask)
-  const completionPct =
-    makerAccount && makerAccount.ordersCreated > 0
-      ? ((makerAccount.ordersCompleted / makerAccount.ordersCreated) * 100).toFixed(2)
-      : '100.00'
-  const previewBond = computeBond(s.usdcRaw > 0n ? s.usdcRaw : s.adLow, s.asset)
-
   const minFiatText = formatFiat(fiatFor(s.adLow, ad.priceE6, s.asset), 2)
   const maxFiatText = formatFiat(fiatFor(s.effectiveHigh, ad.priceE6, s.asset), 2)
 
   return (
     <div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-        {/* Left Side: Advertisers' Terms + Maker Info */}
-        <div className="flex flex-col justify-between space-y-4 border-b border-[var(--p2p-border)] pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-6">
-          <div className="space-y-3.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-extrabold text-[var(--p2p-ink)]">
-                Advertisers&apos; Terms <span className="text-[#FF5A00]">*</span>
-              </h4>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {s.makerKyc.verified && (
-                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-ok-border)] bg-[var(--p2p-ok-bg)] px-2 py-0.5 text-[11px] font-bold text-[var(--p2p-ok-ink)]">
-                    <ShieldCheck className="size-3" /> Verified
-                  </span>
-                )}
-                {ad.merchantAd && (
-                  <span className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-2 py-0.5 text-[11px] font-bold text-[#FF5A00]">
-                    <ShieldCheck className="size-3" /> Merchant
-                  </span>
-                )}
-              </div>
-            </div>
+        {/* Left Side: Advertisers' Terms Only (SS2) */}
+        <div className="flex flex-col border-b border-[var(--p2p-border)] pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-6">
+          <div className="flex flex-1 flex-col space-y-3">
+            <h4 className="text-sm font-extrabold text-[var(--p2p-ink)]">
+              Advertisers&apos; Terms <span className="text-[#FF5A00]">*</span>
+            </h4>
 
-            <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 text-xs leading-relaxed text-[var(--p2p-ink)]">
-              {ad.details?.trim() ? (
-                <p className="whitespace-pre-wrap break-words">{ad.details}</p>
+            <div className="flex-1 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-4 text-xs leading-relaxed text-[var(--p2p-ink)]">
+              {displayTerms ? (
+                <p className="whitespace-pre-wrap break-words">{displayTerms}</p>
               ) : (
-                <div className="space-y-1.5 text-[var(--p2p-muted)]">
+                <div className="space-y-2 text-[var(--p2p-muted)]">
                   <p className="font-semibold text-[var(--p2p-ink)]">Please read before opening an order:</p>
                   <p>• Pay strictly from an account matching your verified name on OnPeer.</p>
                   <p>• No third-party payments accepted. Do not mention crypto in bank remarks.</p>
@@ -985,64 +972,6 @@ export function InlineOrderDrawer({
                 </div>
               )}
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  onCancel()
-                  onOpenTrader?.(ad.maker)
-                }}
-                className="font-bold text-[var(--p2p-ink)] hover:text-[#FF5A00] hover:underline"
-              >
-                {s.makerName}
-              </button>
-              <span className="p2p-mono text-[var(--p2p-muted)]">
-                {makerAccount ? `${makerAccount.ordersCompleted} orders` : '0 orders'} • {completionPct}%
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs">
-              <div>
-                <span className="block text-[var(--p2p-muted)]">Payment Time Limit</span>
-                <span className="p2p-mono mt-0.5 inline-flex items-center gap-1 font-semibold text-[var(--p2p-ink)]">
-                  <Clock className="size-3.5 text-[#FF5A00]" /> {ad.windowMinutes} Mins
-                </span>
-              </div>
-              <div>
-                <span className="block text-[var(--p2p-muted)]">Ad Expiry Countdown</span>
-                <span className="p2p-mono mt-0.5 inline-flex items-center gap-1 font-semibold text-[var(--p2p-ink)]">
-                  <Hourglass className="size-3.5 text-[#FF5A00]" /> {ttlText}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[var(--p2p-muted)]">Available Escrow</span>
-                <span className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
-                  {formatUsdcAmount(ad.available, undefined, s.asset)} {s.asset}
-                </span>
-              </div>
-              <div>
-                <span className="block text-[var(--p2p-muted)]">Asymmetric Dispute Bond</span>
-                <span className="p2p-mono mt-0.5 font-semibold text-[#FF5A00]">
-                  {formatUsdcAmount(previewBond, undefined, s.asset)} {s.asset}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-[var(--p2p-muted)]">
-            <span className="inline-flex items-center gap-1.5">
-              <Lock className="size-3.5 text-[#FF5A00]" />
-              {s.userBuys ? `Seller ${s.asset} locked in smart contract` : `Your ${s.asset} locks in escrow on open`}
-            </span>
-            <a
-              href={buildAddressExplorerUrl(CHAIN_ID, s.escrowAddress)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-semibold text-[#FF5A00] hover:underline"
-            >
-              Verify Escrow <ExternalLink className="size-3" />
-            </a>
           </div>
         </div>
 

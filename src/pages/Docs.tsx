@@ -25,7 +25,7 @@ import { buildAddressExplorerUrl } from '@/onchain-facts'
 import {
   CHAIN_ID,
   COUNTRIES,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   getEscrowConfig,
   methodsForCountry,
   type P2pAsset,
@@ -99,7 +99,7 @@ const DOC_PAGES: DocPageItem[] = [
         title: 'What is OnPeer?',
         paragraphs: [
           'OnPeer is a non-custodial peer-to-peer crypto marketplace and cross-chain liquidity hub built for South Asia on Arc (Circle’s Layer-1 blockchain where USDC is the native gas token).',
-          'Traders can buy and sell USDC, EURC, cirBTC, and WETH directly against 8 regional fiat currencies using familiar domestic payment rails such as bKash, Nagad, Rocket, UPI, IMPS, Raast, eSewa, and LankaQR—while every crypto unit remains locked in audited Solidity smart contracts until settlement.',
+          'Traders can buy and sell USDC and EURC directly against 8 regional fiat currencies using familiar domestic payment rails such as bKash, Nagad, Rocket, UPI, IMPS, Raast, eSewa, and LankaQR—while every crypto unit remains locked in audited Solidity smart contracts until settlement.',
         ],
         callout: {
           kind: 'tip',
@@ -114,7 +114,7 @@ const DOC_PAGES: DocPageItem[] = [
           'OnPeer unifies four complementary money flows into a single wallet-connected interface:',
         ],
         bullets: [
-          'P2P Marketplace (/p2p): Multi-asset escrow orderbook supporting USDC, EURC, cirBTC, and WETH across 8 South Asian fiat corridors with 0% trade fees.',
+          'P2P Marketplace (/p2p): Multi-asset escrow orderbook supporting USDC and EURC across 8 South Asian fiat corridors with 0% trade fees.',
           'Instant Token Swap (/swap): Permissionless on-chain swaps between USDC, EURC, cirBTC, and WETH on Arc Testnet powered by Circle App Kit.',
           'Cross-Chain Bridge (/bridge): Native burn-and-mint USDC transfers across 7 EVM networks via Circle CCTP, plus EURC, cirBTC, and WETH bridging via Circle CCTPx.',
           'AI Trading Assistant (/assistant): Natural-language P2P ad discovery, swap, and bridge preparation that never touches private keys.',
@@ -182,7 +182,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
         id: 'complete-first-trade',
         title: '3. Execute a P2P Trade, Swap, or Bridge',
         paragraphs: [
-          'Choose USDC, EURC, cirBTC, or WETH in the P2P market bar, filter by your local currency and payment method, and click Buy or Sell to lock the exchange rate and start the escrow timer.',
+          'Choose USDC or EURC in the P2P market bar, filter by your local currency and payment method, and click Buy or Sell to lock the exchange rate and start the escrow timer.',
         ],
         code: {
           filename: 'arc-network-config.json',
@@ -202,22 +202,22 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
     slug: 'supported-assets',
     title: 'Supported Assets & Corridors',
     shortDescription: 'Decimal precision, token contracts, and regional South Asian payment methods supported on OnPeer.',
-    badge: '4 Coins',
+    badge: '2 Coins',
     category: 'Getting Started',
     sections: [
       {
         id: 'crypto-assets',
         title: 'Supported Cryptocurrencies',
         paragraphs: [
-          'OnPeer supports four Circle-backed and wrapped digital assets across P2P Escrow, Swap, and Cross-Chain Bridge. Each asset uses its canonical ERC-20 decimal precision on Arc Testnet:',
+          'OnPeer supports Circle-backed stablecoins across P2P Escrow, Swap, and Cross-Chain Bridge. Each asset uses its canonical ERC-20 decimal precision on Arc Testnet:',
         ],
         table: {
           headers: ['Asset', 'Name', 'Decimals', 'P2P Escrow', 'Swap', 'Bridge Protocol'],
           rows: [
             ['USDC', 'USD Coin (Arc Native Gas + ERC-20)', '6', 'Live', 'Live', 'Circle CCTP v2 (7 Chains)'],
             ['EURC', 'Euro Coin', '6', 'Live', 'Live', 'Circle CCTPx (EVM Routes)'],
-            ['cirBTC', 'Circle Wrapped Bitcoin', '8', 'Live', 'Live', 'Circle CCTPx (Sepolia ↔ Arc)'],
-            ['WETH', 'Wrapped Ether on Arc', '18', 'Live', 'Live', 'Circle CCTPx (Sepolia ↔ Arc)'],
+            ['cirBTC', 'Circle Wrapped Bitcoin', '8', 'Swap & Bridge', 'Live', 'Circle CCTPx (Sepolia ↔ Arc)'],
+            ['WETH', 'Wrapped Ether on Arc', '18', 'Swap & Bridge', 'Live', 'Circle CCTPx (Sepolia ↔ Arc)'],
           ],
         },
         callout: {
@@ -248,7 +248,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
         title: '0% Trade Fee & Flat Listing Fee',
         paragraphs: [
           'OnPeer charges 0% maker and 0% taker fees on P2P orders, chat messages, ad refreshes, and dispute filings.',
-          'Creating a new Buy or Sell ad charges a flat ~$0.05 equivalent listing fee (0.05 USDC, 0.05 EURC, 0.00000050 cirBTC, or 0.00002 WETH) to prevent orderbook spam. Extending an ad’s TTL (1–168 hours) via refreshAd is completely free.',
+          'Creating a new Buy or Sell ad charges a flat 0.05 USDC / 0.05 EURC listing fee to prevent orderbook spam. Extending an ad’s TTL (1–168 hours) via refreshAd is completely free.',
         ],
       },
       {
@@ -286,15 +286,15 @@ unchecked {
         id: 'progressive-tiers',
         title: 'Progressive Account Tiers',
         paragraphs: [
-          'To protect sellers against order-lock griefing and chargeback fraud, taker order sizes scale automatically with unique-counterparty trade history and account age (scaled proportionally across USDC, EURC, cirBTC, and WETH):',
+          'To protect sellers against order-lock griefing and chargeback fraud, taker order sizes scale automatically with unique-counterparty trade history and account age:',
         ],
         table: {
-          headers: ['Tier', 'Qualification Criteria', 'USDC / EURC Cap', 'cirBTC Cap', 'WETH Cap'],
+          headers: ['Tier', 'Qualification Criteria', 'USDC / EURC Cap'],
           rows: [
-            ['Tier 0 — Starter', 'New wallet (0 qualifying trades)', '200', '0.0020', '0.08'],
-            ['Tier 1 — Active', '1+ trade OR active Merchant Margin', '500', '0.0050', '0.20'],
-            ['Tier 2 — Established', '5+ trades & ≥ 7 days since first trade', '2,000', '0.0200', '0.80'],
-            ['Tier 3 — Trusted', '20+ trades & ≥ 14 days account age', 'Uncapped', 'Uncapped', 'Uncapped'],
+            ['Tier 0 — Starter', 'New wallet (0 qualifying trades)', '200'],
+            ['Tier 1 — Active', '1+ trade OR active Merchant Margin', '500'],
+            ['Tier 2 — Established', '5+ trades & ≥ 7 days since first trade', '2,000'],
+            ['Tier 3 — Trusted', '20+ trades & ≥ 14 days account age', 'Uncapped'],
           ],
         },
         callout: {
@@ -308,7 +308,7 @@ unchecked {
         title: 'Verified Merchant Margin & Buy-Ad Gate',
         paragraphs: [
           'Posting a Buy Ad requires either an active Merchant badge or at least 3 completed trades with distinct counterparties.',
-          'Traders can deposit ~$100+ equivalent security collateral (100 USDC/EURC, 0.001 cirBTC, or 0.04 WETH) via depositMargin() to earn the Bronze/Verified Merchant badge immediately. Withdrawals enforce a 7-day timelock and require zero open orders.',
+          'Traders can deposit 100+ USDC/EURC security collateral via depositMargin() to earn the Bronze/Verified Merchant badge immediately. Withdrawals enforce a 7-day timelock and require zero open orders.',
         ],
       },
     ],
@@ -401,7 +401,7 @@ const kit = new AppKit();
 const estimate = await kit.estimateSwap({
   from: { adapter, chain: "Arc_Testnet" },
   tokenIn: "USDC",
-  tokenOut: "cirBTC",
+  tokenOut: "EURC",
   amountIn: "50.00",
   config: { slippageBps: 100 }, // 1.00% max slippage
 });
@@ -410,7 +410,7 @@ const estimate = await kit.estimateSwap({
 const result = await kit.swap({
   from: { adapter, chain: "Arc_Testnet" },
   tokenIn: "USDC",
-  tokenOut: "cirBTC",
+  tokenOut: "EURC",
   amountIn: "50.00",
   config: { slippageBps: 100 },
 });`,
@@ -458,12 +458,12 @@ const result = await kit.swap({
         code: {
           filename: 'bridge-cctpx.ts',
           language: 'typescript',
-          code: `// Bridging WETH or cirBTC between Ethereum Sepolia and Arc Testnet via CCTPx
+          code: `// Bridging EURC between Ethereum Sepolia and Arc Testnet via CCTPx
 const estimate = await appKit.estimateBridge({
   from: { adapter, chain: "Ethereum_Sepolia" },
   to: { adapter, chain: "Arc_Testnet" },
-  amount: "0.01",
-  token: "wETH", // or "cirBTC" / "EURC"
+  amount: "10.00",
+  token: "EURC",
   config: { transferSpeed: "FAST" },
 });
 
@@ -471,8 +471,8 @@ const estimate = await appKit.estimateBridge({
 const result = await appKit.bridge({
   from: { adapter, chain: "Ethereum_Sepolia" },
   to: { adapter, chain: "Arc_Testnet" },
-  amount: "0.01",
-  token: "wETH",
+  amount: "10.00",
+  token: "EURC",
   config: { transferSpeed: "FAST" },
   quote: estimate.quote,
 });`,
@@ -928,7 +928,7 @@ export default function DocsPage() {
   }, [searchQuery])
 
   const contractRows = useMemo(() => {
-    const escrows = P2P_ASSETS.map((asset: P2pAsset) => {
+    const escrows = VISIBLE_P2P_ASSETS.map((asset: P2pAsset) => {
       const cfg = getEscrowConfig(asset)
       return {
         label: `P2PEscrow (${asset})`,
@@ -937,7 +937,7 @@ export default function DocsPage() {
         asset,
       }
     })
-    const tokens = P2P_ASSETS.map((asset: P2pAsset) => {
+    const tokens = VISIBLE_P2P_ASSETS.map((asset: P2pAsset) => {
       const cfg = getEscrowConfig(asset)
       return {
         label: `${asset} Token (ERC-20)`,
@@ -1209,7 +1209,7 @@ export default function DocsPage() {
                     <div>
                       <p>v2.1 — Multi-Asset &amp; CCTPx</p>
                       <p className="text-[10px] font-normal" style={{ color: 'var(--muted)' }}>
-                        USDC, EURC, cirBTC &amp; WETH (Current)
+                        USDC &amp; EURC (Current)
                       </p>
                     </div>
                     <Check className="size-3.5 text-[#FF5A00]" />

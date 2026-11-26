@@ -19,6 +19,7 @@ export function AdCard({
   account,
   makerKyc,
   makerProfile,
+  isOnline = false,
   viewerAccount,
   own,
   onSelectAd,
@@ -30,6 +31,7 @@ export function AdCard({
   account: Account | undefined
   makerKyc?: KycInfo
   makerProfile?: PublicTraderSummary
+  isOnline?: boolean
   viewerAccount?: Account
   own: boolean
   onSelectAd: (ad: AdWithId) => void
@@ -70,7 +72,12 @@ export function AdCard({
           >
             <span className="relative flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--p2p-tint)] text-xs font-extrabold text-[#FF5A00] ring-1 ring-[var(--p2p-border-active)]">
               {initial}
-              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[var(--p2p-canvas)] bg-emerald-400" />
+              {isOnline && (
+                <span
+                  title="Online now"
+                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[var(--p2p-canvas)] bg-emerald-400"
+                />
+              )}
             </span>
             <span className="truncate text-sm font-bold text-[var(--p2p-ink)] group-hover:text-[#FF5A00]">
               {displayName}
@@ -201,7 +208,12 @@ export function AdCard({
               className="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--p2p-tint)] text-xs font-extrabold text-[#FF5A00] ring-1 ring-[var(--p2p-border-active)] transition-transform hover:scale-105"
             >
               {initial}
-              <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[var(--p2p-canvas)] bg-emerald-400" />
+              {isOnline && (
+                <span
+                  title="Online now"
+                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[var(--p2p-canvas)] bg-emerald-400"
+                />
+              )}
             </button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">

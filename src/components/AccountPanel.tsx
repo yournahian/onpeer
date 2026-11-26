@@ -43,7 +43,7 @@ import {
   COUNTRIES,
   MARGIN_DELAY_DAYS,
   NATIVE_USDC_GAS_BUFFER,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   SIDE_SELL,
   STATUS_META,
   TIER_TABLE,
@@ -382,7 +382,7 @@ export function AccountPanel({
 
   const renderAssetSelectorPills = () => (
     <div className="flex flex-wrap items-center gap-1.5">
-      {P2P_ASSETS.map((a) => {
+      {VISIBLE_P2P_ASSETS.map((a) => {
         const active = selectedAsset === a
         const aDebt = allAssetDebts.find((d) => d.asset === a)?.debt ?? 0n
         return (

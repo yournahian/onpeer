@@ -25,11 +25,17 @@ function byteLength(s: string): number {
 export function DisputeFileSheet({
   orderId,
   open,
+  mode = 'evidence',
+  openingOnchain = false,
+  onOpenOnchainDispute,
   onClose,
   onFiled,
 }: {
   orderId: bigint
   open: boolean
+  mode?: 'open' | 'evidence'
+  openingOnchain?: boolean
+  onOpenOnchainDispute?: () => Promise<unknown>
   onClose: () => void
   onFiled?: () => void
 }) {
@@ -80,13 +86,13 @@ export function DisputeFileSheet({
     }
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (triggerOnchain: boolean) => {
     if (!reasonCode) {
-      toast.error('Select a reason code.')
+      toast.error('Select a reason.')
       return
     }
     if (!statement.trim()) {
-      toast.error('Enter your dispute statement.')
+      toast.error('Describe what happened before submitting.')
       return
     }
     if (tooLong) {
@@ -95,7 +101,16 @@ export function DisputeFileSheet({
     }
     try {
       await file({ reasonCode, statement: statement.trim(), evidenceBlobIds })
-      toast.success('Dispute statement submitted successfully.')
+      if (triggerOnchain && onOpenOnchainDispute) {
+        toast.success('Appeal details saved. Please confirm the onchain transaction in your wallet.')
+        await onOpenOnchainDispute()
+      } else {
+        toast.success(
+          mode === 'open'
+            ? 'Appeal sent to the arbiter queue.'
+            : 'Appeal evidence submitted successfully.',
+        )
+      }
       onFiled?.()
       onClose()
     } catch {
@@ -125,7 +140,9 @@ export function DisputeFileSheet({
               <Shield className="size-5" />
             </span>
             <div>
-              <h2 className="text-base font-bold">File dispute statement</h2>
+              <h2 className="text-base font-bold">
+                {mode === 'open' ? 'Open Appeal' : 'Submit Appeal Evidence'}
+              </h2>
               <p className="text-xs" style={{ color: 'var(--muted)' }}>
                 Order {formatScopedOrderLabel(orderId)}
               </p>
@@ -264,18 +281,31 @@ export function DisputeFileSheet({
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 pt-1">
-              <Button variant="ghost" className="flex-1" onClick={onClose} disabled={isPending}>
-                Cancel
-              </Button>
-              <Button
-                className="flex-1"
-                disabled={!reasonCode || !statement.trim() || tooLong || isPending || uploadingEvidence}
-                loading={isPending}
-                onClick={() => void handleSubmit()}
-              >
-                Submit statement
-              </Button>
+            <div className="space-y-2.5 pt-1">
+              <div className="flex gap-3">
+                <Button variant="ghost" className="flex-1" onClick={onClose} disabled={isPending || openingOnchain}>
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  disabled={!reasonCode || !statement.trim() || tooLong || isPending || openingOnchain || uploadingEvidence}
+                  loading={isPending || openingOnchain}
+                  onClick={() => void handleSubmit(mode === 'open' && Boolean(onOpenOnchainDispute))}
+                >
+                  {mode === 'open' ? 'Submit Appeal' : 'Submit Evidence'}
+                </Button>
+              </div>
+              {mode === 'open' && onOpenOnchainDispute && (
+                <button
+                  type="button"
+                  disabled={!reasonCode || !statement.trim() || tooLong || isPending || openingOnchain || uploadingEvidence}
+                  onClick={() => void handleSubmit(false)}
+                  className="block w-full text-center text-[11px] font-medium underline opacity-75 transition-opacity hover:opacity-100 disabled:opacity-40"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  No gas in wallet? Send appeal to Arbiter without onchain tx
+                </button>
+              )}
             </div>
           </div>
         )}

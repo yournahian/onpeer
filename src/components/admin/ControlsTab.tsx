@@ -7,6 +7,7 @@ import {
   CHAIN_ID,
   COUNTRIES,
   P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   currencyToHex,
   formatUsdcAmount,
   getEscrowConfig,
@@ -106,7 +107,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
   const marketSelectorBar = (
     <div className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3.5">
       <div className="flex flex-wrap items-center gap-1.5">
-        {P2P_ASSETS.map((a) => {
+        {VISIBLE_P2P_ASSETS.map((a) => {
           const active = selectedAsset === a
           return (
             <button

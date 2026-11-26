@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { Activity, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
 import { zeroAddress } from 'viem'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
+import { apiFetch, useBackendSession } from '@/lib/api'
 import {
   CHAIN_ID,
   ESCROW_ADDRESS,
   EURC_ID_OFFSET,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   STATUS,
   encodeScopedId,
   formatScopedOrderLabel,
@@ -23,7 +24,7 @@ import { CoinLogo } from '@/components/logos'
 import { Button, CopyButton, Empty, SkeletonRows, inputClass } from '@/components/ui'
 import { Reveal } from '@/components/fx/Reveal'
 import { RollingNumber } from '@/components/fx/RollingNumber'
-import { DisputeCard } from '@/components/admin/DisputeCard'
+import { DisputeCard, type AdminPartyProfile } from '@/components/admin/DisputeCard'
 import { AccountsTab } from '@/components/admin/AccountsTab'
 import { ControlsTab } from '@/components/admin/ControlsTab'
 import { AiProviderTab } from '@/components/admin/AiProviderTab'
@@ -67,6 +68,7 @@ function Gate({ title, body, connect }: { title: string; body: string; connect?:
 }
 
 export default function AdminPage() {
+  const session = useBackendSession()
   const roles = useAdminRoles()
   const { orders, isLoading } = useOrders()
   const { ads } = useAllAds()
@@ -76,6 +78,25 @@ export default function AdminPage() {
   const [tab, setTab] = useState<Tab>('overview')
   const [caseQuery, setCaseQuery] = useState('')
   const [caseAsset, setCaseAsset] = useState<P2pAsset>('USDC')
+  const [profiles, setProfiles] = useState<Map<string, AdminPartyProfile>>(() => new Map())
+
+  useEffect(() => {
+    if (!session) return
+    let cancelled = false
+    void apiFetch<{ users: AdminPartyProfile[] }>('/admin/users')
+      .then((res) => {
+        if (cancelled) return
+        const m = new Map<string, AdminPartyProfile>()
+        for (const u of res.users ?? []) m.set(u.wallet.toLowerCase(), u)
+        setProfiles(m)
+      })
+      .catch(() => {
+        /* non-blocking: disputes still work with on-chain stats */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session])
   const rawCaseNum = /^\d+$/.test(caseQuery.trim()) ? BigInt(caseQuery.trim()) : undefined
   const parsedCaseId =
     rawCaseNum !== undefined
@@ -213,7 +234,7 @@ export default function AdminPage() {
                   <h2 className="flex items-center gap-2 text-sm font-semibold"><CoinLogo symbol="USDC" size={18} /> Assets held in escrow</h2>
                   <p className="display mt-2 text-4xl font-bold tabular-nums"><RollingNumber value={formatUsdcAmount(stats.held)} /> <span className="text-lg font-semibold">USDC</span></p>
                   <div className="mt-2.5 flex flex-wrap gap-2 text-xs">
-                    {(['EURC', 'cirBTC', 'WETH'] as const).map((a) => (
+                    {(['EURC'] as const).map((a) => (
                       <span
                         key={a}
                         className="mono inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-semibold"
@@ -224,7 +245,7 @@ export default function AdminPage() {
                       </span>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs" style={{ color: 'var(--subtle)' }}>Active orders plus sell-ad inventory across all 4 markets (latest 200 records/market). Primary listing fee: {formatUsdcAmount(feeConfig.listingFee)} USDC/ad.</p>
+                  <p className="mt-2 text-xs" style={{ color: 'var(--subtle)' }}>Active orders plus sell-ad inventory across USDC &amp; EURC markets (latest 200 records/market). Primary listing fee: {formatUsdcAmount(feeConfig.listingFee)} USDC/ad.</p>
                 </section>
                 <section className="glass rounded-3xl p-5">
                   <h2 className="flex items-center gap-2 text-sm font-semibold"><Activity className="size-4" /> Roles</h2>
@@ -289,7 +310,7 @@ export default function AdminPage() {
                     Offchain dispute / Paid order lookup (Take case or rule directly)
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {P2P_ASSETS.map((a) => {
+                    {VISIBLE_P2P_ASSETS.map((a) => {
                       const active = caseAsset === a
                       return (
                         <button
@@ -332,6 +353,8 @@ export default function AdminPage() {
                   <DisputeCard
                     order={lookedOrder}
                     accounts={accounts}
+                    allOrders={orders}
+                    profiles={profiles}
                     isPrimaryArbiter={roles.isArbiter}
                     isBackupArbiter={roles.isBackupArbiter}
                     viewer={roles.address}
@@ -356,6 +379,8 @@ export default function AdminPage() {
                             key={o.id.toString()}
                             order={o}
                             accounts={accounts}
+                            allOrders={orders}
+                            profiles={profiles}
                             isPrimaryArbiter={roles.isArbiter}
                             isBackupArbiter={roles.isBackupArbiter}
                             viewer={roles.address}
@@ -375,6 +400,8 @@ export default function AdminPage() {
                             key={o.id.toString()}
                             order={o}
                             accounts={accounts}
+                            allOrders={orders}
+                            profiles={profiles}
                             isPrimaryArbiter={roles.isArbiter}
                             isBackupArbiter={roles.isBackupArbiter}
                             viewer={roles.address}

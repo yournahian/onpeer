@@ -565,7 +565,7 @@ export async function handleTelegramRoutes(
         text: [
           '👋 Welcome to OnPeer — Non-Custodial P2P Crypto, Swap & Bridge for South Asia on Arc!',
           '',
-          '• Trade USDC, EURC, cirBTC & WETH with BDT, INR, PKR, LKR & NPR at 0% trade fee',
+          '• Trade USDC & EURC with BDT, INR, PKR, LKR & NPR at 0% trade fee',
           '• Instant swaps & Circle CCTP/CCTPx bridging',
           '• Link your wallet inside User Center → Notifications to get live trade alerts here',
         ].join('\n'),

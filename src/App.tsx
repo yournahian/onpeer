@@ -3,6 +3,7 @@ import { MotionConfig } from 'framer-motion'
 import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
 import { useTelegramMiniAppBridge } from '@/lib/telegram'
 import { useTheme } from '@/lib/theme'
+import { usePresenceHeartbeat } from '@/hooks/usePresence'
 import { AgentChat } from '@/components/AgentChat'
 import { TelegramWalletModal } from '@/components/TelegramWalletModal'
 import { AgentProvider } from '@/agent/AgentContext'
@@ -26,6 +27,7 @@ import PrivacyPage from '@/pages/Privacy'
 const RIBBON_ROUTES = new Set(['swap', 'bridge', 'buy', 'assistant', 'p2p'])
 
 export default function App() {
+  usePresenceHeartbeat()
   const route = useRoute()
   const search = useSearch()
   const { resolved, helixVisible, helixBlurred, setHelixBlurred } = useTheme()
@@ -58,8 +60,8 @@ export default function App() {
 
   useEffect(() => {
     const titles: Record<string, string> = {
-      home: 'OnPeer | P2P USDC, EURC, cirBTC & WETH, Swap & Bridge for South Asia on Arc',
-      p2p: 'OnPeer P2P Marketplace | Buy & Sell USDC, EURC, cirBTC & WETH in South Asia',
+      home: 'OnPeer | P2P USDC & EURC, Swap & Bridge for South Asia on Arc',
+      p2p: 'OnPeer P2P Marketplace | Buy & Sell USDC & EURC in South Asia',
       swap: 'Swap USDC, EURC, cirBTC & WETH on Arc | OnPeer',
       bridge: 'Bridge USDC, EURC, cirBTC & WETH Across Chains (CCTP & CCTPx) | OnPeer',
       buy: 'Buy USDC with Card, Apple Pay & Bank Transfer | OnPeer Fiat Onramp',

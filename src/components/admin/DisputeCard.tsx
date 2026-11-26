@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Briefcase, ChevronDown, Clock, Gavel, KeyRound, Loader2, Lock, ShieldAlert } from 'lucide-react'
+import { Briefcase, ChevronDown, Clock, Gavel, History, KeyRound, Loader2, Lock, ShieldAlert, UserCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   BACKUP_ARBITER_DELAY_SECONDS,
   CHAIN_ID,
   STATUS,
+  STATUS_META,
   ZERO_BYTES32,
   countryByCurrency,
   formatDuration,
@@ -30,25 +31,186 @@ import { CountryFlag } from '@/components/logos'
 
 const PAID_WAIT_SECONDS = 15 * 60
 
-function PartyRow({ role, address, account, asset }: { role: string; address: string; account?: Account; asset: P2pAsset }) {
+export interface AdminPartyProfile {
+  wallet: string
+  displayName: string | null
+  kycLegalName: string | null
+  country: string | null
+  kycStatus: string
+  kycLevel: number
+  disputesFiled: number
+  createdAt: string | null
+}
+
+function PartyRow({
+  role,
+  address,
+  account,
+  profile,
+  partyOrders,
+  currentOrderId,
+  asset,
+}: {
+  role: string
+  address: string
+  account?: Account
+  profile?: AdminPartyProfile
+  partyOrders: OrderWithId[]
+  currentOrderId: bigint
+  asset: P2pAsset
+}) {
+  const [showHistory, setShowHistory] = useState(false)
+
+  const summary = useMemo(() => {
+    let won = 0
+    let lost = 0
+    let disputes = 0
+    let completed = 0
+    for (const o of partyOrders) {
+      const isBuyer = sameAddr(o.buyer, address)
+      if (o.status === STATUS.COMPLETED) completed += 1
+      if (
+        o.status === STATUS.DISPUTED ||
+        o.status === STATUS.RESOLVED_BUYER ||
+        o.status === STATUS.RESOLVED_SELLER ||
+        o.status === STATUS.SETTLED
+      ) {
+        disputes += 1
+      }
+      if ((o.status === STATUS.RESOLVED_BUYER && isBuyer) || (o.status === STATUS.RESOLVED_SELLER && !isBuyer)) {
+        won += 1
+      }
+      if ((o.status === STATUS.RESOLVED_BUYER && !isBuyer) || (o.status === STATUS.RESOLVED_SELLER && isBuyer)) {
+        lost += 1
+      }
+    }
+    return {
+      total: partyOrders.length,
+      completed: Math.max(account?.ordersCompleted ?? 0, completed),
+      disputes: Math.max(disputes, profile?.disputesFiled ?? 0),
+      won,
+      lost: Math.max(account?.disputesLost ?? 0, lost),
+    }
+  }, [partyOrders, address, account, profile])
+
+  const kycOk = profile?.kycStatus === 'approved'
+  const primaryName = profile?.kycLegalName || profile?.displayName || shortAddr(address)
+
   return (
-    <div className="inner flex items-center gap-3 rounded-xl p-3">
-      <Avatar address={address} size={34} />
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-x-2 text-sm font-semibold">
-          {role} <span className="mono text-xs font-normal" style={{ color: 'var(--subtle)' }}>{shortAddr(address)}</span>
-          {account?.merchant && (
-            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--accent)' }}>
-              MERCHANT
+    <div className="inner rounded-xl p-3">
+      <div className="flex items-start gap-3">
+        <Avatar address={address} size={36} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold">
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase" style={{ background: 'var(--fill-3)', color: 'var(--muted)' }}>
+              {role}
             </span>
-          )}
-        </p>
-        <p className="text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
-          {account
-            ? `${account.ordersCompleted} completed · ${account.disputesLost} lost · ${account.concessions} concessions · margin ${formatUsdcAmount(account.effectiveMargin, undefined, asset)} ${asset}${account.totalDebt > 0n ? ` · debt ${formatUsdcAmount(account.totalDebt, undefined, asset)} ${asset}` : ''}`
-            : 'Loading profile...'}
-        </p>
+            <span className="truncate font-bold">{primaryName}</span>
+            {profile?.kycLegalName && profile.displayName && profile.kycLegalName !== profile.displayName && (
+              <span className="text-xs font-normal" style={{ color: 'var(--subtle)' }}>
+                ({profile.displayName})
+              </span>
+            )}
+            <span className="mono text-[11px] font-normal" style={{ color: 'var(--subtle)' }}>
+              {shortAddr(address)}
+            </span>
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold"
+              style={{ background: 'var(--fill-3)', color: kycOk ? 'var(--success)' : 'var(--subtle)' }}
+            >
+              <UserCheck className="size-2.5" />
+              {kycOk ? `KYC L${profile?.kycLevel || 2}` : 'Unverified'}
+            </span>
+            {account?.merchant && (
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold" style={{ background: 'var(--fill-3)', color: 'var(--accent)' }}>
+                MERCHANT
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs tabular-nums" style={{ color: 'var(--subtle)' }}>
+            {account
+              ? `${summary.completed} completed (${summary.total} orders) · ${summary.disputes} disputes (${summary.won}W / ${summary.lost}L) · ${account.concessions} conc · ${account.strikes}/3 strikes · margin ${formatUsdcAmount(account.effectiveMargin, undefined, asset)} ${asset}${account.totalDebt > 0n ? ` · debt ${formatUsdcAmount(account.totalDebt, undefined, asset)} ${asset}` : ''}`
+              : 'Loading profile...'}
+          </p>
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold transition-colors hover:bg-[var(--fill-3)]"
+              style={{ background: 'var(--fill-2)', color: 'var(--accent)' }}
+            >
+              <History className="size-3" />
+              <span>{showHistory ? 'Hide' : 'View'} {role} History ({partyOrders.length} orders)</span>
+              <ChevronDown className={`size-3 transition-transform ${showHistory ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
+        </div>
       </div>
+
+      {showHistory && (
+        <div className="mt-2.5 max-h-48 overflow-y-auto rounded-lg border text-[11px]" style={{ borderColor: 'var(--border)' }}>
+          {partyOrders.length === 0 ? (
+            <p className="p-2.5 text-center" style={{ color: 'var(--subtle)' }}>
+              No order history found.
+            </p>
+          ) : (
+            <ul className="divide-y" style={{ borderColor: 'var(--border)' }}>
+              {partyOrders.slice(0, 25).map((o) => {
+                const isBuyer = sameAddr(o.buyer, address)
+                const isCurrent = o.id === currentOrderId
+                const meta = STATUS_META[o.status] ?? { label: 'Unknown', tone: 'neutral' }
+                const cur = hexToCurrency(o.currency)
+                const outcome =
+                  o.status === STATUS.RESOLVED_BUYER
+                    ? isBuyer
+                      ? 'Won'
+                      : 'Lost'
+                    : o.status === STATUS.RESOLVED_SELLER
+                      ? isBuyer
+                        ? 'Lost'
+                        : 'Won'
+                      : null
+                return (
+                  <li
+                    key={o.id.toString()}
+                    className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5"
+                    style={isCurrent ? { background: 'var(--fill-2)' } : undefined}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="mono font-bold">
+                        #{o.rawId.toString()} ({o.asset})
+                      </span>
+                      {isCurrent && (
+                        <span className="rounded px-1 text-[9px] font-bold" style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}>
+                          THIS CASE
+                        </span>
+                      )}
+                      <span style={{ color: 'var(--subtle)' }}>{isBuyer ? 'Buyer' : 'Seller'}</span>
+                      <span className="mono tabular-nums">
+                        {formatUsdcAmount(o.amount, undefined, o.asset)} {o.asset} ({formatFiat(o.fiatAmountE6)} {cur})
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-1.5 tabular-nums">
+                      <span style={{ color: 'var(--muted)' }}>{meta.label}</span>
+                      {outcome && (
+                        <span
+                          className="font-bold"
+                          style={{ color: outcome === 'Won' ? 'var(--success)' : 'var(--danger)' }}
+                        >
+                          ({outcome})
+                        </span>
+                      )}
+                      <span style={{ color: 'var(--subtle)' }}>
+                        {new Date(Number(o.createdAt) * 1000).toLocaleDateString()}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -56,12 +218,16 @@ function PartyRow({ role, address, account, asset }: { role: string; address: st
 export function DisputeCard({
   order,
   accounts,
+  allOrders = [],
+  profiles,
   isPrimaryArbiter,
   isBackupArbiter,
   viewer,
 }: {
   order: OrderWithId
   accounts: Map<string, Account>
+  allOrders?: OrderWithId[]
+  profiles?: Map<string, AdminPartyProfile>
   isPrimaryArbiter: boolean
   isBackupArbiter: boolean
   viewer?: string
@@ -175,8 +341,24 @@ export function DisputeCard({
             style={{ borderColor: 'var(--border)' }}
           >
             <div className="grid gap-2 sm:grid-cols-2">
-              <PartyRow role="Buyer" address={order.buyer} account={buyerAcc} asset={asset} />
-              <PartyRow role="Seller" address={order.seller} account={sellerAcc} asset={asset} />
+              <PartyRow
+                role="Buyer"
+                address={order.buyer}
+                account={buyerAcc}
+                profile={profiles?.get(order.buyer.toLowerCase())}
+                partyOrders={allOrders.filter((o) => sameAddr(o.buyer, order.buyer) || sameAddr(o.seller, order.buyer))}
+                currentOrderId={order.id}
+                asset={asset}
+              />
+              <PartyRow
+                role="Seller"
+                address={order.seller}
+                account={sellerAcc}
+                profile={profiles?.get(order.seller.toLowerCase())}
+                partyOrders={allOrders.filter((o) => sameAddr(o.buyer, order.seller) || sameAddr(o.seller, order.seller))}
+                currentOrderId={order.id}
+                asset={asset}
+              />
             </div>
 
             {hasSealedHashes && canReadVault && !isSignedIn && (

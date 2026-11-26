@@ -56,7 +56,7 @@ const HELP_COLLECTIONS: HelpCollection[] = [
         title: 'What is OnPeer?',
         summary: 'Trade USDC in local South Asian currencies with smart-contract escrow.',
         body: [
-          'OnPeer is a non-custodial peer-to-peer marketplace on Arc where you can buy and sell USDC, EURC, cirBTC, and WETH using local South Asian currencies.',
+          'OnPeer is a non-custodial peer-to-peer marketplace on Arc where you can buy and sell USDC and EURC using local South Asian currencies.',
           'Alongside P2P trading, OnPeer includes instant stablecoin swaps and cross-chain bridging via Circle CCTP & CCTPx in one unified platform.',
         ],
       },

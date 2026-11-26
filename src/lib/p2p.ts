@@ -76,6 +76,8 @@ export const WETH_TOKEN_ADDRESS: Address = DEFAULT_WETH_TOKEN_ADDRESS
 
 export const P2P_ASSETS = ['USDC', 'EURC', 'cirBTC', 'WETH'] as const
 export type P2pAsset = (typeof P2P_ASSETS)[number]
+/** Assets currently visible across P2P, Admin, and Docs UI selectors. */
+export const VISIBLE_P2P_ASSETS = ['USDC', 'EURC'] as const satisfies readonly P2pAsset[]
 
 export const EURC_ID_OFFSET = 1_000_000_000_000n
 export const CIRBTC_ID_OFFSET = 2_000_000_000_000n
@@ -341,7 +343,7 @@ export const STATUS_META: Record<number, { label: string; tone: StatusTone }> = 
   2: { label: 'Paid, awaiting release', tone: 'info' },
   3: { label: 'Completed', tone: 'success' },
   4: { label: 'Cancelled', tone: 'neutral' },
-  5: { label: 'In dispute', tone: 'danger' },
+  5: { label: 'In appeal', tone: 'danger' },
   6: { label: 'Resolved: released to buyer', tone: 'success' },
   7: { label: 'Resolved: returned to seller', tone: 'neutral' },
   8: { label: 'Settled by parties', tone: 'neutral' },

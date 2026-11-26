@@ -29,7 +29,7 @@ import {
   MIN_GAS_WARNING_USDC,
   MIN_TAKER_OPTIONS,
   NATIVE_USDC_GAS_BUFFER,
-  P2P_ASSETS,
+  VISIBLE_P2P_ASSETS,
   SIDE_BUY,
   SIDE_SELL,
   TTL_OPTIONS,
@@ -56,13 +56,15 @@ import { useTx } from '@/hooks/useTx'
 import { AppLink } from '@/components/AppLink'
 import { CoinLogo, CountryFlag, MethodLogo } from '@/components/logos'
 import { useEligibility } from '@/hooks/useEligibility'
-import { BackendApiError } from '@/lib/api'
+import { BackendApiError, apiFetch } from '@/lib/api'
 import {
   formatSavedMethodLine,
   useSavedPaymentMethods,
   type SavedPaymentMethod,
 } from '@/hooks/useAccount'
 import { useVaultActions } from '@/hooks/useVault'
+
+const PUBLIC_TERMS_MAX_BYTES = 1_000
 
 const safe = (v: string, decimals = 6): bigint => {
   try {
@@ -261,8 +263,9 @@ function PostAdForm({
     ? holderName
     : bits.map((b) => methodDrafts[b]?.holderName?.trim()).find((h): h is string => !!h) ?? holderName.trim()
 
-  const onchainText = useSealedVault || !isSell ? publicTerms : details
-  const detailBytes = useMemo(() => new TextEncoder().encode(onchainText).length, [onchainText])
+  const publicTermsBytes = useMemo(() => new TextEncoder().encode(publicTerms).length, [publicTerms])
+  const plainDetailsBytes = useMemo(() => new TextEncoder().encode(details).length, [details])
+  const detailBytes = useSealedVault || !isSell ? publicTermsBytes : plainDetailsBytes
   const requiredUsdc = (isSell ? totalRaw : 0n) + listingFee
 
   const buyAdBlocked =
@@ -272,21 +275,26 @@ function PostAdForm({
     !account.merchant &&
     account.ordersCompleted < BUY_AD_MIN_COMPLETED
 
-  let problem: string | null = null
+  let step1Problem: string | null = null
   if (priceE6 > MAX_FIAT_PRICE_E6) {
-    problem = 'Exchange rate exceeds the maximum supported limit.'
+    step1Problem = 'Exchange rate exceeds the maximum supported limit.'
   } else if (buyAdBlocked) {
-    problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
+    step1Problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
   } else if (!isSell && isConnected && balance !== undefined && listingFee > balance) {
-    problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
+    step1Problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
   } else if (totalRaw > 0n && minRaw > 0n && maxRaw > 0n) {
-    if (minRaw > maxRaw) problem = 'Minimum order cannot exceed maximum order.'
-    else if (maxRaw > totalRaw) problem = 'Maximum order cannot exceed total amount.'
+    if (minRaw > maxRaw) step1Problem = 'Minimum order cannot exceed maximum order.'
+    else if (maxRaw > totalRaw) step1Problem = 'Maximum order cannot exceed total amount.'
     else if (balance !== undefined && requiredUsdc > balance)
-      problem = `Insufficient wallet balance (${formatUsdcAmount(balance, undefined, asset)} ${asset} available; ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} needed with listing fee).`
+      step1Problem = `Insufficient wallet balance (${formatUsdcAmount(balance, undefined, asset)} ${asset} available; ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} needed with listing fee).`
   }
-  if (!problem && detailBytes > DETAILS_MAX_BYTES) {
-    problem = useSealedVault || !isSell ? 'Public maker terms exceed 200 bytes.' : 'Payment details exceed 200 bytes.'
+
+  let problem: string | null = step1Problem
+  if (!problem && (useSealedVault || !isSell) && publicTermsBytes > PUBLIC_TERMS_MAX_BYTES) {
+    problem = `Public maker terms exceed ${PUBLIC_TERMS_MAX_BYTES} bytes.`
+  }
+  if (!problem && !useSealedVault && isSell && plainDetailsBytes > DETAILS_MAX_BYTES) {
+    problem = 'Payment details exceed 200 bytes.'
   }
   if (!problem && useSealedVault && serializedVaultDetails.trim().length > 1500) {
     problem = 'Encrypted receiving details exceed 1,500 characters.'
@@ -326,7 +334,11 @@ function PostAdForm({
     maxRaw <= totalRaw &&
     (balance === undefined || requiredUsdc <= balance)
 
-  const step2Ready = bits.length > 0 && ttlHours >= 1 && ttlHours <= 168 && detailBytes <= DETAILS_MAX_BYTES
+  const step2Ready =
+    bits.length > 0 &&
+    ttlHours >= 1 &&
+    ttlHours <= 168 &&
+    (!(useSealedVault || !isSell) || publicTermsBytes <= PUBLIC_TERMS_MAX_BYTES)
 
   const ready =
     !switchesLoading &&
@@ -448,9 +460,11 @@ function PostAdForm({
       if (!ok) return
     }
 
+    const trimmedPublicTerms = publicTerms.trim()
+    const onchainPublicTerms = truncateUtf8(trimmedPublicTerms, DETAILS_MAX_BYTES)
     let modeArg: number = DETAILS_MODE.PLAIN
     let hashArg: `0x${string}` = ZERO_BYTES32
-    let detailsArg = isSell ? details.trim() : publicTerms.trim()
+    let detailsArg = isSell ? details.trim() : onchainPublicTerms
     let sealedBlobId: string | null = null
 
     if (sealedEnabled) {
@@ -462,11 +476,11 @@ function PostAdForm({
             kind: 'ad_details',
             holderName: effectiveHolderName,
             accountDetails: serializedVaultDetails.trim(),
-            notes: publicTerms.trim(),
+            notes: trimmedPublicTerms,
           })
           sealedBlobId = res.id
           hashArg = res.contentHash
-          detailsArg = publicTerms.trim()
+          detailsArg = onchainPublicTerms
         } catch (err) {
           toast.error(err instanceof BackendApiError ? err.message : 'Wallet sign-in or vault encryption was cancelled.')
           setSealing(false)
@@ -474,8 +488,8 @@ function PostAdForm({
         }
         setSealing(false)
       } else {
-        hashArg = keccak256(toBytes(`buy-ad-mode2:${address.toLowerCase()}:${publicTerms.trim()}`))
-        detailsArg = publicTerms.trim()
+        hashArg = keccak256(toBytes(`buy-ad-mode2:${address.toLowerCase()}:${trimmedPublicTerms}`))
+        detailsArg = onchainPublicTerms
       }
     }
 
@@ -504,7 +518,8 @@ function PostAdForm({
     )
     if (receipt) {
       setActiveMarketAsset(asset)
-      if (sealedBlobId) {
+      const needsExtendedTerms = trimmedPublicTerms.length > 0 && publicTermsBytes > DETAILS_MAX_BYTES
+      if (sealedBlobId || needsExtendedTerms) {
         let minedRawId: bigint | undefined
         try {
           const parsed = parseEventLogs({
@@ -528,7 +543,16 @@ function PostAdForm({
           minedRawId = adIds[adIds.length - 1]
         }
         if (minedRawId !== undefined) {
-          await bindAdDetails(sealedBlobId, encodeScopedId(asset, minedRawId))
+          const scopedAdId = encodeScopedId(asset, minedRawId)
+          if (sealedBlobId) {
+            await bindAdDetails(sealedBlobId, scopedAdId)
+          }
+          if (needsExtendedTerms) {
+            await apiFetch(`/ads/${scopedAdId.toString()}/terms`, {
+              method: 'POST',
+              body: { terms: trimmedPublicTerms },
+            }).catch(() => undefined)
+          }
         }
       }
       onDone()
@@ -612,8 +636,8 @@ function PostAdForm({
             <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
               Cryptocurrency Asset
             </span>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {P2P_ASSETS.map((a) => {
+            <div className="grid grid-cols-2 gap-2">
+              {VISIBLE_P2P_ASSETS.map((a) => {
                 const active = asset === a
                 return (
                   <button
@@ -756,10 +780,10 @@ function PostAdForm({
             </div>
           )}
 
-          {(problem || blocked) && (
+          {(step1Problem || blocked) && (
             <div className="flex items-start gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 text-xs text-[#FF5A00]">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-              <span>{blocked ?? problem}</span>
+              <span>{blocked ?? step1Problem}</span>
             </div>
           )}
 
@@ -886,8 +910,12 @@ function PostAdForm({
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--p2p-ink)]">
                   Public Maker Terms (Advertisers&apos; Terms — Optional)
                 </span>
-                <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
-                  {detailBytes}/{DETAILS_MAX_BYTES}B
+                <span
+                  className={`p2p-mono text-[11px] ${
+                    publicTermsBytes > PUBLIC_TERMS_MAX_BYTES ? 'font-bold text-red-400' : 'text-[var(--p2p-muted)]'
+                  }`}
+                >
+                  {publicTermsBytes}/{PUBLIC_TERMS_MAX_BYTES}B
                 </span>
               </div>
               <textarea
@@ -897,6 +925,11 @@ function PostAdForm({
                 placeholder="e.g. No third-party payments accepted. Send from your verified personal account only. Do not mention crypto in bank remarks."
                 className="p2p-input w-full resize-none rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2.5 text-xs leading-relaxed text-[var(--p2p-ink)]"
               />
+              {publicTermsBytes > PUBLIC_TERMS_MAX_BYTES && (
+                <p className="text-[11px] font-semibold text-red-400">
+                  Public maker terms exceed {PUBLIC_TERMS_MAX_BYTES} bytes. Please shorten slightly.
+                </p>
+              )}
               <p className="text-[11px] leading-relaxed text-[var(--p2p-muted)]">
                 Displayed publicly as <strong className="text-[var(--p2p-ink)]">Advertisers&apos; Terms</strong> before a
                 counterparty opens an order (stored onchain, not encrypted). Never put bank account or mobile wallet
@@ -1014,10 +1047,10 @@ function PostAdForm({
                     )}
                   </div>
 
-                  <div className="grid gap-2.5 sm:grid-cols-2">
+                  <div className="grid items-end gap-2.5 sm:grid-cols-2">
                     <label className="block">
                       <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                        Account Holder Full Name (KYC Match)
+                        Account Holder Name (KYC)
                       </span>
                       <input
                         value={activeVaultDraft.holderName}

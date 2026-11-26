@@ -16,6 +16,7 @@ export interface UseChatResult {
   send: (body: string, evidenceBlobId?: string | null) => Promise<void>
   sending: boolean
   hasMore: boolean
+  counterpartyReadAt: string | null
 }
 
 const POLL_INTERVAL_MS = 5_000
@@ -37,7 +38,8 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
     hasMore: boolean
     loading: boolean
     error: string | null
-  }>({ key: orderKey, messages: [], hasMore: false, loading: false, error: null })
+    counterpartyReadAt: string | null
+  }>({ key: orderKey, messages: [], hasMore: false, loading: false, error: null, counterpartyReadAt: null })
 
   // Derive values: when the order key changes, treat stale state as empty/idle
   const isCurrentKey = state.key === orderKey
@@ -45,6 +47,7 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
   const hasMore = isCurrentKey ? state.hasMore : false
   const isLoading = isCurrentKey ? state.loading : false
   const error = isCurrentKey ? state.error : null
+  const counterpartyReadAt = isCurrentKey ? state.counterpartyReadAt : null
 
   const [sending, setSending] = useState(false)
   const afterIdRef = useRef<string | null>(null)
@@ -57,11 +60,14 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
       const after = reset ? null : afterIdRef.current
       try {
         const qs = after ? `?after=${encodeURIComponent(after)}` : ''
-        const firstPage = await apiFetch<{ messages: ChatMessage[]; hasMore: boolean }>(
-          `/orders/${orderId}/chat${qs}`,
-        )
+        const firstPage = await apiFetch<{
+          messages: ChatMessage[]
+          hasMore: boolean
+          counterpartyReadAt?: string | null
+        }>(`/orders/${orderId}/chat${qs}`)
         let combined = firstPage.messages
         let more = firstPage.hasMore
+        const cpReadAt = firstPage.counterpartyReadAt ?? null
         // Auto-drain up to 4 additional pages on initial reset so long dispute threads are fully visible
         if (reset && more && combined.length > 0) {
           let cursor = combined[combined.length - 1]!.id
@@ -80,13 +86,14 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
         }
         setState((prev) => {
           const prevMsgs = prev.key === key ? prev.messages : []
+          const nextReadAt = cpReadAt ?? (prev.key === key ? prev.counterpartyReadAt : null)
           if (reset) {
-            return { key, messages: combined, hasMore: more, loading: false, error: null }
+            return { key, messages: combined, hasMore: more, loading: false, error: null, counterpartyReadAt: nextReadAt }
           }
           const existing = new Set(prevMsgs.map((m) => m.id))
           const fresh = combined.filter((m) => !existing.has(m.id))
           const next = fresh.length > 0 ? [...prevMsgs, ...fresh] : prevMsgs
-          return { key, messages: next, hasMore: more, loading: false, error: null }
+          return { key, messages: next, hasMore: more, loading: false, error: null, counterpartyReadAt: nextReadAt }
         })
         if (combined.length > 0) {
           afterIdRef.current = combined[combined.length - 1]!.id
@@ -112,7 +119,7 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
     if (!orderId || !session) return
     const key = orderId.toString()
     // eslint-disable-next-line react/set-state-in-effect -- polling hook: loading state must be set here
-    setState((prev) => ({ ...prev, key, messages: [], hasMore: false, loading: true, error: null }))
+    setState((prev) => ({ ...prev, key, messages: [], hasMore: false, loading: true, error: null, counterpartyReadAt: null }))
     void fetchMessages(true)
   }, [orderId, session, fetchMessages])
 
@@ -154,5 +161,5 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
     [orderId, session, sending, fetchMessages],
   )
 
-  return { messages, isLoading, error, send, sending, hasMore }
+  return { messages, isLoading, error, send, sending, hasMore, counterpartyReadAt }
 }

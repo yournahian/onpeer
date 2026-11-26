@@ -175,7 +175,13 @@ export async function handleVaultRoutes(
     const kind = body.kind === 'ad_details' || body.kind === 'order_details' ? body.kind : null
     const holderName = sanitizePlainLine(body.holderName, 80)
     const accountDetails = typeof body.accountDetails === 'string' ? body.accountDetails.trim() : ''
-    const notes = body.notes !== undefined ? (sanitizePlainLine(body.notes, 200) ?? '') : ''
+    const rawNotes = typeof body.notes === 'string' ? body.notes.trim() : ''
+    const notes =
+      rawNotes.length > 0 &&
+      new TextEncoder().encode(rawNotes).byteLength <= 1_000 &&
+      !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(rawNotes)
+        ? rawNotes
+        : ''
 
     if (
       !kind ||

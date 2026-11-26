@@ -9,6 +9,35 @@ const MAX_MSG_BYTES = 4_096
 const MAX_MSGS_PER_PAGE = 50
 const CHAT_RETENTION_SECONDS = 90 * 24 * 3600 // 90 days
 
+const memoryChatRead = new Map<string, string>()
+
+async function markChatRead(env: Env, orderId: string, role: 'buyer' | 'seller'): Promise<void> {
+  const key = `chat_read:${orderId}:${role}`
+  const nowIso = new Date().toISOString()
+  memoryChatRead.set(key, nowIso)
+  if (env.AI_SETTINGS_KV) {
+    try {
+      await env.AI_SETTINGS_KV.put(key, JSON.stringify({ at: nowIso }))
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
+async function getCounterpartyReadAt(env: Env, orderId: string, role: 'buyer' | 'seller'): Promise<string | null> {
+  const otherRole = role === 'buyer' ? 'seller' : 'buyer'
+  const key = `chat_read:${orderId}:${otherRole}`
+  if (env.AI_SETTINGS_KV) {
+    try {
+      const val = (await env.AI_SETTINGS_KV.get(key, 'json')) as { at?: string } | null
+      if (typeof val?.at === 'string') return val.at
+    } catch {
+      /* fallback */
+    }
+  }
+  return memoryChatRead.get(key) ?? null
+}
+
 function chatAad(orderId: string, author: string): string {
   return `chat:${orderId}:${author}`
 }
@@ -256,10 +285,17 @@ export async function handleChatRoutes(
       }
     }
 
+    let counterpartyReadAt: string | null = null
+    if (access.role === 'buyer' || access.role === 'seller') {
+      await markChatRead(env, orderId.toString(), access.role)
+      counterpartyReadAt = await getCounterpartyReadAt(env, orderId.toString(), access.role)
+    }
+
     return json(200, {
       orderId: orderId.toString(),
       messages,
       hasMore: rows.rows.length === MAX_MSGS_PER_PAGE,
+      counterpartyReadAt,
     })
   }
 

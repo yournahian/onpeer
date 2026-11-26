@@ -11,7 +11,6 @@ import {
   Clock,
   Copy,
   ExternalLink,
-  FileText,
   Gavel,
   Handshake,
   KeyRound,
@@ -738,15 +737,20 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 </dd>
               </div>
               <div>
-                <dt className="text-[var(--p2p-muted)]">Dispute Bond</dt>
+                <dt className="text-[var(--p2p-muted)]">Appeal Bond</dt>
                 <dd className="p2p-mono mt-0.5 font-semibold text-[var(--p2p-ink)]">
                   {formatUsdcAmount(order.bond, undefined, asset)} {asset}
                 </dd>
               </div>
               <div>
                 <dt className="text-[var(--p2p-muted)]">Counterparties</dt>
-                <dd className="mt-0.5 truncate font-semibold text-[var(--p2p-ink)]">
-                  B: {buyerLabel} • S: {sellerLabel}
+                <dd className="mt-0.5 space-y-0.5 font-semibold text-[var(--p2p-ink)]">
+                  <div className="break-words leading-snug" title={buyerLabel}>
+                    <span className="text-[var(--p2p-muted)]">B:</span> {buyerLabel}
+                  </div>
+                  <div className="break-words leading-snug" title={sellerLabel}>
+                    <span className="text-[var(--p2p-muted)]">S:</span> {sellerLabel}
+                  </div>
                 </dd>
               </div>
             </dl>
@@ -1250,33 +1254,16 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => void callSimple('openDispute', 'Open dispute')}
+                  onClick={() => setDisputeSheetOpen(true)}
                   className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-accent-ink)] transition-colors hover:bg-[var(--p2p-tint)] disabled:opacity-40"
                 >
                   {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
-                  Open Dispute (Not Received)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDisputeSheetOpen(true)}
-                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
-                >
-                  <FileText className="size-3.5 text-[#FF5A00]" />
-                  File Statement
+                  Appeal
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setDisputeSheetOpen(true)}
-                className="inline-flex min-h-10 w-full items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 text-xs font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00] md:hidden"
-              >
-                <FileText className="size-3.5 text-[#FF5A00]" />
-                File Encrypted Dispute Statement
-              </button>
-
               <p className="text-[11px] text-[var(--p2p-muted)]">
-                Asymmetric Dispute Bond: <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond, undefined, asset)} {asset}</strong> (0 upfront cost; if an arbiter rules, the loser owes the bond from margin or recorded debt).
+                Appeal Bond: <strong className="p2p-mono text-[var(--p2p-ink)]">{formatUsdcAmount(order.bond, undefined, asset)} {asset}</strong> (0 upfront cost; if an arbiter rules, the loser owes the bond from margin or recorded debt).
               </p>
             </div>
           )}
@@ -1293,21 +1280,21 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 </div>
                 {!canBuyerDispute && (
                   <span className="p2p-mono rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-3 py-1.5 text-xs font-bold text-[var(--p2p-accent-ink)]">
-                    Dispute in {formatDuration(disputeWaitLeft)}
+                    Appeal in {formatDuration(disputeWaitLeft)}
                   </span>
                 )}
               </div>
 
               <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3 text-xs text-[var(--p2p-muted)]">
-                <strong className="text-[var(--p2p-ink)]">Dispute Bond Rule ({formatUsdcAmount(order.bond, undefined, asset)} {asset}):</strong> You need <strong className="text-[var(--p2p-ink)]">0 {asset}</strong> in your wallet to open a dispute. When an arbiter rules, your full {formatUsdcAmount(order.amount, undefined, asset)} {asset} is never reduced — the losing party owes the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond from margin or deferred unban debt.
+                <strong className="text-[var(--p2p-ink)]">Appeal Bond Rule ({formatUsdcAmount(order.bond, undefined, asset)} {asset}):</strong> You need <strong className="text-[var(--p2p-ink)]">0 {asset}</strong> in your wallet to open an appeal. When an arbiter rules, your full {formatUsdcAmount(order.amount, undefined, asset)} {asset} is never reduced — the losing party owes the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond from margin or deferred unban debt.
               </div>
 
-              <div className="flex flex-col gap-2 md:flex-row">
+              <div className="hidden md:flex">
                 <button
                   type="button"
                   disabled={!canBuyerDispute || busy}
-                  onClick={() => void callSimple('openDispute', 'Open dispute')}
-                  className={`hidden min-h-11 flex-1 items-center justify-center gap-2 rounded-lg border px-4 text-xs font-bold transition-colors md:inline-flex ${
+                  onClick={() => setDisputeSheetOpen(true)}
+                  className={`inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border px-4 text-xs font-bold transition-colors ${
                     canBuyerDispute
                       ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)] hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:opacity-50'
                       : 'cursor-not-allowed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)]'
@@ -1315,16 +1302,8 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 >
                   {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
                   {canBuyerDispute
-                    ? 'Seller Not Responding — Open Dispute'
-                    : `Open Dispute Cooldown (${formatDuration(disputeWaitLeft)})`}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDisputeSheetOpen(true)}
-                  className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[var(--p2p-ink)] hover:border-[#FF5A00]"
-                >
-                  <FileText className="size-3.5 text-[#FF5A00]" />
-                  File Encrypted Dispute Statement
+                    ? 'Appeal'
+                    : `Appeal in ${formatDuration(disputeWaitLeft)}`}
                 </button>
               </div>
             </div>
@@ -1337,7 +1316,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                 <div className="space-y-1">
                   <p className="flex items-center gap-2 text-sm font-bold text-[#FF5A00]">
                     <ShieldAlert className="size-4 shrink-0" />
-                    Dispute Active • {inReview ? 'Arbiter In Review' : inCoolingOff ? `Cooling-off (${formatDuration(coolingOffLeft)})` : 'Post Cooling-off'}
+                    Appeal Active • {inReview ? 'Arbiter In Review' : inCoolingOff ? `Cooling-off (${formatDuration(coolingOffLeft)})` : 'Post Cooling-off'}
                   </p>
                   <p className="text-xs text-[var(--p2p-muted)]">
                     Escrowed {formatUsdcAmount(order.amount, undefined, asset)} {asset} stays 100% intact. When an arbiter rules, the arbiter decides whether the loser pays the {formatUsdcAmount(order.bond, undefined, asset)} {asset} bond.
@@ -1350,7 +1329,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
 
               {(isSeller || isBuyer) && (
                 <div className="space-y-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="space-y-1">
                     <p className="text-xs font-semibold text-[var(--p2p-ink)]">
                       {inReview
                         ? 'Arbiter has taken the case — settling now records 1 lost dispute (0 bond owed • no completion credit).'
@@ -1358,13 +1337,9 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                           ? `30m Cooling-off (${formatDuration(coolingOffLeft)} left) — settle cleanly with 0 bond, 0 strike, and 0 concession.`
                           : 'Cooling-off ended — settling now counts as 1 concession (2 concessions = 1 lost dispute • 0 bond owed).'}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => setDisputeSheetOpen(true)}
-                      className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] px-3 text-xs font-bold text-[#FF5A00] hover:bg-[#FF5A00] hover:text-white"
-                    >
-                      <FileText className="size-3.5" /> File Dispute Statement
-                    </button>
+                    <p className="text-[11px] text-[var(--p2p-muted)]">
+                      Share all screenshots, PDFs, and messages directly in the <strong>Order Chat</strong> — the arbiter reviews and replies in the same chat.
+                    </p>
                   </div>
                   <div className="hidden md:block">
                     {isSeller && (
@@ -1379,14 +1354,14 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         ) : (
                           <Handshake className="size-4" />
                         )}
-                        Settle Dispute Now — Release {asset} to Buyer
+                        Settle Appeal Now — Release {asset} to Buyer
                       </button>
                     )}
                     {isBuyer && (
                       <button
                         type="button"
                         disabled={busy}
-                        onClick={() => void callSimple('cancelOrder', 'Settle & cancel dispute', 'settleCancel')}
+                        onClick={() => void callSimple('cancelOrder', 'Cancel appeal & return escrow', 'settleCancel')}
                         className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#FF5A00] bg-[var(--p2p-input-bg)] px-4 text-xs font-bold text-[#FF5A00] transition-colors hover:bg-[#FF5A00] hover:text-[#FFFFFF] disabled:opacity-40"
                       >
                         {pendingKey === 'settleCancel' ? (
@@ -1394,7 +1369,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
                         ) : (
                           <Handshake className="size-4" />
                         )}
-                        Settle Dispute Now — Cancel &amp; Return {asset} to Seller
+                        Cancel Appeal — Return {asset} to Seller
                       </button>
                     )}
                   </div>
@@ -1603,10 +1578,10 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           <button
             type="button"
             disabled={busy}
-            onClick={() => void callSimple('openDispute', 'Open dispute')}
+            onClick={() => setDisputeSheetOpen(true)}
             className="h-12 rounded-xl border border-[#FF5A00] bg-[var(--p2p-input-bg)] text-xs font-bold text-[var(--p2p-accent-ink)] disabled:opacity-40"
           >
-            Dispute
+            Appeal
           </button>
           <button
             type="button"
@@ -1625,7 +1600,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
           <button
             type="button"
             disabled={!canBuyerDispute || busy}
-            onClick={() => void callSimple('openDispute', 'Open dispute')}
+            onClick={() => setDisputeSheetOpen(true)}
             className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border text-xs font-bold ${
               canBuyerDispute
                 ? 'border-[#FF5A00] bg-[var(--p2p-input-bg)] text-[var(--p2p-accent-ink)]'
@@ -1633,7 +1608,7 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
             }`}
           >
             {pendingKey === 'openDispute' && <Loader2 className="size-4 animate-spin" />}
-            {canBuyerDispute ? 'Open Dispute' : `Dispute Unlocks in ${formatDuration(disputeWaitLeft)}`}
+            {canBuyerDispute ? 'Appeal' : `Appeal in ${formatDuration(disputeWaitLeft)}`}
           </button>
         </div>
       )}
@@ -1647,16 +1622,16 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
               onClick={() => openReleaseConfirm('settle')}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
-              <Handshake className="size-4" /> Settle Dispute — Release {asset}
+              <Handshake className="size-4" /> Settle Appeal — Release {asset}
             </button>
           ) : (
             <button
               type="button"
               disabled={busy}
-              onClick={() => void callSimple('cancelOrder', 'Settle & cancel dispute', 'settleCancel')}
+              onClick={() => void callSimple('cancelOrder', 'Cancel appeal & return escrow', 'settleCancel')}
               className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A00] text-xs font-bold text-[#FFFFFF] disabled:opacity-40"
             >
-              <Handshake className="size-4" /> Settle Dispute — Cancel &amp; Return
+              <Handshake className="size-4" /> Cancel Appeal — Return {asset}
             </button>
           )}
         </div>
@@ -1800,6 +1775,11 @@ function OrderExecutionBody({ order, onClose }: { order: OrderWithId; onClose: (
       <DisputeFileSheet
         orderId={order.id}
         open={disputeSheetOpen}
+        mode={status === STATUS.DISPUTED ? 'evidence' : 'open'}
+        openingOnchain={pendingKey === 'openDispute'}
+        onOpenOnchainDispute={
+          status === STATUS.PAID ? () => callSimple('openDispute', 'Open appeal') : undefined
+        }
         onClose={() => setDisputeSheetOpen(false)}
       />
     </div>

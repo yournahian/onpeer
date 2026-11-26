@@ -10,9 +10,9 @@ import {
   signHmacToken,
   verifyHmacToken,
 } from './auth'
-import { handleAccountRoutes } from './accounts'
+import { handleAccountRoutes, maskEmail } from './accounts'
 import { checkAdminAccess, createArcPublicClient, createChainReader, type ChainReader } from './chain'
-import { CryptoTamperError, VaultConfigError } from './crypto'
+import { CryptoTamperError, openText, VaultConfigError } from './crypto'
 import { DbUnavailableError, withDb, writeAudit, type Queryable } from './db'
 import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
 import { handleChatRoutes } from './chat'
@@ -53,6 +53,64 @@ const KV_KEY = 'ai-settings'
 
 // Isolate-local fallback when AI_SETTINGS_KV is not bound yet.
 let memorySettings: SavedSettings = { providers: {} }
+const memoryAdTerms = new Map<string, string>()
+const memoryPresence = new Map<string, number>()
+const PRESENCE_ONLINE_MS = 90_000
+
+async function recordPresence(env: Env, wallet: string): Promise<void> {
+  const w = wallet.toLowerCase()
+  const now = Date.now()
+  memoryPresence.set(w, now)
+  if (env.AI_SETTINGS_KV) {
+    try {
+      await env.AI_SETTINGS_KV.put(`presence:${w}`, JSON.stringify({ at: now }))
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
+async function readPresence(env: Env, wallet: string): Promise<boolean> {
+  const w = wallet.toLowerCase()
+  const now = Date.now()
+  const mem = memoryPresence.get(w)
+  if (mem && now - mem <= PRESENCE_ONLINE_MS) return true
+  if (env.AI_SETTINGS_KV) {
+    try {
+      const val = (await env.AI_SETTINGS_KV.get(`presence:${w}`, 'json')) as { at?: number } | null
+      if (typeof val?.at === 'number' && now - val.at <= PRESENCE_ONLINE_MS) {
+        memoryPresence.set(w, val.at)
+        return true
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return false
+}
+
+async function getStoredAdTerms(env: Env, adId: string): Promise<string | null> {
+  if (env.AI_SETTINGS_KV) {
+    try {
+      const val = (await env.AI_SETTINGS_KV.get(`ad_terms:${adId}`, 'json')) as { terms?: string } | null
+      if (typeof val?.terms === 'string') return val.terms
+    } catch {
+      /* fallback to memory */
+    }
+  }
+  return memoryAdTerms.get(adId) ?? null
+}
+
+async function setStoredAdTerms(env: Env, adId: string, terms: string): Promise<void> {
+  memoryAdTerms.set(adId, terms)
+  if (env.AI_SETTINGS_KV) {
+    try {
+      await env.AI_SETTINGS_KV.put(`ad_terms:${adId}`, JSON.stringify({ terms }))
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
 
 async function loadSettings(env: Env): Promise<SavedSettings> {
   if (!env.AI_SETTINGS_KV) return memorySettings
@@ -365,6 +423,55 @@ async function handleApi(
       return json(200, { ok: true })
     }
 
+    // ---- Website-wide real browser presence heartbeat (/api/presence/ping & /api/presence) ----
+    if (req.method === 'POST' && path === '/presence/ping') {
+      const session = await runDb(env, (db) => getSession(req, db))
+      if (!session) return json(401, { error: 'unauthorized' })
+      await recordPresence(env, session.wallet)
+      return json(200, { ok: true })
+    }
+
+    if (req.method === 'GET' && path === '/presence') {
+      const raw = new URL(req.url).searchParams.get('wallets') ?? ''
+      const wallets = raw
+        .split(',')
+        .map((w) => w.trim().toLowerCase())
+        .filter((w) => /^0x[0-9a-f]{40}$/.test(w))
+        .slice(0, 50)
+      const entries = await Promise.all(
+        wallets.map(async (w) => [w, await readPresence(env, w)] as const),
+      )
+      return json(200, { online: Object.fromEntries(entries) })
+    }
+
+    // ---- Public extended Advertisers' Terms (up to 1,000 bytes, not encrypted) ----
+    const adTermsMatch = path.match(/^\/ads\/(\d+)\/terms$/)
+    if (adTermsMatch) {
+      const adId = adTermsMatch[1]
+      if (req.method === 'GET') {
+        const terms = await getStoredAdTerms(env, adId)
+        return json(200, { adId, terms })
+      }
+      if (req.method === 'POST') {
+        const session = await runDb(env, (db) => getSession(req, db))
+        if (!session) return json(401, { error: 'unauthorized' })
+        const body = await readJsonBody(req, 4_096)
+        const raw = typeof body?.terms === 'string' ? body.terms.trim() : ''
+        const bytes = new TextEncoder().encode(raw).byteLength
+        if (!raw || bytes > 1_000 || /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(raw)) {
+          return json(400, { error: 'invalid_terms' })
+        }
+        const chain = makeChain(env)
+        const ad = await chain.getAd(BigInt(adId))
+        if (!ad || ad.maker.toLowerCase() !== session.wallet.toLowerCase()) {
+          return json(403, { error: 'forbidden' })
+        }
+        await setStoredAdTerms(env, adId, raw)
+        return json(200, { ok: true, adId })
+      }
+      return json(405, { error: 'method_not_allowed' })
+    }
+
     if (path === '/onramp/session' || path.startsWith('/onramp/')) {
       const res = await runDb(env, (db) => handleOnrampRoutes(req, env, db, path))
       return res ?? json(404, { error: 'not_found' })
@@ -570,6 +677,86 @@ async function handleApi(
             }
           }),
         })
+      }
+
+      if (req.method === 'GET' && path === '/admin/users') {
+        const users = await runDb(env, async (db) => {
+          const rows = await db.query<{
+            wallet: string
+            display_name: string | null
+            country: string | null
+            email_enc: string | null
+            email_verified_at: string | Date | null
+            email_opt_in: boolean
+            telegram_linked_at: string | Date | null
+            telegram_opt_in: boolean
+            kyc_status: string
+            kyc_level: number
+            kyc_expires_at: string | Date | null
+            kyc_name_enc: string | null
+            created_at: string | Date
+            deleted_at: string | Date | null
+            disputes_filed: string | number
+          }>(
+            `SELECT a.wallet, a.display_name, a.country, a.email_enc, a.email_verified_at,
+                    a.email_opt_in, a.telegram_linked_at, a.telegram_opt_in,
+                    a.kyc_status, a.kyc_level, a.kyc_expires_at, a.kyc_name_enc,
+                    a.created_at, a.deleted_at,
+                    COALESCE(d.cnt, 0)::int AS disputes_filed
+               FROM public.accounts a
+               LEFT JOIN (
+                 SELECT filed_by, count(*)::int AS cnt
+                   FROM public.dispute_filings
+                  GROUP BY filed_by
+               ) d ON d.filed_by = a.wallet
+              ORDER BY a.created_at DESC
+              LIMIT 500`,
+          )
+          await writeAudit(db, adminWallet, 'admin.users.list', null)
+          const toIso = (v: string | Date | null | undefined) =>
+            !v ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString()
+
+          return Promise.all(
+            rows.rows.map(async (r) => {
+              const wallet = r.wallet.toLowerCase() as `0x${string}`
+              let kycLegalName: string | null = null
+              if (r.kyc_name_enc) {
+                try {
+                  kycLegalName = await openText(env, r.kyc_name_enc, `account:kyc_name:${wallet}`)
+                } catch {
+                  kycLegalName = null
+                }
+              }
+              let emailMasked: string | null = null
+              if (r.email_enc) {
+                try {
+                  const plain = await openText(env, r.email_enc, `account:email:${wallet}`)
+                  emailMasked = maskEmail(plain)
+                } catch {
+                  emailMasked = null
+                }
+              }
+              return {
+                wallet,
+                displayName: r.display_name,
+                kycLegalName,
+                country: r.country,
+                emailMasked,
+                emailVerified: !!r.email_verified_at,
+                emailOptIn: r.email_opt_in,
+                telegramLinked: !!r.telegram_linked_at,
+                telegramOptIn: r.telegram_opt_in,
+                kycStatus: r.kyc_status,
+                kycLevel: Number(r.kyc_level ?? 0),
+                kycExpiresAt: toIso(r.kyc_expires_at),
+                disputesFiled: Number(r.disputes_filed ?? 0),
+                createdAt: toIso(r.created_at),
+                deletedAt: toIso(r.deleted_at),
+              }
+            }),
+          )
+        })
+        return json(200, { users })
       }
 
       if (req.method === 'GET' && path === '/admin/ai') return json(200, await statusPayload(env))
