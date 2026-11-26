@@ -181,7 +181,9 @@ export function AiProviderTab() {
                 style={on ? { borderColor: 'var(--accent)', background: 'var(--fill-3)' } : undefined}
               >
                 <p className="flex items-center justify-between gap-2 font-semibold">
-                  <span className="truncate">{p.label}</span>
+                  <span className="truncate">
+                    {p.id === 'custom' ? `Custom${p.label && p.label !== 'Custom' ? ` (${p.label})` : ''}` : p.label}
+                  </span>
                   {active && (
                     <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase" style={{ background: 'var(--accent-bg)', color: 'var(--on-accent)' }}>
                       Active
@@ -304,7 +306,9 @@ function ProviderForm({
         {saved && !error && <p style={{ color: 'var(--success)' }}>Saved. The assistant now uses these settings.</p>}
         {test && (
           <p style={{ color: test.ok ? 'var(--success)' : 'var(--danger)' }}>
-            {test.ok ? `Connected in ${test.ms} ms.` : (TEST_COPY[test.reason ?? ''] ?? 'The test failed.')}
+            {test.ok
+              ? `Connected in ${test.ms} ms.`
+              : `${TEST_COPY[test.reason ?? ''] ?? 'The test failed.'}${'detail' in test && test.detail ? ` (${test.detail})` : ''}`}
           </p>
         )}
         {error && (

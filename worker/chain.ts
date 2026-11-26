@@ -20,7 +20,7 @@ export const ORDER_RETENTION_SECONDS = 90 * 24 * 60 * 60 // 90 days post-complet
 export const EURC_ID_OFFSET = 1_000_000_000_000n
 export const CIRBTC_ID_OFFSET = 2_000_000_000_000n
 export const WETH_ID_OFFSET = 3_000_000_000_000n
-const DEFAULT_EURC_ESCROW = '0xDf8dC07030A0e578d475CA9582F2E87b29EeBa3d' as Address
+const DEFAULT_EURC_ESCROW = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
 const DEFAULT_CIRBTC_ESCROW = '0x6ba3b81833b6354f08483740211af3ddda396b39' as Address
 const DEFAULT_WETH_ESCROW = '0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3' as Address
 
@@ -83,6 +83,7 @@ export interface ChainReader {
   isVerified(wallet: `0x${string}`): Promise<boolean>
   getOpenOrderCount(wallet: `0x${string}`): Promise<bigint>
   getUserAdIds(wallet: `0x${string}`): Promise<readonly bigint[]>
+  getArbiterRole?(wallet: `0x${string}`): Promise<number>
 }
 
 export type OrderPartyRole = 'buyer' | 'seller' | 'arbiter' | 'backup_arbiter'
@@ -382,6 +383,20 @@ export function createChainReader(env: Env): ChainReader {
         ...wethIds.map((id) => id + WETH_ID_OFFSET),
       ]
     },
+
+    async getArbiterRole(wallet: `0x${string}`): Promise<number> {
+      try {
+        const mask = await client.readContract({
+          address: escrow,
+          abi: p2pEscrowAbi,
+          functionName: 'arbiterRole',
+          args: [wallet],
+        })
+        return Number(mask)
+      } catch {
+        return 0
+      }
+    },
   }
 }
 
@@ -458,10 +473,11 @@ export async function checkOrderAccess(
   if (caller === order.seller) {
     return { allowed: true, role: 'seller', order, roles }
   }
-  if (caller === roles.arbiter) {
+  const roleMask = chain.getArbiterRole ? await chain.getArbiterRole(caller) : 0
+  if (caller === roles.arbiter || (roleMask & 1) !== 0) {
     return { allowed: true, role: 'arbiter', order, roles }
   }
-  if (caller === roles.backupArbiter && isBackupArbiterEligible(order, nowSeconds)) {
+  if ((caller === roles.backupArbiter || (roleMask & 2) !== 0) && isBackupArbiterEligible(order, nowSeconds)) {
     return { allowed: true, role: 'backup_arbiter', order, roles }
   }
   return { allowed: false, status: 403, error: 'forbidden' }
@@ -479,8 +495,9 @@ export async function checkAdminAccess(
   const roles = await chain.getRoles()
   const caller = wallet.toLowerCase() as `0x${string}`
   if (caller === roles.owner) return { allowed: true, role: 'owner', roles }
-  if (caller === roles.arbiter) return { allowed: true, role: 'arbiter', roles }
-  if (opts?.allowBackupArbiter && caller === roles.backupArbiter) {
+  const roleMask = chain.getArbiterRole ? await chain.getArbiterRole(caller) : 0
+  if (caller === roles.arbiter || (roleMask & 1) !== 0) return { allowed: true, role: 'arbiter', roles }
+  if (opts?.allowBackupArbiter && (caller === roles.backupArbiter || (roleMask & 2) !== 0)) {
     return { allowed: true, role: 'backup_arbiter', roles }
   }
   return { allowed: false, status: 403, error: 'forbidden' }

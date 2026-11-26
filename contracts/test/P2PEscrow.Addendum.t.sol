@@ -714,4 +714,68 @@ contract P2PEscrowAddendumTest is P2PEscrowTestBase {
         assertEq(_bal(bob) - bobBefore, 2e6);
         assertEq(_bal(alice) - aliceBefore, 8e6);
     }
+
+    // ---------------------------------------------------------------- v2.3: Multi-Arbiter & Multi-BackupArbiter
+    function test_V23_MultiArbiter_And_MultiBackupArbiter_Lifecycle() public {
+        address arb2 = makeAddr("arb2");
+        address backup2 = makeAddr("backup2");
+
+        // Only owner can add/remove extra arbiters
+        vm.prank(alice);
+        vm.expectRevert();
+        esc.setExtraArbiter(arb2, 1);
+
+        vm.startPrank(owner);
+        esc.setExtraArbiter(arb2, 1);
+        esc.setExtraArbiter(backup2, 2);
+        vm.stopPrank();
+
+        assertEq(esc.arbiterRole(arb2) & 1, 1);
+        assertEq(esc.arbiterRole(backup2) & 2, 2);
+
+        // Open and mark all 3 orders paid before warping 7 days
+        uint256 adId = _sell(alice, 40e6, 1e6, 40e6);
+        uint256 o1 = _open(bob, adId, 10e6);
+        uint256 o2 = _open(bob, adId, 10e6);
+        uint256 o3 = _open(bob, adId, 10e6);
+        _paid(o1);
+        _paid(o2);
+        _paid(o3);
+
+        // 1) Extra primary arbiter can takeCase, postMessage, resolveDispute, and setRestricted
+        vm.prank(alice);
+        esc.openDispute(o1);
+
+        vm.prank(arb2);
+        esc.takeCase(o1);
+        vm.prank(arb2);
+        esc.postMessage(o1, "Reviewing proof");
+        vm.prank(arb2);
+        esc.resolveDispute(o1, true, false, false);
+        assertEq(uint8(esc.getOrder(o1).status), uint8(P2PEscrow.OrderStatus.ResolvedToBuyer));
+
+        // 2) Extra backup arbiter is blocked before 7 days, allowed after 7 days
+        vm.prank(alice);
+        esc.openDispute(o2);
+
+        vm.prank(backup2);
+        vm.expectRevert(P2PEscrow.TooEarly.selector);
+        esc.resolveDispute(o2, false, false, false);
+
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
+        vm.prank(backup2);
+        esc.resolveDispute(o2, false, false, false);
+        assertEq(uint8(esc.getOrder(o2).status), uint8(P2PEscrow.OrderStatus.ResolvedToSeller));
+
+        // 3) Removing extra arbiter immediately revokes authority
+        vm.prank(owner);
+        esc.setExtraArbiter(arb2, 0);
+        assertEq(esc.arbiterRole(arb2), 0);
+
+        vm.prank(alice);
+        esc.openDispute(o3);
+        vm.prank(arb2);
+        vm.expectRevert(P2PEscrow.Unauthorized.selector);
+        esc.takeCase(o3);
+    }
 }

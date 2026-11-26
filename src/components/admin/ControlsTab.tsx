@@ -406,38 +406,75 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
         </div>
       </Panel>
 
-      <Panel title="Dispute arbiter" body="Replace the primary wallet that rules on disputes. It takes over any dispute that is still open, so only use an address you trust.">
+      <Panel title="Dispute arbiter (multi-arbiter)" body="Replace the main arbiter wallet, or add/remove multiple additional primary arbiters (v2.3). Any primary arbiter can review & rule disputes immediately (except their own orders).">
         <input
           value={newArbiter}
           onChange={(e) => setNewArbiter(e.target.value)}
-          placeholder="New arbiter address (0x...)"
+          placeholder="Arbiter wallet address (0x...)"
           spellCheck={false}
           className={`${inputClass} mono text-sm`}
-          aria-label="New arbiter address"
+          aria-label="Arbiter wallet address"
         />
-        <Button
-          className="mt-3"
-          disabled={!valid}
-          loading={pendingKey === 'arbiter'}
-          onClick={() =>
-            void execAcrossTargets('arbiter', 'Change arbiter', (addr) =>
-              writeContractAsync({
-                address: addr,
-                abi: p2pEscrowAbi,
-                chainId: CHAIN_ID,
-                functionName: 'setArbiter',
-                args: [newArbiter.trim() as Address],
-              }),
-            )
-          }
-        >
-          <UserCog className="size-4" /> Set arbiter
-        </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            disabled={!valid}
+            loading={pendingKey === 'add-extra-arbiter'}
+            onClick={() =>
+              void execAcrossTargets('add-extra-arbiter', 'Add extra arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setExtraArbiter',
+                  args: [newArbiter.trim() as Address, 1],
+                }),
+              ).then((ok) => ok && setNewArbiter(''))
+            }
+          >
+            <UserCog className="size-4" /> Add extra arbiter
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!valid}
+            loading={pendingKey === 'remove-extra-arbiter'}
+            onClick={() =>
+              void execAcrossTargets('remove-extra-arbiter', 'Remove extra arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setExtraArbiter',
+                  args: [newArbiter.trim() as Address, 0],
+                }),
+              ).then((ok) => ok && setNewArbiter(''))
+            }
+          >
+            Remove
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!valid}
+            loading={pendingKey === 'arbiter'}
+            onClick={() =>
+              void execAcrossTargets('arbiter', 'Replace main arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setArbiter',
+                  args: [newArbiter.trim() as Address],
+                }),
+              )
+            }
+          >
+            Replace main
+          </Button>
+        </div>
       </Panel>
 
       <Panel
-        title="Backup arbiter (7-day fallback)"
-        body={`May take or rule on a case once 7 days have passed since dispute (or paidAt if not yet disputed). Current (${selectedAsset}): ${backupArbiter ? shortAddr(backupArbiter) : '...'}`}
+        title="Backup arbiter (7-day fallback, multi)"
+        body={`May take or rule on a case once 7 days have passed since dispute. Replace the main backup or add/remove multiple extra backup arbiters (v2.3). Main (${selectedAsset}): ${backupArbiter ? shortAddr(backupArbiter) : '...'}`}
       >
         <input
           value={newBackup}
@@ -447,24 +484,61 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
           className={`${inputClass} mono text-sm`}
           aria-label="Backup arbiter address"
         />
-        <Button
-          className="mt-3"
-          disabled={!validBackup}
-          loading={pendingKey === 'backup-arbiter'}
-          onClick={() =>
-            void execAcrossTargets('backup-arbiter', 'Set backup arbiter', (addr) =>
-              writeContractAsync({
-                address: addr,
-                abi: p2pEscrowAbi,
-                chainId: CHAIN_ID,
-                functionName: 'setBackupArbiter',
-                args: [newBackup.trim() as Address],
-              }),
-            )
-          }
-        >
-          <ShieldCheck className="size-4" /> Set backup arbiter
-        </Button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            disabled={!validBackup}
+            loading={pendingKey === 'add-extra-backup'}
+            onClick={() =>
+              void execAcrossTargets('add-extra-backup', 'Add extra backup arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setExtraArbiter',
+                  args: [newBackup.trim() as Address, 2],
+                }),
+              ).then((ok) => ok && setNewBackup(''))
+            }
+          >
+            <ShieldCheck className="size-4" /> Add extra backup
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!validBackup}
+            loading={pendingKey === 'remove-extra-backup'}
+            onClick={() =>
+              void execAcrossTargets('remove-extra-backup', 'Remove extra backup arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setExtraArbiter',
+                  args: [newBackup.trim() as Address, 0],
+                }),
+              ).then((ok) => ok && setNewBackup(''))
+            }
+          >
+            Remove
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!validBackup}
+            loading={pendingKey === 'backup-arbiter'}
+            onClick={() =>
+              void execAcrossTargets('backup-arbiter', 'Replace main backup arbiter', (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setBackupArbiter',
+                  args: [newBackup.trim() as Address],
+                }),
+              )
+            }
+          >
+            Replace main
+          </Button>
+        </div>
       </Panel>
 
       <div className="lg:col-span-2">

@@ -15,9 +15,18 @@ export function useAdminRoles() {
   })
   const arbiter = useArbiter()
   const backupArbiter = useBackupArbiter()
+  const roleMask = useReadContract({
+    address: ESCROW_ADDRESS,
+    abi: p2pEscrowAbi,
+    chainId: CHAIN_ID,
+    functionName: 'arbiterRole',
+    args: address ? [address] : undefined,
+    query: { enabled: !!ESCROW_ADDRESS && !!address, refetchInterval: 30_000 },
+  })
+  const mask = Number(roleMask.data ?? 0)
   const isOwner = sameAddr(address, owner.data)
-  const isArbiter = sameAddr(address, arbiter)
-  const isBackupArbiter = sameAddr(address, backupArbiter)
+  const isArbiter = sameAddr(address, arbiter) || (mask & 1) !== 0
+  const isBackupArbiter = sameAddr(address, backupArbiter) || (mask & 2) !== 0
   return {
     address,
     isConnected,

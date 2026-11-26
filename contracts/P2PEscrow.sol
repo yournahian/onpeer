@@ -195,6 +195,7 @@ contract P2PEscrow is Ownable2Step {
     uint256 public orderCount;
     mapping(bytes3 => bool) public supportedCurrency;
     mapping(address => uint256) public openOrderCount;
+    mapping(address => uint8) private _extraRole; // bit 0 (1) = extra primary arbiter, bit 1 (2) = extra backup arbiter
     mapping(address => Stats) private stats;
     mapping(address => Verification) public verification;
     mapping(uint256 => Ad) private _ads;
@@ -297,6 +298,7 @@ contract P2PEscrow is Ownable2Step {
     event PayoutDeferred(address indexed to, uint256 amount);
     event ArbiterUpdated(address indexed oldArbiter, address indexed newArbiter);
     event BackupArbiterUpdated(address indexed oldBackupArbiter, address indexed newBackupArbiter);
+    event ExtraArbiterUpdated(address indexed account, uint8 roleMask);
     event ListingFeeUpdated(uint256 oldFee, uint256 newFee);
     event FeeRecipientUpdated(address indexed oldRecipient, address indexed newRecipient);
     event FeesCollected(address indexed recipient, uint256 amount);
@@ -863,17 +865,7 @@ contract P2PEscrow is Ownable2Step {
         uint256 amount = claimable[msg.sender];
         if (amount == 0) revert NothingToWithdraw();
         claimable[msg.sender] = 0;
-
-        uint256 owed = totalDebt[msg.sender];
-        uint256 toDebt = amount < owed ? amount : owed;
-        uint256 remainder;
-        unchecked {
-            remainder = amount - toDebt;
-        }
-
-        if (toDebt != 0) {
-            _repayDebtFromEscrow(msg.sender, toDebt);
-        }
+        uint256 remainder = _offsetDebt(msg.sender, amount);
         if (remainder != 0) {
             emit Withdrawn(msg.sender, remainder);
             _pushUsdc(msg.sender, remainder);
@@ -958,6 +950,20 @@ contract P2PEscrow is Ownable2Step {
         address oldBackup = backupArbiter;
         backupArbiter = newBackupArbiter;
         emit BackupArbiterUpdated(oldBackup, newBackupArbiter);
+    }
+
+    /// @notice Governance sets extra arbiter bitmask for `account`: 0=none, 1=primary, 2=backup, 3=both.
+    function setExtraArbiter(address account, uint8 roleMask) external onlyOwner {
+        _nonZero(account);
+        _extraRole[account] = roleMask;
+        emit ExtraArbiterUpdated(account, roleMask);
+    }
+
+    /// @notice Bitmask of arbiter roles for `a`: bit 0 (1) = primary arbiter, bit 1 (2) = 7-day backup arbiter.
+    function arbiterRole(address a) public view returns (uint8 r) {
+        r = _extraRole[a];
+        if (a == arbiter) r |= 1;
+        if (a == backupArbiter) r |= 2;
     }
 
     /// @notice Governance enables or disables creation and opening of sealed-details ads.
@@ -1111,7 +1117,7 @@ contract P2PEscrow is Ownable2Step {
     }
 
     function _requireAdmin() private view {
-        if (msg.sender != owner() && msg.sender != arbiter) revert NotAdmin();
+        if (msg.sender != owner() && (arbiterRole(msg.sender) & 1) == 0) revert NotAdmin();
     }
 
     /// @dev Entry-only eligibility gate; never applied to an existing trade, settlement or withdrawal.
@@ -1124,7 +1130,9 @@ contract P2PEscrow is Ownable2Step {
     }
 
     function _startReview(uint256 orderId, Order storage order) private {
-        if (msg.sender != arbiter && msg.sender != backupArbiter) revert Unauthorized();
+        uint8 role = arbiterRole(msg.sender);
+        if (role == 0) revert Unauthorized();
+        bool primary = (role & 1) != 0;
         OrderStatus st = order.status;
         if (st != OrderStatus.Paid && st != OrderStatus.Disputed) revert InvalidStatus(st);
         if (msg.sender == order.buyer || msg.sender == order.seller) revert ArbiterIsParty();
@@ -1132,7 +1140,7 @@ contract P2PEscrow is Ownable2Step {
             if (order.disputedAt == 0 && block.timestamp < uint256(order.paidAt) + 15 minutes) {
                 revert TooEarly();
             }
-            if (msg.sender != arbiter) {
+            if (!primary) {
                 uint256 anchor = order.disputedAt != 0 ? order.disputedAt : order.paidAt;
                 if (block.timestamp < anchor + BACKUP_ARBITER_DELAY) revert TooEarly();
             }
@@ -1191,12 +1199,10 @@ contract P2PEscrow is Ownable2Step {
         }
         if (msg.sender == order.buyer || msg.sender == order.seller) return;
         if (st == OrderStatus.Disputed) {
-            if (msg.sender == arbiter) return;
+            uint8 role = arbiterRole(msg.sender);
+            if ((role & 1) != 0) return;
             unchecked {
-                if (
-                    msg.sender == backupArbiter
-                        && block.timestamp >= uint256(order.disputedAt) + BACKUP_ARBITER_DELAY
-                ) {
+                if ((role & 2) != 0 && block.timestamp >= uint256(order.disputedAt) + BACKUP_ARBITER_DELAY) {
                     return;
                 }
             }
@@ -1242,8 +1248,7 @@ contract P2PEscrow is Ownable2Step {
         P2PEscrowDebtLib.repay(debtor, budget, address(usdc), _debts, totalDebt, claimable);
     }
 
-    /// @dev Offsets `account`'s unpaid dispute-bond debt first (FIFO), then pays any remainder via blocklist-safe `_payout`.
-    function _settleDebtAndPayout(address account, uint256 amount) private returns (uint256 remainder) {
+    function _offsetDebt(address account, uint256 amount) private returns (uint256 remainder) {
         uint256 owed = totalDebt[account];
         uint256 toDebt = amount < owed ? amount : owed;
         unchecked {
@@ -1252,6 +1257,11 @@ contract P2PEscrow is Ownable2Step {
         if (toDebt != 0) {
             _repayDebtFromEscrow(account, toDebt);
         }
+    }
+
+    /// @dev Offsets `account`'s unpaid dispute-bond debt first (FIFO), then pays any remainder via blocklist-safe `_payout`.
+    function _settleDebtAndPayout(address account, uint256 amount) private returns (uint256 remainder) {
+        remainder = _offsetDebt(account, amount);
         if (remainder != 0) {
             _payout(account, remainder);
         }

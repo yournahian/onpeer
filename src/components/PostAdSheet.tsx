@@ -334,8 +334,12 @@ function PostAdForm({
     maxRaw <= totalRaw &&
     (balance === undefined || requiredUsdc <= balance)
 
+  const savedBitsSet = new Set(savedMethods.map((sm) => sm.methodBit))
+  const hasSavedMethodForMarket = methods.some((m) => savedBitsSet.has(m.bit))
+
   const step2Ready =
     bits.length > 0 &&
+    bits.every((b) => savedBitsSet.has(b)) &&
     ttlHours >= 1 &&
     ttlHours <= 168 &&
     (!(useSealedVault || !isSell) || publicTermsBytes <= PUBLIC_TERMS_MAX_BYTES)
@@ -781,30 +785,52 @@ function PostAdForm({
               {methods.map((m) => {
                 const active = bits.includes(m.bit)
                 const savedForBit = savedMethods.find((sm) => sm.methodBit === m.bit)
+                const disabled = !savedForBit
                 return (
                   <button
                     key={m.bit}
                     type="button"
+                    disabled={disabled}
                     aria-pressed={active}
-                    onClick={() => toggle(m.bit)}
+                    title={disabled ? 'Add this payment method in User Center → P2P Payment Methods first' : undefined}
+                    onClick={() => !disabled && toggle(m.bit)}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      active
-                        ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
-                        : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
+                      disabled
+                        ? 'cursor-not-allowed border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] opacity-45'
+                        : active
+                          ? 'border-[#FF5A00] bg-[var(--p2p-tint)] text-[var(--p2p-ink)]'
+                          : 'border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]'
                     }`}
                     style={{ borderLeft: '3px solid #FF5A00' }}
                   >
                     <MethodLogo name={m.name} size={14} />
                     <span>{m.name}</span>
-                    {savedForBit && (
+                    {savedForBit ? (
                       <span className="p2p-mono rounded bg-[#FF5A00]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#FF5A00]">
                         ••{savedForBit.accountNumber.slice(-4)}
                       </span>
+                    ) : (
+                      <span className="text-[10px] opacity-70">(Not added)</span>
                     )}
                   </button>
                 )
               })}
             </div>
+            {!hasSavedMethodForMarket && (
+              <div className="mt-2.5 rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs leading-relaxed text-[var(--p2p-warn-ink)]">
+                <p className="font-bold">Add a payment method first to post a Buy or Sell Ad</p>
+                <p className="mt-1 opacity-90">
+                  Please add at least one {country.currency} payment method in{' '}
+                  <strong>User Center → P2P Payment Methods</strong>, then return here to select it.
+                </p>
+                <a
+                  href="/p2p?tab=account"
+                  className="mt-2 inline-flex items-center rounded-lg bg-[#FF5A00] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90"
+                >
+                  Open User Center → Payment Methods
+                </a>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">

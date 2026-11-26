@@ -637,8 +637,8 @@ OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, swap terminal, 
 
 | Contract | Address | Deploy Block | Purpose |
 | --- | --- | --- | --- |
-| \`P2PEscrow\` (\`USDC\`) | \`0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE\` | \`74214615\` | Primary USDC P2P escrow contract (v2.2) |
-| \`P2PEscrow\` (\`EURC\`) | \`0xDf8dC07030A0e578d475CA9582F2E87b29EeBa3d\` | \`74214619\` | Euro Coin (EURC) P2P escrow contract (v2.2) |
+| \`P2PEscrow\` (\`USDC\`) | \`0x7f661625bC08d72E156A206ee8D24022D7463350\` | \`74250625\` | Primary USDC P2P escrow contract (v2.3) |
+| \`P2PEscrow\` (\`EURC\`) | \`0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9\` | \`74250630\` | Euro Coin (EURC) P2P escrow contract (v2.3) |
 | \`P2PEscrow\` (\`cirBTC\`) | \`0x6ba3b81833b6354f08483740211af3ddda396b39\` | \`73734225\` | 8-decimal cirBTC P2P escrow contract |
 | \`P2PEscrow\` (\`WETH\`) | \`0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3\` | \`73734238\` | 18-decimal Wrapped Ether (WETH) P2P escrow contract |
 | \`CrossChainTokenService\` | \`0x63753E722bd2C2A5DF6EE19C5106662208B81077\` | — | Circle CCTPx cross-chain router on Arc Testnet (Domain 26) |

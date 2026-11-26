@@ -6,7 +6,10 @@ import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from 'w
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { CHAIN_ID } from '@/lib/p2p'
 
-const LEGACY_V21_USDC_ESCROW = '0xf719ebbc5080aee09e38909764b897e0bf01a9b0' as Address
+const LEGACY_ESCROWS: readonly { version: 'v2.2' | 'v2.1'; address: Address; short: string }[] = [
+  { version: 'v2.2', address: '0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE', short: '0x1929…04fE' },
+  { version: 'v2.1', address: '0xf719ebbc5080aee09e38909764b897e0bf01a9b0', short: '0xf719…a9b0' },
+]
 
 function formatUsdc(amount: bigint): string {
   const n = Number(formatUnits(amount, 6))
@@ -14,12 +17,16 @@ function formatUsdc(amount: bigint): string {
 }
 
 interface LegacyAdItem {
+  version: 'v2.2' | 'v2.1'
+  escrow: Address
   id: bigint
   available: bigint
 }
 
-interface LegacyFundsState {
-  wallet: string
+interface LegacyContractSlice {
+  version: 'v2.2' | 'v2.1'
+  escrow: Address
+  short: string
   ads: LegacyAdItem[]
   claimable: bigint
   margin: bigint
@@ -27,67 +34,64 @@ interface LegacyFundsState {
   pendingUnlockAt: bigint
   marginUnlocked: boolean
   ownerFees: bigint
-  isOwner: boolean
+}
+
+interface LegacyFundsState {
+  wallet: string
+  slices: LegacyContractSlice[]
 }
 
 const EMPTY_STATE: LegacyFundsState = {
   wallet: '',
-  ads: [],
-  claimable: 0n,
-  margin: 0n,
-  pendingMargin: 0n,
-  pendingUnlockAt: 0n,
-  marginUnlocked: false,
-  ownerFees: 0n,
-  isOwner: false,
+  slices: [],
 }
 
-async function fetchLegacyFunds(
+async function fetchContractSlice(
+  meta: (typeof LEGACY_ESCROWS)[number],
   address: Address,
   publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
-): Promise<LegacyFundsState> {
+): Promise<LegacyContractSlice> {
   const [userAdIds, claimable, margin, marginWd, ownerAddr, feesAccrued] = await Promise.all([
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'getUserAdIds',
       args: [address],
     }),
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'claimable',
       args: [address],
     }),
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'margin',
       args: [address],
     }),
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'marginWithdrawal',
       args: [address],
     }),
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'owner',
     }),
     publicClient.readContract({
-      address: LEGACY_V21_USDC_ESCROW,
+      address: meta.address,
       abi: p2pEscrowAbi,
       functionName: 'feesAccrued',
     }),
   ])
 
-  const me = address.toLowerCase()
   const adDetails = await Promise.all(
     userAdIds.map((id) =>
       publicClient.readContract({
-        address: LEGACY_V21_USDC_ESCROW,
+        address: meta.address,
         abi: p2pEscrowAbi,
         functionName: 'getAd',
         args: [id],
@@ -98,14 +102,22 @@ async function fetchLegacyFunds(
   const openSellAds: LegacyAdItem[] = []
   adDetails.forEach((ad, idx) => {
     if (ad.side === 0 && !ad.closed && ad.available > 0n) {
-      openSellAds.push({ id: userAdIds[idx], available: ad.available })
+      openSellAds.push({
+        version: meta.version,
+        escrow: meta.address,
+        id: userAdIds[idx],
+        available: ad.available,
+      })
     }
   })
 
+  const me = address.toLowerCase()
   const isOwner = ownerAddr.toLowerCase() === me
   const nowSec = BigInt(Math.floor(Date.now() / 1000))
   return {
-    wallet: me,
+    version: meta.version,
+    escrow: meta.address,
+    short: meta.short,
     ads: openSellAds,
     claimable,
     margin,
@@ -113,8 +125,17 @@ async function fetchLegacyFunds(
     pendingUnlockAt: marginWd[1],
     marginUnlocked: marginWd[0] > 0n && nowSec >= marginWd[1],
     ownerFees: isOwner ? feesAccrued : 0n,
-    isOwner,
   }
+}
+
+async function fetchLegacyFunds(
+  address: Address,
+  publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
+): Promise<LegacyFundsState> {
+  const slices = await Promise.all(
+    LEGACY_ESCROWS.map((meta) => fetchContractSlice(meta, address, publicClient)),
+  )
+  return { wallet: address.toLowerCase(), slices }
 }
 
 export function LegacyV21WithdrawCard() {
@@ -132,7 +153,7 @@ export function LegacyV21WithdrawCard() {
       const next = await fetchLegacyFunds(address, publicClient)
       setFetched(next)
     } catch {
-      // Silently ignore if RPC is temporarily unreachable
+      /* ignore transient RPC errors */
     }
   }, [address, publicClient])
 
@@ -149,10 +170,16 @@ export function LegacyV21WithdrawCard() {
     }
   }, [address, publicClient])
 
-  const state = address && fetched.wallet === address.toLowerCase() ? fetched : EMPTY_STATE
-
-  const totalAdsAmount = state.ads.reduce((sum, a) => sum + a.available, 0n)
-  const totalRecoverable = totalAdsAmount + state.claimable + state.margin + state.ownerFees
+  const slices = address && fetched.wallet === address.toLowerCase() ? fetched.slices : []
+  const totalRecoverable = slices.reduce(
+    (sum, sl) =>
+      sum +
+      sl.ads.reduce((aSum, a) => aSum + a.available, 0n) +
+      sl.claimable +
+      sl.margin +
+      sl.ownerFees,
+    0n,
+  )
 
   if (!address || totalRecoverable === 0n) return null
 
@@ -164,6 +191,7 @@ export function LegacyV21WithdrawCard() {
 
   const runTx = async (
     key: string,
+    escrow: Address,
     label: string,
     fn:
       | { functionName: 'closeAd'; args: [bigint] }
@@ -177,7 +205,7 @@ export function LegacyV21WithdrawCard() {
     try {
       await ensureArcChain()
       const hash = await writeContractAsync({
-        address: LEGACY_V21_USDC_ESCROW,
+        address: escrow,
         abi: p2pEscrowAbi,
         chainId: CHAIN_ID,
         ...fn,
@@ -194,185 +222,195 @@ export function LegacyV21WithdrawCard() {
     }
   }
 
-  const { marginUnlocked } = state
-
   return (
     <div className="mb-5 rounded-2xl border border-amber-500/35 bg-amber-500/[0.07] p-4 sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-400">
-            <AlertTriangle className="h-4 w-4" />
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/30 bg-amber-500/15 text-amber-400">
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-foreground">
+              Legacy Escrow Funds Available to Withdraw
+            </h3>
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-amber-300">
+              {formatUsdc(totalRecoverable)} USDC
+            </span>
           </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-sm font-semibold text-foreground">
-                Legacy v2.1 Escrow Funds Available to Withdraw
-              </h3>
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-amber-300">
-                {formatUsdc(totalRecoverable)} USDC
-              </span>
-            </div>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              OnPeer upgraded to P2PEscrow v2.2. Your connected wallet still has funds locked on the
-              previous v2.1 contract (<span className="font-mono">0xf719…a9b0</span>). Withdraw
-              them directly to your wallet below.
-            </p>
-          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            OnPeer upgraded to P2PEscrow v2.3. Your connected wallet still has funds on a previous
+            escrow contract (v2.1 / v2.2). Withdraw them directly to your wallet below.
+          </p>
         </div>
       </div>
 
       <div className="mt-4 flex flex-col gap-2">
-        {state.ads.map((ad) => {
-          const key = `ad-${ad.id.toString()}`
-          const busy = busyKey === key
-          return (
-            <div
-              key={key}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5"
-            >
-              <div className="text-xs">
-                <span className="font-mono font-semibold text-foreground">
-                  v2.1 Sell Ad #{ad.id.toString()}
-                </span>
-                <span className="mx-2 text-muted-foreground">•</span>
-                <span className="font-mono font-medium text-amber-300">
-                  {formatUsdc(ad.available)} USDC
-                </span>
+        {slices.map((sl) => (
+          <div key={sl.version} className="flex flex-col gap-2">
+            {sl.ads.map((ad) => {
+              const key = `${sl.version}-ad-${ad.id.toString()}`
+              const busy = busyKey === key
+              return (
+                <div
+                  key={key}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5"
+                >
+                  <div className="text-xs">
+                    <span className="font-mono font-semibold text-foreground">
+                      {sl.version} Sell Ad #{ad.id.toString()}
+                    </span>
+                    <span className="mx-2 text-muted-foreground">•</span>
+                    <span className="font-mono font-medium text-amber-300">
+                      {formatUsdc(ad.available)} USDC
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={busyKey !== null}
+                    onClick={() =>
+                      void runTx(key, sl.escrow, `Close ${sl.version} Ad #${ad.id.toString()}`, {
+                        functionName: 'closeAd',
+                        args: [ad.id],
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
+                  >
+                    {busy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ArrowDownToLine className="h-3.5 w-3.5" />
+                    )}
+                    Close &amp; Withdraw
+                  </button>
+                </div>
+              )
+            })}
+
+            {sl.claimable > 0n && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
+                <div className="text-xs">
+                  <span className="font-semibold text-foreground">
+                    {sl.version} Claimable Balance
+                  </span>
+                  <span className="mx-2 text-muted-foreground">•</span>
+                  <span className="font-mono font-medium text-amber-300">
+                    {formatUsdc(sl.claimable)} USDC
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={busyKey !== null}
+                  onClick={() =>
+                    void runTx(`${sl.version}-claimable`, sl.escrow, `Withdraw ${sl.version} Claimable`, {
+                      functionName: 'withdrawClaimable',
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
+                >
+                  {busyKey === `${sl.version}-claimable` ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ArrowDownToLine className="h-3.5 w-3.5" />
+                  )}
+                  Withdraw Claimable
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={busyKey !== null}
-                onClick={() =>
-                  void runTx(key, `Close v2.1 Ad #${ad.id.toString()}`, {
-                    functionName: 'closeAd',
-                    args: [ad.id],
-                  })
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
-              >
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <ArrowDownToLine className="h-3.5 w-3.5" />
-                )}
-                Close &amp; Withdraw
-              </button>
-            </div>
-          )
-        })}
+            )}
 
-        {state.claimable > 0n && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
-            <div className="text-xs">
-              <span className="font-semibold text-foreground">v2.1 Claimable Balance</span>
-              <span className="mx-2 text-muted-foreground">•</span>
-              <span className="font-mono font-medium text-amber-300">
-                {formatUsdc(state.claimable)} USDC
-              </span>
-            </div>
-            <button
-              type="button"
-              disabled={busyKey !== null}
-              onClick={() =>
-                void runTx('claimable', 'Withdraw v2.1 Claimable', {
-                  functionName: 'withdrawClaimable',
-                })
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
-            >
-              {busyKey === 'claimable' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ArrowDownToLine className="h-3.5 w-3.5" />
-              )}
-              Withdraw Claimable
-            </button>
-          </div>
-        )}
+            {sl.margin > 0n && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
+                <div className="text-xs">
+                  <span className="font-semibold text-foreground">
+                    {sl.version} Merchant Margin ({sl.short})
+                  </span>
+                  <span className="mx-2 text-muted-foreground">•</span>
+                  <span className="font-mono font-medium text-amber-300">
+                    {formatUsdc(sl.margin)} USDC
+                  </span>
+                  {sl.pendingMargin > 0n && !sl.marginUnlocked && (
+                    <span className="ml-2 text-[11px] text-muted-foreground">
+                      (Unlocks {new Date(Number(sl.pendingUnlockAt) * 1000).toLocaleString()})
+                    </span>
+                  )}
+                </div>
+                {sl.pendingMargin === 0n ? (
+                  <button
+                    type="button"
+                    disabled={busyKey !== null}
+                    onClick={() =>
+                      void runTx(
+                        `${sl.version}-req-margin`,
+                        sl.escrow,
+                        `Request ${sl.version} Margin Withdrawal`,
+                        { functionName: 'requestMarginWithdrawal', args: [sl.margin] },
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
+                  >
+                    {busyKey === `${sl.version}-req-margin` ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ShieldAlert className="h-3.5 w-3.5" />
+                    )}
+                    Request 7d Unlock
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busyKey !== null || !sl.marginUnlocked}
+                    onClick={() =>
+                      void runTx(
+                        `${sl.version}-complete-margin`,
+                        sl.escrow,
+                        `Complete ${sl.version} Margin Withdrawal`,
+                        { functionName: 'completeMarginWithdrawal' },
+                      )
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
+                  >
+                    {busyKey === `${sl.version}-complete-margin` ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <ArrowDownToLine className="h-3.5 w-3.5" />
+                    )}
+                    {sl.marginUnlocked ? 'Complete Withdrawal' : 'Unlocking…'}
+                  </button>
+                )}
+              </div>
+            )}
 
-        {state.margin > 0n && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
-            <div className="text-xs">
-              <span className="font-semibold text-foreground">v2.1 Merchant Margin</span>
-              <span className="mx-2 text-muted-foreground">•</span>
-              <span className="font-mono font-medium text-amber-300">
-                {formatUsdc(state.margin)} USDC
-              </span>
-              {state.pendingMargin > 0n && !marginUnlocked && (
-                <span className="ml-2 text-[11px] text-muted-foreground">
-                  (Unlocks {new Date(Number(state.pendingUnlockAt) * 1000).toLocaleString()})
-                </span>
-              )}
-            </div>
-            {state.pendingMargin === 0n ? (
-              <button
-                type="button"
-                disabled={busyKey !== null}
-                onClick={() =>
-                  void runTx('req-margin', 'Request v2.1 Margin Withdrawal', {
-                    functionName: 'requestMarginWithdrawal',
-                    args: [state.margin],
-                  })
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
-              >
-                {busyKey === 'req-margin' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <ShieldAlert className="h-3.5 w-3.5" />
-                )}
-                Request 7d Unlock
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={busyKey !== null || !marginUnlocked}
-                onClick={() =>
-                  void runTx('complete-margin', 'Complete v2.1 Margin Withdrawal', {
-                    functionName: 'completeMarginWithdrawal',
-                  })
-                }
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
-              >
-                {busyKey === 'complete-margin' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <ArrowDownToLine className="h-3.5 w-3.5" />
-                )}
-                {marginUnlocked ? 'Complete Withdrawal' : 'Unlocking…'}
-              </button>
+            {sl.ownerFees > 0n && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
+                <div className="text-xs">
+                  <span className="font-semibold text-foreground">
+                    {sl.version} Accrued Listing Fees (Owner)
+                  </span>
+                  <span className="mx-2 text-muted-foreground">•</span>
+                  <span className="font-mono font-medium text-amber-300">
+                    {formatUsdc(sl.ownerFees)} USDC
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={busyKey !== null}
+                  onClick={() =>
+                    void runTx(`${sl.version}-fees`, sl.escrow, `Collect ${sl.version} Listing Fees`, {
+                      functionName: 'collectFees',
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
+                >
+                  {busyKey === `${sl.version}-fees` ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ArrowDownToLine className="h-3.5 w-3.5" />
+                  )}
+                  Collect Fees
+                </button>
+              </div>
             )}
           </div>
-        )}
-
-        {state.ownerFees > 0n && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-background/70 px-3.5 py-2.5">
-            <div className="text-xs">
-              <span className="font-semibold text-foreground">v2.1 Accrued Listing Fees (Owner)</span>
-              <span className="mx-2 text-muted-foreground">•</span>
-              <span className="font-mono font-medium text-amber-300">
-                {formatUsdc(state.ownerFees)} USDC
-              </span>
-            </div>
-            <button
-              type="button"
-              disabled={busyKey !== null}
-              onClick={() =>
-                void runTx('fees', 'Collect v2.1 Listing Fees', {
-                  functionName: 'collectFees',
-                })
-              }
-              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-black transition hover:bg-amber-400 disabled:opacity-50"
-            >
-              {busyKey === 'fees' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ArrowDownToLine className="h-3.5 w-3.5" />
-              )}
-              Collect Fees
-            </button>
-          </div>
-        )}
+        ))}
       </div>
     </div>
   )

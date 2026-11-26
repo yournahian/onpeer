@@ -852,6 +852,24 @@ async function handleApi(
           })
           const ms = Date.now() - started
           if (upstream.ok) return json(200, { ok: true, ms })
+          let detail = `HTTP ${upstream.status}`
+          try {
+            const rawErr = await upstream.text()
+            if (rawErr) {
+              const parsed = JSON.parse(rawErr) as { error?: { message?: string } | string; message?: string }
+              const msg =
+                typeof parsed?.error === 'string'
+                  ? parsed.error
+                  : typeof parsed?.error?.message === 'string'
+                    ? parsed.error.message
+                    : typeof parsed?.message === 'string'
+                      ? parsed.message
+                      : rawErr
+              if (msg.trim()) detail = `HTTP ${upstream.status}: ${msg.trim().slice(0, 160)}`
+            }
+          } catch {
+            /* keep status code */
+          }
           const reason =
             upstream.status === 401 || upstream.status === 403
               ? 'auth'
@@ -860,7 +878,7 @@ async function handleApi(
                 : upstream.status === 429
                   ? 'rate_limit'
                   : 'provider_error'
-          return json(200, { ok: false, reason, status: upstream.status, ms })
+          return json(200, { ok: false, reason, status: upstream.status, detail, ms })
         } catch (err) {
           const aborted = (err as { name?: string }).name === 'AbortError'
           return json(200, { ok: false, reason: aborted ? 'timeout' : 'unreachable' })

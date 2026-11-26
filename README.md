@@ -57,8 +57,8 @@ See `.env.example` for a full description of every variable.
 
 ### Deployed contracts (Arc Testnet)
 
-- **P2PEscrow v2.2 (active — USDC):** `0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE` (block `74214615`)
-- **P2PEscrow v2.2 (active — EURC):** `0xDf8dC07030A0e578d475CA9582F2E87b29EeBa3d` (block `74214619`)
+- **P2PEscrow v2.3 (active — USDC):** `0x7f661625bC08d72E156A206ee8D24022D7463350` (block `74250625`)
+- **P2PEscrow v2.3 (active — EURC):** `0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9` (block `74250630`)
 - **Deprecated:** `0x22f28c481f2842c5a68028944a4f3fa7ebdf58de` (v2.0, block `72788405`), `0x271b519275380f60fa100d0cff101800893a8fa0` (v1, block `72230487`)
 
 ### Environment variables

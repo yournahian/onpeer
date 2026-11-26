@@ -15,7 +15,7 @@ export type ProviderStatus = {
 
 export type AiStatus = { active: ProviderId | null; providers: ProviderStatus[] }
 
-export type TestResult = { ok: boolean; ms?: number; reason?: string; status?: number }
+export type TestResult = { ok: boolean; ms?: number; reason?: string; status?: number; detail?: string }
 
 const ERROR_COPY: Record<string, string> = {
   not_admin: 'This wallet is not the contract owner or arbiter.',
