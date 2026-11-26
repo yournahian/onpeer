@@ -57,7 +57,7 @@ const memoryAdTerms = new Map<string, string>()
 const memoryPresence = new Map<string, number>()
 const PRESENCE_ONLINE_MS = 90_000
 
-async function recordPresence(db: { query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: T[] }> }, wallet: string): Promise<void> {
+async function recordPresence(db: Queryable, wallet: string): Promise<void> {
   const w = wallet.toLowerCase()
   memoryPresence.set(w, Date.now())
   try {
@@ -85,7 +85,7 @@ async function readPresenceMap(
   }
   try {
     const buckets = wallets.map((w) => `presence:${w}`)
-    const rows = await runDb(env, async (db) => {
+    const rows = await withDb(env, async (db) => {
       const res = await db.query<{ bucket: string }>(
         `SELECT bucket FROM public.rate_limits WHERE bucket = ANY($1::text[]) AND reset_at > now()`,
         [buckets],
@@ -136,7 +136,7 @@ async function loadSettings(env: Env): Promise<SavedSettings> {
   // Primary: encrypted Postgres storage (immune to Cloudflare KV free-tier limits)
   if (env.HYPERDRIVE) {
     try {
-      const row = await runDb(env, async (db) => {
+      const row = await withDb(env, async (db) => {
         const res = await db.query<{ body_enc: string }>(
           `SELECT body_enc
              FROM public.chat_messages
@@ -179,7 +179,7 @@ async function saveSettings(env: Env, next: SavedSettings): Promise<void> {
   if (env.HYPERDRIVE) {
     try {
       const enc = await sealText(env, JSON.stringify(next), AI_SETTINGS_AAD)
-      await runDb(env, async (db) => {
+      await withDb(env, async (db) => {
         await db.query(
           `DELETE FROM public.chat_messages WHERE order_id = $1 AND author = $2`,
           [AI_SETTINGS_SENTINEL_ORDER_ID, AI_SETTINGS_SENTINEL_AUTHOR],
@@ -191,16 +191,20 @@ async function saveSettings(env: Env, next: SavedSettings): Promise<void> {
         )
       })
       savedToDb = true
-    } catch {
-      /* fall through to KV fallback */
+    } catch (err) {
+      console.error('[settings] db save failed', err instanceof Error ? err.message : String(err))
     }
   }
-  if (env.AI_SETTINGS_KV) {
+  if (!savedToDb && env.AI_SETTINGS_KV) {
     try {
       await env.AI_SETTINGS_KV.put(KV_KEY, JSON.stringify(next))
-    } catch {
-      if (!savedToDb) throw new Error('settings_storage_unavailable')
+      savedToDb = true
+    } catch (err) {
+      console.error('[settings] kv save failed', err instanceof Error ? err.message : String(err))
     }
+  }
+  if (!savedToDb && (env.HYPERDRIVE || env.AI_SETTINGS_KV)) {
+    throw new Error('settings_storage_unavailable')
   }
 }
 
@@ -660,7 +664,18 @@ async function handleApi(
       }).catch(() => false)
       if (!ok) return json(401, { error: 'bad_signature' })
       const chain = makeChain(env)
-      const admin = await checkAdminAccess(chain, wallet)
+      let admin: Awaited<ReturnType<typeof checkAdminAccess>>
+      try {
+        admin = await checkAdminAccess(chain, wallet)
+      } catch (firstErr) {
+        console.error('[admin/login] rpc check failed, retrying once', firstErr instanceof Error ? firstErr.message : String(firstErr))
+        try {
+          admin = await checkAdminAccess(makeChain(env), wallet)
+        } catch (secondErr) {
+          console.error('[admin/login] rpc check retry failed', secondErr instanceof Error ? secondErr.message : String(secondErr))
+          return json(502, { error: 'rpc_error' })
+        }
+      }
       if (!admin.allowed) return json(403, { error: 'not_admin' })
 
       const nonceTtlSec = Math.max(1, Math.ceil((Number(verifiedNonce.exp) - Date.now()) / 1000))

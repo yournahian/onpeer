@@ -29,7 +29,7 @@ export async function withDb<T>(env: Env, fn: (db: Queryable) => Promise<T>): Pr
     connectionString: resolveConnectionString(env),
     statement_timeout: 10_000,
     query_timeout: 10_000,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: 10_000,
   })
   await client.connect()
   try {

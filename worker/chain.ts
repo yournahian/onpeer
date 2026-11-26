@@ -255,7 +255,7 @@ export function createArcPublicClient(env?: Env) {
   const rpcUrl = requireChain(chainId).rpcUrls[0]
   return createPublicClient({
     chain,
-    transport: http(rpcUrl, { timeout: 10_000 }),
+    transport: http(rpcUrl, { timeout: 10_000, batch: true }),
   })
 }
 

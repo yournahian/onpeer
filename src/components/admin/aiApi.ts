@@ -25,6 +25,8 @@ const ERROR_COPY: Record<string, string> = {
   rate_limited: 'Too many requests. Wait a minute and try again.',
   bad_base_url: 'The base URL must start with https:// (http:// only for localhost).',
   bad_provider: 'Unknown provider.',
+  rpc_error: 'Could not reach the Arc RPC to verify your admin wallet. Try again.',
+  service_unavailable: 'The backend database or secret config is temporarily unavailable.',
   server_error: 'The assistant backend hit an error.',
 }
 
