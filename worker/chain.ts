@@ -30,10 +30,22 @@ export const ORDER_RETENTION_SECONDS = 90 * 24 * 60 * 60 // 90 days post-complet
 export const EURC_ID_OFFSET = 1_000_000_000_000n
 export const CIRBTC_ID_OFFSET = 2_000_000_000_000n
 export const WETH_ID_OFFSET = 3_000_000_000_000n
+const DEFAULT_MAINNET_USDC_ESCROW = '0xC073b1A5ac4004fD82cAc6BDA5548FFc5E5cB97e' as Address
+const DEFAULT_TESTNET_USDC_ESCROW = '0x7f661625bC08d72E156A206ee8D24022D7463350' as Address
 const DEFAULT_MAINNET_EURC_ESCROW = '0xd0dca77625992d3851748B365Ace63803c5d1759' as Address
 const DEFAULT_TESTNET_EURC_ESCROW = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
 const DEFAULT_CIRBTC_ESCROW = '0x6ba3b81833b6354f08483740211af3ddda396b39' as Address
 const DEFAULT_WETH_ESCROW = '0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3' as Address
+
+// Known testnet/superseded escrow addresses that must never be queried against Arc Mainnet (5042)
+const TESTNET_ONLY_ESCROWS = new Set([
+  '0x7f661625bc08d72e156a206ee8d24022d7463350',
+  '0x26ef2b69ac928457e348beed72bf116db81438b9',
+  '0x1929e33d2866d06e547eb02a1ddfcac6ba2304fe',
+  '0xdf8dc07030a0e578d475ca9582f2e87b29eeba3d',
+  '0xf719ebbc5080aee09e38909764b897e0bf01a9b0',
+  '0x0db2fbf8357617172a3b852bc2ac3054dba1d402',
+])
 
 export const ORDER_STATUS = {
   NONE: 0,
@@ -137,19 +149,24 @@ function isContractRevert(err: unknown): boolean {
 
 export function requireEscrowAddress(env: Env): Address {
   const raw = env.VITE_P2P_ESCROW_ADDRESS?.trim()
-  if (!raw || !isAddress(raw)) {
-    throw new Error('escrow_not_configured')
+  if (raw && isAddress(raw)) {
+    if (!isTestnetEnv(env) && TESTNET_ONLY_ESCROWS.has(raw.toLowerCase())) {
+      return DEFAULT_MAINNET_USDC_ESCROW
+    }
+    return raw
   }
-  return raw
+  return isTestnetEnv(env) ? DEFAULT_TESTNET_USDC_ESCROW : DEFAULT_MAINNET_USDC_ESCROW
 }
 
 export function resolveEurcEscrowAddress(env: Env): Address {
   const raw = env.VITE_P2P_EURC_ESCROW_ADDRESS?.trim()
-  return raw && isAddress(raw)
-    ? raw
-    : isTestnetEnv(env)
-      ? DEFAULT_TESTNET_EURC_ESCROW
-      : DEFAULT_MAINNET_EURC_ESCROW
+  if (raw && isAddress(raw)) {
+    if (!isTestnetEnv(env) && TESTNET_ONLY_ESCROWS.has(raw.toLowerCase())) {
+      return DEFAULT_MAINNET_EURC_ESCROW
+    }
+    return raw
+  }
+  return isTestnetEnv(env) ? DEFAULT_TESTNET_EURC_ESCROW : DEFAULT_MAINNET_EURC_ESCROW
 }
 
 export function resolveCirbtcEscrowAddress(env: Env): Address {

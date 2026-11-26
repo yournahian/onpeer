@@ -697,7 +697,7 @@ async function handleApi(
 
       // M8: Scheduled job health & queue counters for Admin panel (with head - cursor lag + verifier gas balance)
       if (req.method === 'GET' && path === '/admin/health') {
-        const rpc = createArcPublicClient()
+        const rpc = createArcPublicClient(env)
         const [health, headBlock, verifierBalanceWei] = await Promise.all([
           runDb(env, async (db) => {
             const [cronRows, outboxRows, jobRows, cursorRows] = await Promise.all([
@@ -965,6 +965,7 @@ async function handleApi(
     if (err instanceof CryptoTamperError) {
       return json(400, { error: 'invalid_ciphertext' })
     }
+    console.error('[api] unhandled error', path, err instanceof Error ? err.message : String(err))
     return json(500, { error: 'server_error' })
   }
 }
