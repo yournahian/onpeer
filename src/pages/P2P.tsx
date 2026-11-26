@@ -30,16 +30,26 @@ export default function P2PPage() {
   const arbiter = useArbiter()
   const backupArbiter = useBackupArbiter()
   const { blocked } = useEligibility()
-  const [selectedTab, setTab] = useState<TabId>(() => {
+  const VALID_P2P_TABS: readonly TabId[] = ['market', 'orders', 'ads', 'chat', 'account', 'arbiter']
+  const [selectedTab, setSelectedTab] = useState<TabId>(() => {
     if (typeof window !== 'undefined') {
       const hp = new URLSearchParams(window.location.hash.replace(/^#/, ''))
       const sp = new URLSearchParams(window.location.search)
       if (hp.has('verify_email') || hp.has('unsubscribe') || hp.has('kyc_return') || sp.has('kyc_return')) {
         return 'account'
       }
+      const qTab = sp.get('tab') as TabId | null
+      if (qTab && VALID_P2P_TABS.includes(qTab)) return qTab
     }
     return 'market'
   })
+  const setTab = (next: TabId) => {
+    setSelectedTab(next)
+    replaceQuery((p) => {
+      if (next === 'market') p.delete('tab')
+      else p.set('tab', next)
+    })
+  }
   const [postOpen, setPostOpen] = useState(false)
   const [chatOrderId, setChatOrderId] = useState<bigint | null>(null)
   const [chatSeed, setChatSeed] = useState(0)

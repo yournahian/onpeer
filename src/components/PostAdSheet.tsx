@@ -347,34 +347,6 @@ function PostAdForm({
     !problem &&
     (!isSell || sellDetailsReady)
 
-  const updateActiveDraft = (
-    patch: Partial<{
-      holderName: string
-      accountNumber: string
-      bankOrBranch: string
-      branchName: string
-      routingNumber: string
-      notes: string
-    }>,
-  ) => {
-    if (activeVaultBit === undefined) return
-    setMethodDrafts((prev) => {
-      const cur = prev[activeVaultBit] ?? {
-        holderName,
-        accountNumber: '',
-        bankOrBranch: '',
-        branchName: '',
-        routingNumber: '',
-        notes: '',
-      }
-      const next = { ...cur, ...patch }
-      return { ...prev, [activeVaultBit]: next }
-    })
-    if (patch.holderName !== undefined) {
-      setHolderName(patch.holderName)
-    }
-  }
-
   const toggle = (bit: number) => {
     const removing = bits.includes(bit)
     const nextBits = removing ? bits.filter((x) => x !== bit) : [...bits, bit]
@@ -1047,115 +1019,90 @@ function PostAdForm({
                     )}
                   </div>
 
-                  <div className="grid items-end gap-2.5 sm:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  <div className="grid items-start gap-2.5 sm:grid-cols-2">
+                    <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
                         Account Holder Name (KYC)
                       </span>
-                      <input
-                        value={activeVaultDraft.holderName}
-                        onChange={(e) => updateActiveDraft({ holderName: e.target.value.slice(0, 80) })}
-                        placeholder="Full name on your bank / mobile wallet"
-                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                      <p className="mt-0.5 text-xs font-semibold text-[var(--p2p-ink)]">
+                        {activeVaultDraft.holderName || '—'}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2">
+                      <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
                         {activeVaultMethod.name === 'Bank transfer'
-                          ? 'Bank Account Number / IBAN *'
-                          : `${activeVaultMethod.name} Number / ID *`}
+                          ? 'Bank Account Number / IBAN'
+                          : `${activeVaultMethod.name} Number / ID`}
                       </span>
-                      <input
-                        value={activeVaultDraft.accountNumber}
-                        onChange={(e) => updateActiveDraft({ accountNumber: e.target.value.slice(0, 160) })}
-                        placeholder={
-                          activeVaultMethod.name === 'Bank transfer'
-                            ? 'e.g. 01234567896'
-                            : activeVaultMethod.name === 'UPI'
-                              ? 'e.g. name@okaxis'
-                              : 'e.g. 017XXXXXXXX'
-                        }
-                        className="p2p-input p2p-mono h-10 w-full rounded-lg px-3 text-xs font-bold"
-                      />
-                    </label>
-
-                    <label className="block">
-                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                        {activeVaultMethod.name === 'Bank transfer' ? 'Bank Name' : 'Account Type'}
-                      </span>
-                      <input
-                        value={activeVaultDraft.bankOrBranch}
-                        onChange={(e) => updateActiveDraft({ bankOrBranch: e.target.value.slice(0, 120) })}
-                        placeholder={activeVaultMethod.name === 'Bank transfer' ? 'e.g. The City Bank' : 'e.g. Personal'}
-                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
-                      />
-                    </label>
-
-                    {activeVaultMethod.name === 'Bank transfer' && (
-                      <>
-                        <label className="block">
-                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                            Branch Name (Optional)
-                          </span>
-                          <input
-                            value={activeVaultDraft.branchName}
-                            onChange={(e) => updateActiveDraft({ branchName: e.target.value.slice(0, 120) })}
-                            placeholder="e.g. Gulshan Branch"
-                            className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                            Routing Number (Optional)
-                          </span>
-                          <input
-                            value={activeVaultDraft.routingNumber}
-                            onChange={(e) => updateActiveDraft({ routingNumber: e.target.value.slice(0, 60) })}
-                            placeholder="e.g. 225261729"
-                            className="p2p-input p2p-mono h-10 w-full rounded-lg px-3 text-xs"
-                          />
-                        </label>
-                      </>
+                      <p className="p2p-mono mt-0.5 text-xs font-bold text-[var(--p2p-ink)]">
+                        {activeVaultDraft.accountNumber || 'Not saved in User Center'}
+                      </p>
+                    </div>
+                    {activeVaultDraft.bankOrBranch && (
+                      <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2">
+                        <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                          {activeVaultMethod.name === 'Bank transfer' ? 'Bank Name' : 'Account Type'}
+                        </span>
+                        <p className="mt-0.5 text-xs text-[var(--p2p-ink)]">{activeVaultDraft.bankOrBranch}</p>
+                      </div>
                     )}
-
-                    <label className="block sm:col-span-2">
-                      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                        Method Remarks (Optional — Shown Only on {activeVaultMethod.name})
-                      </span>
-                      <input
-                        value={activeVaultDraft.notes}
-                        onChange={(e) => updateActiveDraft({ notes: e.target.value.slice(0, 160) })}
-                        placeholder="e.g. Send Money only"
-                        className="p2p-input h-10 w-full rounded-lg px-3 text-xs"
-                      />
-                    </label>
+                    {activeVaultDraft.notes && (
+                      <div className="rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 py-2">
+                        <span className="block text-[10px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                          Remarks
+                        </span>
+                        <p className="mt-0.5 text-xs text-[var(--p2p-ink)]">{activeVaultDraft.notes}</p>
+                      </div>
+                    )}
                   </div>
 
                   {missingSealedMethod && (
-                    <p className="text-[11px] font-semibold text-[#FF5A00]">
-                      Use the arrows above to ensure every selected payment method has an account number.
-                    </p>
+                    <div className="rounded-lg border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-2.5 text-[11px] text-[var(--p2p-warn-ink)]">
+                      <p className="font-semibold">
+                        Some selected payment methods are not saved in your User Center yet. Add them in{' '}
+                        <strong>User Center → P2P Payment Methods</strong> first, then pick them here.
+                      </p>
+                      <a
+                        href="/p2p?tab=account"
+                        className="mt-1.5 inline-flex items-center rounded-md bg-[#FF5A00] px-2.5 py-1 text-[11px] font-bold text-white hover:opacity-90"
+                      >
+                        Go to User Center → Payment Methods
+                      </a>
+                    </div>
                   )}
                 </div>
               )}
             </div>
           ) : isSell ? (
-            <label className="block">
-              <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
-                <span>Receiving Account Details</span>
-                <span className="p2p-mono normal-case">
-                  {detailBytes}/{DETAILS_MAX_BYTES}B
+            savedMethods.some((sm) => bits.includes(sm.methodBit)) ? (
+              <div className="block">
+                <span className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  <span>Selected Receiving Account Details (Read-Only)</span>
+                  <span className="p2p-mono normal-case">
+                    {detailBytes}/{DETAILS_MAX_BYTES}B
+                  </span>
                 </span>
-              </span>
-              <textarea
-                value={details}
-                onChange={(e) => setDetails(e.target.value)}
-                rows={2}
-                placeholder="e.g. bKash Personal 01XXXXXXXXX (Account Holder Name) or name@upi"
-                className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
-              />
-            </label>
+                <div className="min-h-[84px] rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 py-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
+                  <p className="p2p-mono whitespace-pre-wrap break-words">
+                    {details || 'Tap one of your saved payment methods above to select it.'}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3.5 text-xs leading-relaxed text-[var(--p2p-warn-ink)]">
+                <p className="font-bold">Add a payment method in User Center first</p>
+                <p className="mt-1 opacity-90">
+                  Payment methods cannot be typed manually during ad creation. Please add your bKash, Nagad, or Bank
+                  account in <strong>User Center → P2P Payment Methods</strong> first, then pick it here.
+                </p>
+                <a
+                  href="/p2p?tab=account"
+                  className="mt-2 inline-flex items-center rounded-lg bg-[#FF5A00] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90"
+                >
+                  Open User Center → Payment Methods
+                </a>
+              </div>
+            )
           ) : null}
 
           {(useSealedVault || !isSell) && publicTerms.trim() && (

@@ -33,6 +33,14 @@ import { JobHealthCard } from '@/components/admin/JobHealthCard'
 
 type Tab = 'overview' | 'disputes' | 'filings' | 'accounts' | 'controls' | 'ai'
 
+const VALID_TABS: readonly Tab[] = ['overview', 'disputes', 'filings', 'accounts', 'controls', 'ai']
+
+function initialAdminTab(): Tab {
+  if (typeof window === 'undefined') return 'overview'
+  const raw = new URLSearchParams(window.location.search).get('tab') as Tab | null
+  return raw && VALID_TABS.includes(raw) ? raw : 'overview'
+}
+
 function Tile({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div className="glass spotlight rounded-2xl p-4">
@@ -75,7 +83,16 @@ export default function AdminPage() {
   const paused = usePaused('USDC')
   const feeConfig = useFeeConfig('USDC')
   const verifier = useVerifier('USDC')
-  const [tab, setTab] = useState<Tab>('overview')
+  const [tab, setTabState] = useState<Tab>(() => initialAdminTab())
+  const setTab = (next: Tab) => {
+    setTabState(next)
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href)
+      if (next === 'overview') url.searchParams.delete('tab')
+      else url.searchParams.set('tab', next)
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+    }
+  }
   const [caseQuery, setCaseQuery] = useState('')
   const [caseAsset, setCaseAsset] = useState<P2pAsset>('USDC')
   const [profiles, setProfiles] = useState<Map<string, AdminPartyProfile>>(() => new Map())

@@ -19,11 +19,11 @@ export interface UseChatResult {
   counterpartyReadAt: string | null
 }
 
-const POLL_INTERVAL_MS = 5_000
+const POLL_INTERVAL_MS = 2_000
 
 /**
  * Encrypted offchain chat for an order.
- * Polls every 5s while `active` is true (order is in a live state).
+ * Polls every 2s while `active` is true (order is in a live state) for near-instant messages & Seen receipts.
  */
 export function useChat(orderId: bigint | null, active = true): UseChatResult {
   const session = useBackendSession()
@@ -134,10 +134,24 @@ export function useChat(orderId: bigint | null, active = true): UseChatResult {
     }
     if (intervalRef.current) clearInterval(intervalRef.current)
     intervalRef.current = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return
       void fetchMessages(false)
     }, POLL_INTERVAL_MS)
+    const onFocusOrVisible = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        void fetchMessages(false)
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', onFocusOrVisible)
+      document.addEventListener('visibilitychange', onFocusOrVisible)
+    }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', onFocusOrVisible)
+        document.removeEventListener('visibilitychange', onFocusOrVisible)
+      }
     }
   }, [orderId, session, active, fetchMessages])
 

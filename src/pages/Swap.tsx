@@ -5,7 +5,7 @@ import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import type { SwapEstimate } from '@circle-fin/app-kit'
-import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info } from 'lucide-react'
+import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
@@ -328,6 +328,19 @@ export default function SwapPage() {
             </div>
             {isReviewed && (
               <>
+                <div className="flex items-center justify-between pt-0.5">
+                  <span style={{ color: 'var(--subtle)' }}>Live quote</span>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void review()}
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors hover:opacity-90 disabled:opacity-50"
+                    style={{ background: 'var(--fill-2)', color: 'var(--accent)' }}
+                  >
+                    <RefreshCw className={`size-3 ${busy === 'quote' ? 'animate-spin' : ''}`} />
+                    {busy === 'quote' ? 'Refreshing...' : 'Refresh quote'}
+                  </button>
+                </div>
                 {(reviewed.estimate.fees ?? []).map((f, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className="capitalize" style={{ color: 'var(--subtle)' }}>

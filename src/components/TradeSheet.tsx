@@ -770,50 +770,58 @@ function MobileOrderScreen({
           </div>
 
           <div className="space-y-2.5 border-t border-[var(--p2p-border)] pt-3">
-              {s.matchingSaved.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="block text-[11px] font-bold text-[#FF5A00]">
-                    Select Saved Payment Method (Auto-Fill)
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {s.matchingSaved.map((sm) => {
-                      const selected = s.activeSaved?.id === sm.id
-                      return (
-                        <button
-                          key={sm.id}
-                          type="button"
-                          onClick={() => s.selectSavedMethod(sm)}
-                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${
-                            selected
-                              ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
-                              : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)]'
-                          }`}
-                        >
-                          <MethodLogo name={sm.methodName} size={13} />
-                          <span>{sm.methodName}</span>
-                          <span className="p2p-mono text-[11px]">••{sm.accountNumber.slice(-4)}</span>
-                        </button>
-                      )
-                    })}
+              {s.matchingSaved.length > 0 ? (
+                <>
+                  <div className="space-y-1.5">
+                    <span className="block text-[11px] font-bold text-[#FF5A00]">
+                      Select Saved Payment Method
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {s.matchingSaved.map((sm) => {
+                        const selected = s.activeSaved?.id === sm.id
+                        return (
+                          <button
+                            key={sm.id}
+                            type="button"
+                            onClick={() => s.selectSavedMethod(sm)}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold ${
+                              selected
+                                ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
+                                : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)]'
+                            }`}
+                          >
+                            <MethodLogo name={sm.methodName} size={13} />
+                            <span>{sm.methodName}</span>
+                            <span className="p2p-mono text-[11px]">••{sm.accountNumber.slice(-4)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
+                  <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface-solid)] p-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
+                    <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-[var(--p2p-muted)]">
+                      Selected Receiving Details (Read-Only)
+                    </span>
+                    <p className="p2p-mono whitespace-pre-wrap break-words">
+                      {s.details || 'Select a saved payment method above.'}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3 text-xs leading-relaxed text-[var(--p2p-warn-ink)]">
+                  <p className="font-bold">No matching payment method saved</p>
+                  <p className="mt-1 opacity-90">
+                    Please add one of this ad&apos;s accepted payment methods in{' '}
+                    <strong className="underline">User Center → P2P Payment Methods</strong> first, then return here to pick it.
+                  </p>
+                  <a
+                    href="/p2p?tab=account"
+                    className="mt-2 inline-flex items-center gap-1 rounded-lg bg-[#FF5A00] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90"
+                  >
+                    Go to User Center → Payment Methods
+                  </a>
                 </div>
               )}
-
-              {s.isSealedBuyAd && (
-                <input
-                  value={s.holderName}
-                  onChange={(e) => s.setHolderName(e.target.value.slice(0, 80))}
-                  placeholder="Account holder full name"
-                  className="p2p-input h-10 w-full rounded-lg !bg-[var(--p2p-surface-solid)] px-3 text-xs font-medium"
-                />
-              )}
-              <textarea
-                value={s.details}
-                onChange={(e) => s.setDetails(e.target.value)}
-                rows={2}
-                placeholder="Receiving account number (e.g. bKash Personal 01XXXXXXXXX)"
-                className="p2p-input p2p-mono w-full resize-none rounded-lg !bg-[var(--p2p-surface-solid)] px-3 py-2 text-xs"
-              />
             </div>
         </div>
         )}
@@ -952,7 +960,7 @@ export function InlineOrderDrawer({
 
   return (
     <div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.28fr)]">
         {/* Left Side: Advertisers' Terms Only (SS2) */}
         <div className="flex flex-col border-b border-[var(--p2p-border)] pb-5 lg:border-b-0 lg:border-r lg:pb-0 lg:pr-6">
           <div className="flex flex-1 flex-col space-y-3">
@@ -1169,68 +1177,72 @@ export function InlineOrderDrawer({
               </div>
 
               <div className="space-y-2.5">
-                {s.matchingSaved.length > 0 && (
-                  <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-2.5 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-bold text-[#FF5A00]">Saved Payment Methods (Auto-Fill)</span>
-                      <span className="text-[var(--p2p-muted)]">Select account</span>
+                {s.matchingSaved.length > 0 ? (
+                  <>
+                    <div className="rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] p-3 space-y-2">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-[#FF5A00]">Select Saved Payment Method</span>
+                        <span className="text-[var(--p2p-muted)]">From User Center</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {s.matchingSaved.map((sm) => {
+                          const selected = s.activeSaved?.id === sm.id
+                          return (
+                            <button
+                              key={sm.id}
+                              type="button"
+                              onClick={() => s.selectSavedMethod(sm)}
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors ${
+                                selected
+                                  ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
+                                  : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
+                              }`}
+                            >
+                              <MethodLogo name={sm.methodName} size={13} />
+                              <span>{sm.methodName}</span>
+                              <span className="p2p-mono text-[11px] opacity-90">••{sm.accountNumber.slice(-4)}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {s.matchingSaved.map((sm) => {
-                        const selected = s.activeSaved?.id === sm.id
-                        return (
-                          <button
-                            key={sm.id}
-                            type="button"
-                            onClick={() => s.selectSavedMethod(sm)}
-                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${
-                              selected
-                                ? 'border-[#FF5A00] bg-[#FF5A00] text-white'
-                                : 'border-[var(--p2p-border)] bg-[var(--p2p-surface)] text-[var(--p2p-ink)] hover:border-[#FF5A00]'
-                            }`}
-                          >
-                            <MethodLogo name={sm.methodName} size={13} />
-                            <span>{sm.methodName}</span>
-                            <span className="p2p-mono text-[11px] opacity-90">••{sm.accountNumber.slice(-4)}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
 
-                {s.isSealedBuyAd && (
-                  <div>
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="inline-flex items-center gap-1 font-medium text-[#FF5A00]">
-                        <Lock className="size-3" /> Account Holder Name (Encrypted Vault)
-                      </span>
+                    <div>
+                      <div className="mb-1.5 flex items-center justify-between text-xs">
+                        <span className="font-medium text-[var(--p2p-muted)]">
+                          {s.isSealedBuyAd ? 'Receiving Account (Encrypted Offchain)' : 'Your Receiving Payment Details'}
+                        </span>
+                        <span className="p2p-mono text-[11px] text-[var(--p2p-muted)]">
+                          Read-only • {s.isSealedBuyAd ? `${s.details.length}/400` : `${s.detailBytes}/${DETAILS_MAX_BYTES}B`}
+                        </span>
+                      </div>
+                      <div className="min-h-[96px] rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3.5 py-3 text-xs leading-relaxed text-[var(--p2p-ink)]">
+                        {s.isSealedBuyAd && s.holderName && (
+                          <p className="mb-1 text-[11px] font-semibold text-[#FF5A00]">
+                            Account Holder: {s.holderName}
+                          </p>
+                        )}
+                        <p className="p2p-mono whitespace-pre-wrap break-words">
+                          {s.details || 'Select a saved payment method above.'}
+                        </p>
+                      </div>
                     </div>
-                    <input
-                      value={s.holderName}
-                      onChange={(e) => s.setHolderName(e.target.value.slice(0, 80))}
-                      placeholder="Full name on your bank / mobile wallet"
-                      className="p2p-input h-10 w-full rounded-lg px-3 text-xs font-medium"
-                    />
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-[var(--p2p-warn-border)] bg-[var(--p2p-warn-bg)] p-3.5 text-xs leading-relaxed text-[var(--p2p-warn-ink)]">
+                    <p className="font-bold">Add a payment method in User Center first</p>
+                    <p className="mt-1 opacity-90">
+                      To sell on this offer, add one of the accepted payment methods in{' '}
+                      <strong>User Center → P2P Payment Methods</strong>, then return here to select it.
+                    </p>
+                    <a
+                      href="/p2p?tab=account"
+                      className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3 py-1.5 text-[11px] font-bold text-white hover:opacity-90"
+                    >
+                      Open User Center → Payment Methods
+                    </a>
                   </div>
                 )}
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-medium text-[var(--p2p-muted)]">
-                      {s.isSealedBuyAd ? 'Receiving Account (Encrypted Offchain)' : 'Your Receiving Payment Details'}
-                    </span>
-                    <span className="p2p-mono text-[var(--p2p-muted)]">
-                      {s.isSealedBuyAd ? `${s.details.length}/400` : `${s.detailBytes}/${DETAILS_MAX_BYTES}B`}
-                    </span>
-                  </div>
-                  <textarea
-                    value={s.details}
-                    onChange={(e) => s.setDetails(e.target.value)}
-                    rows={2}
-                    placeholder="e.g. bKash Personal 01XXXXXXXXX (Account Name) or name@upi"
-                    className="p2p-input p2p-mono w-full resize-none rounded-lg px-3 py-2 text-xs"
-                  />
-                </div>
               </div>
             </>
           )}
@@ -1366,7 +1378,7 @@ function TradePopupStage({
         exit={{ opacity: 0, scale: 0.97, y: 10 }}
         transition={{ duration: 0.2 }}
         onClick={(e) => e.stopPropagation()}
-        className="hidden max-h-[90dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] text-[var(--p2p-ink)] shadow-2xl md:flex"
+        className="hidden max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] text-[var(--p2p-ink)] shadow-2xl md:flex"
       >
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-5 py-3.5 sm:px-6">
           <div className="flex items-center gap-2.5">

@@ -349,8 +349,8 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
       </Panel>
 
       <Panel
-        title="Phase 2 privacy switches"
-        body="Keep both switches Off until the Phase 2 vault and browser encryption flow are deployed and tested end to end."
+        title="Privacy & proof switches"
+        body="Phase 2 encrypted vault and order chat are live on the Cloudflare Worker. Toggle these onchain switches to enforce sealed payment details or mandatory transfer proofs."
       >
         <div className="space-y-2">
           <div className="inner flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">

@@ -518,7 +518,8 @@ export function MyOrders({
                     return (
                       <li
                         key={idStr}
-                        className="grid items-start gap-4 px-5 py-4 text-xs transition-colors hover:bg-[var(--p2p-row-hover)] md:grid-cols-[155px_150px_130px_165px_1fr_150px]"
+                        onClick={() => onOpen(o.id)}
+                        className="grid cursor-pointer items-start gap-4 px-5 py-4 text-xs transition-colors hover:bg-[var(--p2p-row-hover)] md:grid-cols-[155px_150px_130px_165px_1fr_150px]"
                       >
                         {/* 1. Type / Date */}
                         <div className="space-y-1.5">
@@ -537,14 +538,20 @@ export function MyOrders({
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() => onOpen(o.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onOpen(o.id)
+                            }}
                             className="p2p-mono font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
                           >
                             {formatScopedOrderLabel(o.id)}
                           </button>
                           <button
                             type="button"
-                            onClick={() => void copyOrderNumber(o.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void copyOrderNumber(o.id)
+                            }}
                             aria-label={`Copy order ${displayIdStr}`}
                             className="rounded p-1 text-[var(--p2p-muted)] hover:text-[var(--p2p-ink)]"
                           >
@@ -571,14 +578,22 @@ export function MyOrders({
                         <div className="space-y-1.5">
                           <button
                             type="button"
-                            onClick={() => (onOpenTrader ? onOpenTrader(peerWallet) : onOpen(o.id))}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (onOpenTrader) onOpenTrader(peerWallet)
+                              else onOpen(o.id)
+                            }}
                             className="block max-w-[200px] truncate font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
                           >
                             {peerLabel}
                           </button>
                           <button
                             type="button"
-                            onClick={() => (onOpenChat ? onOpenChat(o.id) : onOpen(o.id))}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (onOpenChat) onOpenChat(o.id)
+                              else onOpen(o.id)
+                            }}
                             className="inline-flex items-center gap-1 rounded border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--p2p-ink)] hover:border-[#FF5A00] hover:text-[#FF5A00]"
                           >
                             <span>Chat</span>
@@ -590,7 +605,10 @@ export function MyOrders({
                         <div className="space-y-1.5">
                           <button
                             type="button"
-                            onClick={() => onOpen(o.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onOpen(o.id)
+                            }}
                             className="block font-semibold text-[var(--p2p-ink)] underline decoration-[var(--p2p-muted)]/60 underline-offset-2 hover:text-[#FF5A00]"
                           >
                             {compactOrderStatusLabel(o.status)}
@@ -600,6 +618,7 @@ export function MyOrders({
                               href={txUrl}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
                               title={txHash ?? 'View on Arc Explorer'}
                               className="p2p-mono inline-flex items-center gap-1 text-[11px] font-bold text-[#FF5A00] hover:underline"
                             >
