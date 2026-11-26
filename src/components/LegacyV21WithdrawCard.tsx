@@ -46,12 +46,12 @@ async function fetchLegacyFunds(
   address: Address,
   publicClient: NonNullable<ReturnType<typeof usePublicClient>>,
 ): Promise<LegacyFundsState> {
-  const [allAds, claimable, margin, marginWd, ownerAddr, feesAccrued] = await Promise.all([
+  const [userAdIds, claimable, margin, marginWd, ownerAddr, feesAccrued] = await Promise.all([
     publicClient.readContract({
       address: LEGACY_V21_USDC_ESCROW,
       abi: p2pEscrowAbi,
-      functionName: 'getAds',
-      args: [1n, 100n],
+      functionName: 'getUserAdIds',
+      args: [address],
     }),
     publicClient.readContract({
       address: LEGACY_V21_USDC_ESCROW,
@@ -84,10 +84,21 @@ async function fetchLegacyFunds(
   ])
 
   const me = address.toLowerCase()
+  const adDetails = await Promise.all(
+    userAdIds.map((id) =>
+      publicClient.readContract({
+        address: LEGACY_V21_USDC_ESCROW,
+        abi: p2pEscrowAbi,
+        functionName: 'getAd',
+        args: [id],
+      }),
+    ),
+  )
+
   const openSellAds: LegacyAdItem[] = []
-  allAds.forEach((ad, idx) => {
-    if (ad.maker.toLowerCase() === me && ad.side === 0 && !ad.closed && ad.available > 0n) {
-      openSellAds.push({ id: BigInt(idx + 1), available: ad.available })
+  adDetails.forEach((ad, idx) => {
+    if (ad.side === 0 && !ad.closed && ad.available > 0n) {
+      openSellAds.push({ id: userAdIds[idx], available: ad.available })
     }
   })
 
