@@ -16,6 +16,7 @@ import { TraderProfileView } from '@/components/TraderProfileView'
 import { PostAdSheet } from '@/components/PostAdSheet'
 import { OrderRoom } from '@/components/OrderRoom'
 import { AccountPanel } from '@/components/AccountPanel'
+import { LegacyV21WithdrawCard } from '@/components/LegacyV21WithdrawCard'
 import { AccountSetup, getOnboardingStage } from '@/components/AccountSetup'
 import { useEligibility } from '@/hooks/useEligibility'
 
@@ -257,6 +258,7 @@ export default function P2PPage() {
             />
           ) : (
             <>
+              <LegacyV21WithdrawCard />
               {tab === 'market' && (
                 <Market
                   key={`${deepMode ?? ''}:${deepCurrency ?? ''}`}
