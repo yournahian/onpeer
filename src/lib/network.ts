@@ -25,13 +25,14 @@ export const arcMainnet = defineChain({
 })
 
 function detectTestnet(): boolean {
-  const envNet = (import.meta.env.VITE_ARC_NETWORK as string | undefined)?.trim().toLowerCase()
-  if (envNet === 'testnet') return true
-  if (envNet === 'mainnet') return false
-  if (typeof window !== 'undefined' && window.location.hostname.toLowerCase().startsWith('testnet.')) {
-    return true
+  // Hostname always wins in the browser so testnet.onpeer.xyz runs Arc Testnet even when built with VITE_ARC_NETWORK=mainnet
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname.toLowerCase()
+    if (host.startsWith('testnet.')) return true
+    if (host === 'app.onpeer.xyz' || host === 'onpeer.xyz' || host === 'www.onpeer.xyz') return false
   }
-  return false
+  const envNet = (import.meta.env.VITE_ARC_NETWORK as string | undefined)?.trim().toLowerCase()
+  return envNet === 'testnet'
 }
 
 /** True when running on `testnet.onpeer.xyz` or with `VITE_ARC_NETWORK=testnet`; false (Arc Mainnet) by default. */
