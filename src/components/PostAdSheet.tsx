@@ -279,7 +279,7 @@ function PostAdForm({
   if (priceE6 > MAX_FIAT_PRICE_E6) {
     step1Problem = 'Exchange rate exceeds the maximum supported limit.'
   } else if (buyAdBlocked) {
-    step1Problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades (you have ${account.ordersCompleted}).`
+    step1Problem = `Buy ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades with different counterparties (you have ${account.ordersCompleted}).`
   } else if (!isSell && isConnected && balance !== undefined && listingFee > balance) {
     step1Problem = `Insufficient wallet balance for the ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee (${formatUsdcAmount(balance, undefined, asset)} ${asset} available).`
   } else if (totalRaw > 0n && minRaw > 0n && maxRaw > 0n) {
@@ -1200,7 +1200,7 @@ function PostAdForm({
                   ? `Total approval & pull: ${formatUsdcAmount(requiredUsdc, undefined, asset)} ${asset} (${totalRaw > 0n ? formatUsdcAmount(totalRaw, undefined, asset) : '0.00'} ${asset} escrow + ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee). Refreshing ads & trading are free.`
                   : account?.merchant
                     ? `Verified Merchant active — ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee pulled on creation; refreshing & trades are free.`
-                    : `Buy Ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades, plus ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee.`}
+                    : `Buy Ads require Merchant Margin >= ${formatUsdcAmount(minMerchantMargin, undefined, asset)} ${asset} or ${BUY_AD_MIN_COMPLETED}+ completed trades with different counterparties, plus ${formatUsdcAmount(listingFee, undefined, asset)} ${asset} listing fee.`}
               </span>
             </div>
           </div>
