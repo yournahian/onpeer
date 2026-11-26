@@ -116,6 +116,7 @@ type DesktopUserCenterTab =
   | 'follows'
   | 'restrictions'
   | 'notifications'
+  | 'tier_kyc'
 
 function isValidDecimalInput(v: string, maxDecimals: number): boolean {
   if (!/^\d*\.?\d*$/.test(v)) return false
@@ -157,7 +158,10 @@ function resolveInitialDesktopTab(initialSection?: UserCenterQuickTarget): Deskt
   if (typeof window !== 'undefined') {
     const hp = new URLSearchParams(window.location.hash.replace(/^#/, ''))
     const sp = new URLSearchParams(window.location.search)
-    if (hp.has('kyc_return') || sp.has('kyc_return') || hp.has('verify_email') || hp.has('unsubscribe')) {
+    if (hp.has('kyc_return') || sp.has('kyc_return')) {
+      return 'tier_kyc'
+    }
+    if (hp.has('verify_email') || hp.has('unsubscribe')) {
       return 'notifications'
     }
   }
@@ -1293,38 +1297,39 @@ export function AccountPanel({
         </div>
       </section>
 
-      {/* Optional Inline Drawer for Merchant Margin or Help Center when opened from Banner / More Menu */}
-      {desktopOverlay === 'merchant' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-extrabold text-[var(--p2p-ink)]">Become a Merchant</h2>
-            <button
-              type="button"
-              onClick={() => setDesktopOverlay(null)}
-              className="text-xs font-bold text-[#FF5A00] hover:underline"
+      {/* Clean Modal Popup for Become a Merchant or P2P Help Center */}
+      {desktopOverlay !== null &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="p2p-terminal fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4 backdrop-blur-md"
+            onClick={() => setDesktopOverlay(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={desktopOverlay === 'merchant' ? 'Become a Merchant' : 'P2P Help Center'}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[var(--p2p-border-active)] bg-[var(--p2p-surface-solid)] p-5 shadow-2xl sm:p-6"
             >
-              Close
-            </button>
-          </div>
-          {renderMerchantMarginSection()}
-        </div>
-      )}
-
-      {desktopOverlay === 'help' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-extrabold text-[var(--p2p-ink)]">P2P Help Center</h2>
-            <button
-              type="button"
-              onClick={() => setDesktopOverlay(null)}
-              className="text-xs font-bold text-[#FF5A00] hover:underline"
-            >
-              Close
-            </button>
-          </div>
-          {renderHelpSection()}
-        </div>
-      )}
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-[var(--p2p-border)] pb-3">
+                <h2 className="text-base font-extrabold text-[var(--p2p-ink)]">
+                  {desktopOverlay === 'merchant' ? 'Become a Merchant' : 'P2P Help Center'}
+                </h2>
+                <button
+                  type="button"
+                  aria-label="Close"
+                  onClick={() => setDesktopOverlay(null)}
+                  className="inline-flex size-8 items-center justify-center rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[var(--p2p-muted)] transition-colors hover:border-[#FF5A00] hover:text-[var(--p2p-ink)]"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+              {desktopOverlay === 'merchant' ? renderMerchantMarginSection() : renderHelpSection()}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* 6 Horizontal Underline Tabs inside High-Contrast Bar (Exact SS 4 — Readable over Ribbon) */}
       <div className="flex flex-wrap items-center gap-6 rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] px-5 pt-3 shadow-sm">
@@ -1335,6 +1340,7 @@ export function AccountPanel({
           { id: 'follows' as const, label: 'Follows' },
           { id: 'restrictions' as const, label: 'Restrictions Removal Center' },
           { id: 'notifications' as const, label: 'Notification Settings' },
+          { id: 'tier_kyc' as const, label: 'Tier & KYC' },
         ].map((t) => {
           const active = desktopTab === t.id
           return (
@@ -1436,6 +1442,153 @@ export function AccountPanel({
       {desktopTab === 'notifications' && (
         <div className="space-y-5">
           <AccountSetup />
+        </div>
+      )}
+
+      {desktopTab === 'tier_kyc' && (
+        <div className="space-y-5">
+          {/* Current Account Tier & KYC Summary */}
+          <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-[var(--p2p-ink)]">
+                  Your Account Tier &amp; Trading Limits
+                </h3>
+                <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
+                  Per-order caps scale automatically with your completed trade history, account age, Merchant Margin, and KYC level.
+                </p>
+              </div>
+              {renderAssetSelectorPills()}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Current Tier
+                </span>
+                <span className="p2p-mono mt-1 block text-base font-extrabold text-[#FF5A00]">
+                  Tier {account?.tier ?? 0} · {(TIER_TABLE[account?.tier ?? 0] ?? TIER_TABLE[0]).label}
+                </span>
+              </div>
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Per-Order Cap ({selectedAsset})
+                </span>
+                <span className="p2p-mono mt-1 block text-base font-extrabold text-[var(--p2p-ink)]">
+                  {account ? formatOrderCap(account.orderCap, selectedAsset) : `200 ${selectedAsset}`}
+                </span>
+              </div>
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  KYC Level
+                </span>
+                <span className="p2p-mono mt-1 block text-base font-extrabold text-[var(--p2p-ink)]">
+                  {kyc.verified
+                    ? `Verified L${kyc.level}`
+                    : myAccountProfile?.kycStatus === 'approved'
+                      ? `Approved L${myAccountProfile.kycLevel || 2}`
+                      : 'L0 (Unverified)'}
+                </span>
+              </div>
+              <div className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-[var(--p2p-muted)]">
+                  Completed Trades
+                </span>
+                <span className="p2p-mono mt-1 block text-base font-extrabold text-[var(--p2p-ink)]">
+                  {account?.ordersCompleted ?? 0}
+                </span>
+              </div>
+            </div>
+
+            {/* Progressive Tier Breakdown Table */}
+            <div className="overflow-x-auto rounded-xl border border-[var(--p2p-border)]">
+              <table className="w-full min-w-[520px] text-left text-xs">
+                <thead className="border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[11px] uppercase tracking-wider text-[var(--p2p-muted)]">
+                  <tr>
+                    <th className="px-4 py-2.5 font-bold">Tier</th>
+                    <th className="px-4 py-2.5 font-bold">Qualification Criteria</th>
+                    <th className="px-4 py-2.5 font-bold">Per-Order Cap</th>
+                    <th className="px-4 py-2.5 text-right font-bold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--p2p-border)]">
+                  {[
+                    { tier: 0, name: 'Tier 0 — Starter', criteria: 'New wallet (0 qualifying trades)', cap: `200 ${selectedAsset}` },
+                    { tier: 1, name: 'Tier 1 — Active', criteria: '1+ completed trade OR 100+ USDC Merchant Margin', cap: `500 ${selectedAsset}` },
+                    { tier: 2, name: 'Tier 2 — Established', criteria: '5+ completed trades & ≥ 7 days account age', cap: `2,000 ${selectedAsset}` },
+                    { tier: 3, name: 'Tier 3 — Trusted', criteria: '20+ completed trades & ≥ 14 days account age', cap: 'Uncapped' },
+                  ].map((row) => {
+                    const isCurrent = (account?.tier ?? 0) === row.tier
+                    const unlocked = (account?.tier ?? 0) >= row.tier
+                    return (
+                      <tr key={row.tier} className={isCurrent ? 'bg-[var(--p2p-tint)]' : ''}>
+                        <td className="px-4 py-3 font-bold text-[var(--p2p-ink)]">{row.name}</td>
+                        <td className="px-4 py-3 text-[var(--p2p-muted)]">{row.criteria}</td>
+                        <td className="p2p-mono px-4 py-3 font-bold text-[var(--p2p-ink)]">{row.cap}</td>
+                        <td className="px-4 py-3 text-right">
+                          {isCurrent ? (
+                            <span className="rounded-full bg-[#FF5A00] px-2.5 py-0.5 text-[10px] font-bold text-white">
+                              Current
+                            </span>
+                          ) : unlocked ? (
+                            <span className="text-[11px] font-semibold text-emerald-400">Unlocked</span>
+                          ) : (
+                            <span className="text-[11px] text-[var(--p2p-muted)]">Locked</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* KYC Verification Levels Guide */}
+          <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-5 space-y-3.5">
+            <div>
+              <h3 className="text-sm font-extrabold text-[var(--p2p-ink)]">
+                KYC Verification Levels (Onchain)
+              </h3>
+              <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
+                Only your verification level &amp; expiry are recorded onchain — your personal documents are never stored on the blockchain.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                {
+                  level: 'L1 — Basic Verified',
+                  badge: 'Standard',
+                  desc: 'Identity verified onchain. Satisfies KYC gating when enabled and displays the Verified badge on your ads.',
+                },
+                {
+                  level: 'L2 — Full KYC (ID + Liveness)',
+                  badge: '+1 Tier Boost',
+                  desc: 'Completed via Didit ID & face check. Automatically boosts Tier 0, Tier 1, or Tier 2 accounts by +1 tier.',
+                },
+                {
+                  level: 'L3 — Business / KYB',
+                  badge: 'Coming Soon',
+                  desc: 'Reserved for institutional & high-volume verified desks with custom merchant verification.',
+                },
+              ].map((item) => (
+                <div
+                  key={item.level}
+                  className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-[var(--p2p-ink)]">{item.level}</span>
+                    <span className="rounded-full bg-[var(--p2p-tint)] px-2 py-0.5 text-[10px] font-bold text-[#FF5A00]">
+                      {item.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[var(--p2p-muted)]">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live KYC Action Panel */}
           <KycPanel />
         </div>
       )}

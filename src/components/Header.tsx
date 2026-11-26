@@ -57,13 +57,14 @@ export function Header({
   const { run, writeContractAsync, pendingKey } = useTx(activeAsset)
 
   const [moreOpen, setMoreOpen] = useState(false)
-  const [helpSubOpen, setHelpSubOpen] = useState(true)
+  const [helpSubOpen, setHelpSubOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
         setMoreOpen(false)
+        setHelpSubOpen(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)

@@ -299,8 +299,8 @@ unchecked {
         },
         callout: {
           kind: 'tip',
-          title: 'KYC Level-2 Tier Boost',
-          body: 'Completing Didit identity verification (recorded on-chain by the verifier role without storing PII on-chain) automatically elevates Tier 0, Tier 1, or Tier 2 accounts by +1 tier.',
+          title: 'KYC Verification Levels (L1 / L2 / L3)',
+          body: 'L1 (Basic Verified) satisfies onchain KYC checks. L2 (Full Didit ID + Liveness) automatically lifts Tier 0, Tier 1, or Tier 2 accounts by +1 tier with zero PII stored onchain. L3 is reserved for future Business/KYB desks.',
         },
       },
       {
@@ -748,7 +748,7 @@ export default function DocsPage() {
     ? activeSectionId
     : (activePage.sections[0]?.id ?? '')
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(DOC_CATEGORIES.map((c) => [c, true])),
+    Object.fromEntries(DOC_CATEGORIES.map((c) => [c, false])),
   )
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -970,7 +970,7 @@ export default function DocsPage() {
       <nav aria-label="Documentation navigation" className="space-y-5">
         {DOC_CATEGORIES.map((category) => {
           const pages = DOC_PAGES.filter((p) => p.category === category)
-          const expanded = openCategories[category] ?? true
+          const expanded = openCategories[category] ?? false
           return (
             <div key={category}>
               <button
@@ -978,12 +978,20 @@ export default function DocsPage() {
                 onClick={() =>
                   setOpenCategories((prev) => ({ ...prev, [category]: !expanded }))
                 }
-                className="flex w-full items-center justify-between px-2.5 py-1 text-left text-xs font-bold tracking-wide transition-colors hover:opacity-90"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold tracking-wide transition-colors hover:bg-[var(--fill-2)]"
                 style={{ color: 'var(--ink)' }}
               >
-                <span>{category}</span>
+                <span className="flex items-center gap-2">
+                  <span>{category}</span>
+                  <span
+                    className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+                    style={{ background: 'var(--fill-2)', color: 'var(--subtle)' }}
+                  >
+                    {pages.length}
+                  </span>
+                </span>
                 <ChevronDown
-                  className={`size-3.5 opacity-65 transition-transform duration-200 ${expanded ? '' : '-rotate-90'
+                  className={`size-3.5 opacity-65 transition-transform duration-200 ${expanded ? 'rotate-180' : ''
                     }`}
                 />
               </button>
@@ -1356,24 +1364,30 @@ export default function DocsPage() {
 
         {/* Column 2: Main Article Feed */}
         <main className="min-w-0 max-w-3xl pb-20">
-          {/* Eyebrow & Page Title */}
-          <div className="mb-8 border-b pb-6" style={{ borderColor: 'var(--border)' }}>
+          {/* Professional Hero Header Card */}
+          <div
+            className="mb-10 rounded-3xl border p-6 sm:p-7"
+            style={{
+              background: 'linear-gradient(145deg, color-mix(in srgb, var(--accent) 8%, var(--fill-1)), var(--fill-1))',
+              borderColor: 'var(--border-strong)',
+            }}
+          >
             <div className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#FF5A00]">
               <BookOpen className="size-3.5" />
-              <span>{activePage.category}</span>
+              <span className="uppercase tracking-wider">{activePage.category}</span>
               {activePage.badge && (
                 <span
-                  className="rounded-full px-2 py-0.5 text-[10px]"
-                  style={{ background: 'var(--fill-2)', color: 'var(--ink)' }}
+                  className="rounded-full border px-2.5 py-0.5 text-[10px] font-bold"
+                  style={{ background: 'var(--fill-2)', borderColor: 'var(--border)', color: 'var(--ink)' }}
                 >
                   {activePage.badge}
                 </span>
               )}
             </div>
-            <h1 className="display mt-2.5 text-2xl font-extrabold tracking-tight sm:text-4xl">
+            <h1 className="display mt-3 text-2xl font-extrabold tracking-tight sm:text-4xl">
               {activePage.title}
             </h1>
-            <p className="mt-3 text-sm leading-relaxed sm:text-base" style={{ color: 'var(--muted)' }}>
+            <p className="mt-3 text-sm leading-relaxed sm:text-[15px]" style={{ color: 'var(--muted)' }}>
               {activePage.shortDescription}
             </p>
           </div>
@@ -1387,9 +1401,12 @@ export default function DocsPage() {
                 data-doc-section={sec.id}
                 className="scroll-mt-28"
               >
-                <h2 className="display text-lg font-bold tracking-tight sm:text-2xl">
-                  {sec.title}
-                </h2>
+                <div className="flex items-center gap-2.5 border-b pb-2.5" style={{ borderColor: 'var(--border)' }}>
+                  <span className="h-5 w-1 rounded-full bg-[#FF5A00]" />
+                  <h2 className="display text-lg font-bold tracking-tight sm:text-2xl">
+                    {sec.title}
+                  </h2>
+                </div>
 
                 <div className="mt-3 space-y-3 text-sm leading-7" style={{ color: 'var(--muted)' }}>
                   {sec.paragraphs.map((p, idx) => (
@@ -1431,7 +1448,7 @@ export default function DocsPage() {
                       <thead>
                         <tr
                           className="border-b uppercase tracking-wider"
-                          style={{ borderColor: 'var(--border)', color: 'var(--subtle)' }}
+                          style={{ background: 'var(--fill-2)', borderColor: 'var(--border)', color: 'var(--subtle)' }}
                         >
                           {sec.table.headers.map((h) => (
                             <th key={h} className="px-4 py-3 font-bold">
@@ -1442,7 +1459,7 @@ export default function DocsPage() {
                       </thead>
                       <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
                         {sec.table.rows.map((row, rIdx) => (
-                          <tr key={rIdx}>
+                          <tr key={rIdx} className="transition-colors hover:bg-[var(--fill-2)]/60">
                             {row.map((cell, cIdx) => (
                               <td
                                 key={cIdx}
