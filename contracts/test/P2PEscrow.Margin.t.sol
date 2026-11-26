@@ -185,28 +185,41 @@ contract P2PEscrowMarginTest is P2PEscrowTestBase {
         _resolve(oidDisputed, true, false); // alice owes bob 5e6
         assertEq(esc.totalDebt(alice), 5e6);
 
-        // Exits still work while in debt: release existing order, closeAd, completeMarginWithdrawal
+        // Exits still work while in debt: release existing order, closeAd (auto-offsets 5e6 debt to bob), completeMarginWithdrawal
         _release(oidLive);
+        uint256 bBeforeClose = _bal(bob);
+        uint256 aBeforeClose = _bal(alice);
         vm.prank(alice);
         esc.closeAd(ad1);
+        assertEq(esc.totalDebt(alice), 0);
+        assertEq(_bal(bob) - bBeforeClose, 5e6);
+        assertEq(_bal(alice) - aBeforeClose, 75e6);
+
         vm.warp(block.timestamp + 7 days);
         vm.prank(alice);
         esc.completeMarginWithdrawal();
         assertEq(esc.margin(alice), 0);
 
-        // 1) depositMargin offsets debt first: deposit 3e6 -> 3e6 to bob, 0 to margin; then 10e6 -> 2e6 to bob, 8e6 to margin
-        uint256 b0 = _bal(bob);
-        vm.prank(alice);
-        esc.depositMargin(3e6);
-        assertEq(esc.totalDebt(alice), 2e6);
-        assertEq(esc.margin(alice), 0);
-        assertEq(_bal(bob), b0 + 3e6);
+        // 1) depositMargin offsets debt first: create a fresh 5e6 debt on bob, then deposit 3e6 -> 3e6 to carol, 0 to margin; then 10e6 -> 2e6 to carol, 8e6 to margin
+        uint256 adDeposit = _sell(carol, 100e6, 1e6, 100e6);
+        uint256 oidDeposit = _open(bob, adDeposit, 100e6); // bond = 5e6
+        _paid(oidDeposit);
+        _disputeBySeller(oidDeposit);
+        _resolve(oidDeposit, false, false); // bob owes carol 5e6
+        assertEq(esc.totalDebt(bob), 5e6);
 
-        vm.prank(alice);
+        uint256 cBeforeDep = _bal(carol);
+        vm.prank(bob);
+        esc.depositMargin(3e6);
+        assertEq(esc.totalDebt(bob), 2e6);
+        assertEq(esc.margin(bob), 0);
+        assertEq(_bal(carol), cBeforeDep + 3e6);
+
+        vm.prank(bob);
         esc.depositMargin(10e6);
-        assertEq(esc.totalDebt(alice), 0);
-        assertEq(esc.margin(alice), 8e6);
-        assertEq(_bal(bob), b0 + 5e6);
+        assertEq(esc.totalDebt(bob), 0);
+        assertEq(esc.margin(bob), 8e6);
+        assertEq(_bal(carol), cBeforeDep + 5e6);
 
         // 2) withdrawClaimable offsets debt first: give dave claimable 15e6 while blocked, then dave incurs 3e6 debt to alice
         uint256 ad2 = _sell(carol, 200e6, 1e6, 200e6);

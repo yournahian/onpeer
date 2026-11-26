@@ -615,4 +615,103 @@ contract P2PEscrowAddendumTest is P2PEscrowTestBase {
         _cancel(bob, oid);
         assertEq(_strikes(bob), 1);
     }
+
+    // ---------------------------------------------------------------- v2.2: Auto-debt offset on closeAd / margin / closed-ad cancel
+    function test_V22_CloseAd_OffsetsUnpaidDebtFirst_PartialAndFull() public {
+        // Case A: debt (2 USDC) < remaining ad balance (40 USDC)
+        uint256 ad1 = _sell(alice, 50e6, 1e6, 50e6);
+        uint256 o1 = _open(bob, ad1, 10e6);
+        _paid(o1);
+        vm.prank(alice);
+        esc.openDispute(o1);
+        vm.prank(arbiter);
+        esc.resolveDispute(o1, true, false, true); // alice owes 2 USDC bond to bob
+        assertEq(esc.totalDebt(alice), 2e6);
+
+        uint256 aliceBefore = _bal(alice);
+        uint256 bobBefore = _bal(bob);
+        vm.prank(alice);
+        esc.closeAd(ad1);
+
+        assertEq(esc.totalDebt(alice), 0);
+        assertEq(_bal(bob) - bobBefore, 2e6);
+        assertEq(_bal(alice) - aliceBefore, 38e6);
+
+        // Case B: debt (2 USDC) > remaining ad balance (1 USDC)
+        address seller2 = makeAddr("seller2");
+        usdc.mint(seller2, 50e6);
+        vm.prank(seller2);
+        usdc.approve(address(esc), type(uint256).max);
+        uint256 ad2 = _sell(seller2, 11e6, 1e6, 11e6);
+        uint256 o2 = _open(bob, ad2, 10e6);
+        _paid(o2);
+        vm.prank(seller2);
+        esc.openDispute(o2);
+        vm.prank(arbiter);
+        esc.resolveDispute(o2, true, false, true); // seller2 owes 2 USDC bond to bob
+        assertEq(esc.totalDebt(seller2), 2e6);
+
+        uint256 seller2Before = _bal(seller2);
+        bobBefore = _bal(bob);
+        vm.prank(seller2);
+        esc.closeAd(ad2);
+
+        assertEq(esc.totalDebt(seller2), 1e6);
+        assertEq(_bal(bob) - bobBefore, 1e6);
+        assertEq(_bal(seller2) - seller2Before, 0);
+    }
+
+    function test_V22_CompleteMarginWithdrawal_OffsetsUnpaidDebtFirst() public {
+        vm.prank(alice);
+        esc.depositMargin(100e6);
+        vm.prank(alice);
+        esc.requestMarginWithdrawal(100e6); // free margin = 0, pending = 100 USDC
+
+        uint256 adId = _sell(alice, 20e6, 1e6, 20e6);
+        uint256 oid = _open(bob, adId, 20e6);
+        _paid(oid);
+        vm.prank(alice);
+        esc.openDispute(oid);
+        vm.prank(arbiter);
+        esc.resolveDispute(oid, true, false, true); // free margin is 0 -> records 2 USDC debt to bob
+        assertEq(esc.totalDebt(alice), 2e6);
+
+        vm.warp(vm.getBlockTimestamp() + 7 days + 1);
+        uint256 aliceBefore = _bal(alice);
+        uint256 bobBefore = _bal(bob);
+        vm.prank(alice);
+        esc.completeMarginWithdrawal();
+
+        assertEq(esc.totalDebt(alice), 0);
+        assertEq(_bal(bob) - bobBefore, 2e6);
+        assertEq(_bal(alice) - aliceBefore, 98e6);
+    }
+
+    function test_V22_CancelOrderOnClosedSellAd_OffsetsUnpaidDebtFirst() public {
+        address buyer2 = makeAddr("buyer2");
+        uint256 adId = _sell(alice, 20e6, 1e6, 20e6);
+        uint256 o1 = _open(bob, adId, 10e6);
+        uint256 o2 = _open(buyer2, adId, 10e6);
+
+        // Close ad while both orders are open (available == 0)
+        vm.prank(alice);
+        esc.closeAd(adId);
+
+        // Alice loses o1 dispute -> owes 2 USDC bond debt to bob
+        _paid(o1);
+        vm.prank(alice);
+        esc.openDispute(o1);
+        vm.prank(arbiter);
+        esc.resolveDispute(o1, true, false, true);
+        assertEq(esc.totalDebt(alice), 2e6);
+
+        // buyer2 cancels o2 -> closed-ad refund (10 USDC) pays 2 USDC to bob first, 8 USDC to alice
+        uint256 aliceBefore = _bal(alice);
+        uint256 bobBefore = _bal(bob);
+        _cancel(buyer2, o2);
+
+        assertEq(esc.totalDebt(alice), 0);
+        assertEq(_bal(bob) - bobBefore, 2e6);
+        assertEq(_bal(alice) - aliceBefore, 8e6);
+    }
 }

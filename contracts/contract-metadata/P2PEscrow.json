@@ -1,13 +1,20 @@
 {
-  "contractAddress": "0xf719ebbc5080aee09e38909764b897e0bf01a9b0",
+  "contractAddress": "0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE",
   "network": "ARC-TESTNET",
   "deployerWalletId": "3c2464b2-8369-52e2-a782-800bbeca5396",
   "contract_code_path": "/home/user/app/contracts/P2PEscrow.sol",
   "contract_compiled_code_path": "/home/user/app/contracts/out/P2PEscrow.sol/P2PEscrow.json",
   "contract_network_and_links": {
-    "Arc Testnet": "https://explorer.testnet.arc.io/address/0xf719ebbc5080aee09e38909764b897e0bf01a9b0"
+    "Arc Testnet": "https://explorer.testnet.arc.io/address/0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE"
   },
   "contract_deployments": [
+    {
+      "chain": "Arc Testnet",
+      "address": "0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE",
+      "explorerUrl": "https://explorer.testnet.arc.io/address/0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE",
+      "txHash": "0x57ddf74b814166af13899cf032f5fd3f2b70302fb6e8a268d25e775e25346034",
+      "deployedAt": "2026-11-26T13:34:00.000Z"
+    },
     {
       "chain": "Arc Testnet",
       "address": "0xf719ebbc5080aee09e38909764b897e0bf01a9b0",

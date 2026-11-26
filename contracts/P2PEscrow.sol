@@ -7,7 +7,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title P2PEscrow
-/// @notice Non-custodial USDC escrow v2.1 with a flat per-ad listing fee (0% trade fee); governance cannot withdraw escrow.
+/// @notice Non-custodial USDC escrow v2.2 with a flat per-ad listing fee (0% trade fee); governance cannot withdraw escrow.
 /// @dev Pass Arc's six-decimal ERC-20 USDC view, 0x3600000000000000000000000000000000000000.
 ///      No native currency is accepted. Fiat payment is attested by users, not verified on-chain.
 ///      Includes Phase 2 KYC and privacy hooks (verifier, encryption-key registry, sealed details, hashes), disabled until switched on.
@@ -461,7 +461,7 @@ contract P2PEscrow is Ownable2Step {
         emit AdPaused(adId, paused_);
     }
 
-    /// @notice Permanently close an ad (including expired ads) and refund unreserved Sell inventory.
+    /// @notice Permanently close an ad (including expired ads); offsets maker's unpaid debt first, then refunds remaining Sell inventory.
     function closeAd(uint256 adId) external nonReentrant {
         Ad storage ad = _makerAd(adId);
         if (ad.closed) revert AdUnavailable();
@@ -469,8 +469,8 @@ contract P2PEscrow is Ownable2Step {
         uint128 refund = ad.side == Side.Sell ? remaining : 0;
         ad.closed = true;
         ad.available = 0;
-        emit AdClosed(adId, remaining, refund);
-        if (refund != 0) _payout(ad.maker, refund);
+        uint256 netRefund = refund != 0 ? _settleDebtAndPayout(ad.maker, refund) : 0;
+        emit AdClosed(adId, remaining, uint128(netRefund));
     }
 
     /// @notice Reserve inventory/capacity and open a Pending trade.
@@ -672,7 +672,7 @@ contract P2PEscrow is Ownable2Step {
             }
             emit OrderCancelled(orderId, msg.sender);
             if (ad.side == Side.Buy) _payout(order.seller, order.amount);
-            else if (ad.closed) _payout(ad.maker, order.amount);
+            else if (ad.closed) _settleDebtAndPayout(ad.maker, order.amount);
         }
     }
 
@@ -811,7 +811,7 @@ contract P2PEscrow is Ownable2Step {
         emit MarginWithdrawalCancelled(msg.sender, amount);
     }
 
-    /// @notice Withdraw unlocked margin once all of the caller's trades are terminal.
+    /// @notice Withdraw unlocked margin once all of the caller's trades are terminal; offsets unpaid debt first.
     function completeMarginWithdrawal() external nonReentrant {
         MarginWithdrawal memory pending = marginWithdrawal[msg.sender];
         if (pending.amount == 0) revert NothingToWithdraw();
@@ -822,8 +822,8 @@ contract P2PEscrow is Ownable2Step {
             margin[msg.sender] -= amount;
         }
         delete marginWithdrawal[msg.sender];
-        emit MarginWithdrawn(msg.sender, amount);
-        if (amount != 0) _payout(msg.sender, amount);
+        uint256 net = amount != 0 ? _settleDebtAndPayout(msg.sender, amount) : 0;
+        emit MarginWithdrawn(msg.sender, net);
     }
 
     /// @notice Ownership cannot be renounced so governance remains available.
@@ -1240,6 +1240,21 @@ contract P2PEscrow is Ownable2Step {
 
     function _repayDebtFromEscrow(address debtor, uint256 budget) private {
         P2PEscrowDebtLib.repay(debtor, budget, address(usdc), _debts, totalDebt, claimable);
+    }
+
+    /// @dev Offsets `account`'s unpaid dispute-bond debt first (FIFO), then pays any remainder via blocklist-safe `_payout`.
+    function _settleDebtAndPayout(address account, uint256 amount) private returns (uint256 remainder) {
+        uint256 owed = totalDebt[account];
+        uint256 toDebt = amount < owed ? amount : owed;
+        unchecked {
+            remainder = amount - toDebt;
+        }
+        if (toDebt != 0) {
+            _repayDebtFromEscrow(account, toDebt);
+        }
+        if (remainder != 0) {
+            _payout(account, remainder);
+        }
     }
 
     /// @dev Buyer cancellations in Pending (when buyer == taker and detailsReady) add a strike.
