@@ -7,6 +7,7 @@ import type { BridgeEstimateResult, BridgeResult } from '@circle-fin/app-kit'
 import { AlertTriangle, ArrowDownUp, Check, ChevronDown, ExternalLink, Info, Loader2, X } from 'lucide-react'
 import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import { ARC_KIT_CHAIN, IS_TESTNET } from '@/lib/network'
 import {
   ALL_BRIDGE_EVENTS,
   BRIDGE_CHAINS,
@@ -58,10 +59,12 @@ const initial = () => {
   const from = q.get('from')
   const to = q.get('to')
   const a = q.get('amount')
-  const defaultDest: BridgeChainName = token === 'cirBTC' || token === 'WETH' ? 'Ethereum_Sepolia' : 'Base_Sepolia'
-  const f = (names.includes(from ?? '') ? from : 'Arc_Testnet') as BridgeChainName
+  const ethKit: BridgeChainName = IS_TESTNET ? 'Ethereum_Sepolia' : 'Ethereum'
+  const baseKit: BridgeChainName = IS_TESTNET ? 'Base_Sepolia' : 'Base'
+  const defaultDest: BridgeChainName = token === 'cirBTC' || token === 'WETH' ? ethKit : baseKit
+  const f = (names.includes(from ?? '') ? from : ARC_KIT_CHAIN) as BridgeChainName
   let t = (names.includes(to ?? '') ? to : defaultDest) as BridgeChainName
-  if (t === f) t = f === 'Arc_Testnet' ? defaultDest : 'Arc_Testnet'
+  if (t === f) t = f === ARC_KIT_CHAIN ? defaultDest : ARC_KIT_CHAIN
   const maxDec = BRIDGE_TOKEN_DECIMALS[token]
   return {
     token,
@@ -157,15 +160,16 @@ export default function BridgePage() {
     setSteps({})
     // Nudge to a known CCTPx route if switching to cirBTC/WETH from an unrelated chain pair
     if (next === 'cirBTC' || next === 'WETH') {
+      const ethKit: BridgeChainName = IS_TESTNET ? 'Ethereum_Sepolia' : 'Ethereum'
       const validPair =
-        (fromKit === 'Arc_Testnet' && toKit === 'Ethereum_Sepolia') ||
-        (fromKit === 'Ethereum_Sepolia' && toKit === 'Arc_Testnet')
+        (fromKit === ARC_KIT_CHAIN && toKit === ethKit) ||
+        (fromKit === ethKit && toKit === ARC_KIT_CHAIN)
       if (!validPair) {
-        if (fromKit === 'Ethereum_Sepolia') {
-          setToKit('Arc_Testnet')
+        if (fromKit === ethKit) {
+          setToKit(ARC_KIT_CHAIN)
         } else {
-          setFromKit('Arc_Testnet')
-          setToKit('Ethereum_Sepolia')
+          setFromKit(ARC_KIT_CHAIN)
+          setToKit(ethKit)
         }
       }
     }
@@ -300,7 +304,7 @@ export default function BridgePage() {
   const applyPct = (num: bigint) => {
     if (balance === undefined) return
     const spendable =
-      token === 'USDC' && fromKit === 'Arc_Testnet'
+      token === 'USDC' && fromKit === ARC_KIT_CHAIN
         ? balance > 1_000_000n
           ? balance - 1_000_000n
           : 0n
@@ -491,7 +495,7 @@ export default function BridgePage() {
           {insufficient && (
             <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }}>
               Not enough {token} on {from.label}.
-              {token === 'USDC' && fromKit === 'Arc_Testnet'
+              {token === 'USDC' && fromKit === ARC_KIT_CHAIN
                 ? ' Use "Get test USDC" in the Arc Studio sidebar.'
                 : ''}
             </p>

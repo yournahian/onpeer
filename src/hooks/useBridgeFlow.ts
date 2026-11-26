@@ -2,11 +2,17 @@ import { useCallback, useRef, useState } from 'react'
 import { useAccount, usePublicClient, useSwitchChain } from 'wagmi'
 import { erc20Abi, type Address } from 'viem'
 import {
+  arbitrum,
   arbitrumSepolia,
   arcTestnet,
+  avalanche,
   avalancheFuji,
+  base,
   baseSepolia,
+  mainnet,
+  optimism,
   optimismSepolia,
+  polygon,
   polygonAmoy,
   sepolia,
 } from 'viem/chains'
@@ -14,8 +20,9 @@ import type { BridgeEstimateResult, BridgeResult } from '@circle-fin/app-kit'
 import { getUsdc } from '@/onchain-facts'
 import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import { IS_TESTNET, arcMainnet } from '@/lib/network'
 
-export const BRIDGE_CHAINS = [
+export const TESTNET_BRIDGE_CHAINS = [
   { kit: 'Arc_Testnet', label: 'Arc Testnet', id: arcTestnet.id },
   { kit: 'Ethereum_Sepolia', label: 'Ethereum Sepolia', id: sepolia.id },
   { kit: 'Base_Sepolia', label: 'Base Sepolia', id: baseSepolia.id },
@@ -25,11 +32,25 @@ export const BRIDGE_CHAINS = [
   { kit: 'Polygon_Amoy_Testnet', label: 'Polygon Amoy', id: polygonAmoy.id },
 ] as const
 
+export const MAINNET_BRIDGE_CHAINS = [
+  { kit: 'Arc', label: 'Arc', id: arcMainnet.id },
+  { kit: 'Ethereum', label: 'Ethereum', id: mainnet.id },
+  { kit: 'Base', label: 'Base', id: base.id },
+  { kit: 'Arbitrum', label: 'Arbitrum', id: arbitrum.id },
+  { kit: 'Optimism', label: 'Optimism', id: optimism.id },
+  { kit: 'Avalanche', label: 'Avalanche', id: avalanche.id },
+  { kit: 'Polygon', label: 'Polygon', id: polygon.id },
+] as const
+
+export const BRIDGE_CHAINS = IS_TESTNET ? TESTNET_BRIDGE_CHAINS : MAINNET_BRIDGE_CHAINS
+
 export const BRIDGE_TOKENS = ['USDC', 'EURC', 'cirBTC', 'WETH'] as const
 export type BridgeToken = (typeof BRIDGE_TOKENS)[number]
 export type BridgeTransferSpeed = 'FAST' | 'SLOW'
 
-export type BridgeChainName = (typeof BRIDGE_CHAINS)[number]['kit']
+export type BridgeChainName =
+  | (typeof TESTNET_BRIDGE_CHAINS)[number]['kit']
+  | (typeof MAINNET_BRIDGE_CHAINS)[number]['kit']
 export type BridgePhase = 'idle' | 'quoting' | 'quoted' | 'bridging' | 'done' | 'failed' | 'error'
 export type StepState = 'idle' | 'running' | 'done' | 'error'
 
@@ -46,9 +67,16 @@ export function toBridgeKitToken(token: BridgeToken): 'USDC' | 'EURC' | 'cirBTC'
   return token
 }
 
-/** Verified testnet ERC-20 addresses from Circle IRIS sandbox registry & Arc facts. */
-const TESTNET_TOKEN_ADDRESSES: Record<BridgeToken, Partial<Record<BridgeChainName, Address>>> = {
+/** Verified ERC-20 addresses from Circle IRIS registry & Arc facts (Mainnet & Testnet). */
+const TOKEN_ADDRESSES: Record<BridgeToken, Partial<Record<BridgeChainName, Address>>> = {
   USDC: {
+    Arc: getUsdc(arcMainnet.id)?.address as Address | undefined,
+    Ethereum: getUsdc(mainnet.id)?.address as Address | undefined,
+    Base: getUsdc(base.id)?.address as Address | undefined,
+    Arbitrum: getUsdc(arbitrum.id)?.address as Address | undefined,
+    Optimism: getUsdc(optimism.id)?.address as Address | undefined,
+    Avalanche: getUsdc(avalanche.id)?.address as Address | undefined,
+    Polygon: getUsdc(polygon.id)?.address as Address | undefined,
     Arc_Testnet: getUsdc(arcTestnet.id)?.address as Address | undefined,
     Ethereum_Sepolia: getUsdc(sepolia.id)?.address as Address | undefined,
     Base_Sepolia: getUsdc(baseSepolia.id)?.address as Address | undefined,
@@ -58,6 +86,10 @@ const TESTNET_TOKEN_ADDRESSES: Record<BridgeToken, Partial<Record<BridgeChainNam
     Polygon_Amoy_Testnet: getUsdc(polygonAmoy.id)?.address as Address | undefined,
   },
   EURC: {
+    Arc: '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1',
+    Ethereum: '0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c',
+    Base: '0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42',
+    Avalanche: '0xC891EB4cbDEf6e5f7Da6a23A6845A35558a5195F',
     Arc_Testnet: '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a',
     Ethereum_Sepolia: '0x08210F9170F89Ab7658F0B5E3fF39b0E03C594D4',
     Base_Sepolia: '0x808456652fdb597867f38412077A9182bf77359F',
@@ -74,7 +106,7 @@ const TESTNET_TOKEN_ADDRESSES: Record<BridgeToken, Partial<Record<BridgeChainNam
 }
 
 export function getBridgeTokenAddress(token: BridgeToken, chain: BridgeChainName): Address | undefined {
-  return TESTNET_TOKEN_ADDRESSES[token][chain]
+  return TOKEN_ADDRESSES[token][chain]
 }
 
 export const USDC_STEP_ORDER = ['approve', 'burn', 'fetchAttestation', 'mint'] as const

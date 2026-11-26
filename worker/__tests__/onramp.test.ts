@@ -438,9 +438,9 @@ describe('POST /api/onramp/session', () => {
       expect(bridgeHtml).toContain('Bridge')
       expect(bridgeHtml).toContain('USDC')
 
-      // SiteBar inside SwapPage includes Buy USDC and does NOT put Cash out in top Products nav
+      // Buy USDC is hidden from top navigation (dev URL-only) and Cash out is not in top Products nav
       const navMatch = swapHtml.match(/<nav[^>]*aria-label="Products"[^>]*>([\s\S]*?)<\/nav>/)
-      expect(navMatch?.[1]).toContain('Buy USDC')
+      expect(navMatch?.[1]).not.toContain('Buy USDC')
       expect(navMatch?.[1]).not.toContain('Cash out')
 
       // Buy page renders required Phase 3 copy and links cash out directly to /p2p?mode=sell

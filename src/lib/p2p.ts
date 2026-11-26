@@ -1,20 +1,34 @@
 import { stringToHex, hexToString, type Address, type Hex } from 'viem'
-import { arcTestnet } from 'viem/chains'
+import { ACTIVE_CHAIN_ID, IS_TESTNET } from '@/lib/network'
 import { formatUnitsExact, formatUnitsFixed } from '@/onchain-money'
 
-export const CHAIN_ID = arcTestnet.id
+export const CHAIN_ID = ACTIVE_CHAIN_ID
 
-const DEFAULT_ESCROW_ADDRESS = '0x7f661625bC08d72E156A206ee8D24022D7463350' as Address
-const DEFAULT_DEPLOY_BLOCK = 74250625n
-const DEFAULT_EURC_ESCROW_ADDRESS = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
-const DEFAULT_EURC_DEPLOY_BLOCK = 74250630n
+// Arc Mainnet (Chain ID 5042) v2.3 deployed contracts
+const MAINNET_ESCROW_ADDRESS = '0xC073b1A5ac4004fD82cAc6BDA5548FFc5E5cB97e' as Address
+const MAINNET_DEPLOY_BLOCK = 33297066n
+const MAINNET_EURC_ESCROW_ADDRESS = '0xd0dca77625992d3851748B365Ace63803c5d1759' as Address
+const MAINNET_EURC_DEPLOY_BLOCK = 33297066n
+const MAINNET_EURC_TOKEN_ADDRESS = '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1' as Address
+
+// Arc Testnet (Chain ID 5042002) v2.3 deployed contracts
+const TESTNET_ESCROW_ADDRESS = '0x7f661625bC08d72E156A206ee8D24022D7463350' as Address
+const TESTNET_DEPLOY_BLOCK = 74250625n
+const TESTNET_EURC_ESCROW_ADDRESS = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
+const TESTNET_EURC_DEPLOY_BLOCK = 74250630n
+const TESTNET_EURC_TOKEN_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as Address
+
+const DEFAULT_ESCROW_ADDRESS = IS_TESTNET ? TESTNET_ESCROW_ADDRESS : MAINNET_ESCROW_ADDRESS
+const DEFAULT_DEPLOY_BLOCK = IS_TESTNET ? TESTNET_DEPLOY_BLOCK : MAINNET_DEPLOY_BLOCK
+const DEFAULT_EURC_ESCROW_ADDRESS = IS_TESTNET ? TESTNET_EURC_ESCROW_ADDRESS : MAINNET_EURC_ESCROW_ADDRESS
+const DEFAULT_EURC_DEPLOY_BLOCK = IS_TESTNET ? TESTNET_EURC_DEPLOY_BLOCK : MAINNET_EURC_DEPLOY_BLOCK
 const DEFAULT_CIRBTC_ESCROW_ADDRESS = '0x6ba3b81833b6354f08483740211af3ddda396b39' as Address
 const DEFAULT_CIRBTC_DEPLOY_BLOCK = 73734225n
 const DEFAULT_WETH_ESCROW_ADDRESS = '0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3' as Address
 const DEFAULT_WETH_DEPLOY_BLOCK = 73734238n
 
 const DEFAULT_USDC_TOKEN_ADDRESS = '0x3600000000000000000000000000000000000000' as Address
-const DEFAULT_EURC_TOKEN_ADDRESS = '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a' as Address
+const DEFAULT_EURC_TOKEN_ADDRESS = IS_TESTNET ? TESTNET_EURC_TOKEN_ADDRESS : MAINNET_EURC_TOKEN_ADDRESS
 const DEFAULT_CIRBTC_TOKEN_ADDRESS = '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF' as Address
 const DEFAULT_WETH_TOKEN_ADDRESS = '0x2c4047028a72803939b6fb674D01bC059B5C4961' as Address
 
@@ -37,26 +51,26 @@ const validBlock = (raw: string | undefined, fallback: bigint): bigint => {
   return parsed >= fallback ? parsed : fallback
 }
 
-const rawAddress = (import.meta.env.VITE_P2P_ESCROW_ADDRESS as string | undefined)?.trim()
+// On testnet.onpeer.xyz, always use the Testnet v2.3 contracts even if the static bundle was built with Mainnet VITE_* vars.
+const rawAddress = IS_TESTNET ? undefined : (import.meta.env.VITE_P2P_ESCROW_ADDRESS as string | undefined)?.trim()
 export const ESCROW_ADDRESS: Address | undefined =
   rawAddress && /^0x[0-9a-fA-F]{40}$/.test(rawAddress) && !DEPRECATED_ESCROWS.has(rawAddress.toLowerCase())
     ? (rawAddress as Address)
     : DEFAULT_ESCROW_ADDRESS
 
-export const DEPLOY_BLOCK = validBlock(import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined, DEFAULT_DEPLOY_BLOCK)
+export const DEPLOY_BLOCK = IS_TESTNET
+  ? DEFAULT_DEPLOY_BLOCK
+  : validBlock(import.meta.env.VITE_P2P_DEPLOY_BLOCK as string | undefined, DEFAULT_DEPLOY_BLOCK)
 
-export const EURC_ESCROW_ADDRESS: Address = validAddr(
-  import.meta.env.VITE_P2P_EURC_ESCROW_ADDRESS as string | undefined,
-  DEFAULT_EURC_ESCROW_ADDRESS,
-)
-export const EURC_DEPLOY_BLOCK = validBlock(
-  import.meta.env.VITE_P2P_EURC_DEPLOY_BLOCK as string | undefined,
-  DEFAULT_EURC_DEPLOY_BLOCK,
-)
-export const EURC_TOKEN_ADDRESS: Address = validAddr(
-  import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined,
-  DEFAULT_EURC_TOKEN_ADDRESS,
-)
+export const EURC_ESCROW_ADDRESS: Address = IS_TESTNET
+  ? DEFAULT_EURC_ESCROW_ADDRESS
+  : validAddr(import.meta.env.VITE_P2P_EURC_ESCROW_ADDRESS as string | undefined, DEFAULT_EURC_ESCROW_ADDRESS)
+export const EURC_DEPLOY_BLOCK = IS_TESTNET
+  ? DEFAULT_EURC_DEPLOY_BLOCK
+  : validBlock(import.meta.env.VITE_P2P_EURC_DEPLOY_BLOCK as string | undefined, DEFAULT_EURC_DEPLOY_BLOCK)
+export const EURC_TOKEN_ADDRESS: Address = IS_TESTNET
+  ? DEFAULT_EURC_TOKEN_ADDRESS
+  : validAddr(import.meta.env.VITE_ARC_MAINNET_EURC_ADDRESS as string | undefined, DEFAULT_EURC_TOKEN_ADDRESS)
 
 export const CIRBTC_ESCROW_ADDRESS: Address = validAddr(
   import.meta.env.VITE_P2P_CIRBTC_ESCROW_ADDRESS as string | undefined,

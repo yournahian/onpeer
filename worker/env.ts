@@ -23,6 +23,8 @@ export interface Env {
   AI_SETTINGS_KV?: KVStore
 
   // Public / non-secret runtime vars
+  ARC_NETWORK?: 'mainnet' | 'testnet' | string
+  VITE_ARC_NETWORK?: 'mainnet' | 'testnet' | string
   VITE_P2P_ESCROW_ADDRESS?: string
   VITE_P2P_DEPLOY_BLOCK?: string
   VITE_P2P_EURC_ESCROW_ADDRESS?: string
@@ -71,7 +73,18 @@ export interface Env {
   CUSTOM_AI_LABEL?: string
 }
 
-export const CHAIN_ID = 5042002
+export const ARC_MAINNET_CHAIN_ID = 5042
+export const ARC_TESTNET_CHAIN_ID = 5042002
+export const CHAIN_ID = ARC_MAINNET_CHAIN_ID
+
+export function isTestnetEnv(env: Env): boolean {
+  const raw = (env.ARC_NETWORK ?? env.VITE_ARC_NETWORK ?? '').trim().toLowerCase()
+  return raw === 'testnet'
+}
+
+export function activeChainId(env: Env): number {
+  return isTestnetEnv(env) ? ARC_TESTNET_CHAIN_ID : ARC_MAINNET_CHAIN_ID
+}
 
 export const json = (status: number, body: unknown, extraHeaders?: Record<string, string>) =>
   new Response(JSON.stringify(body), {

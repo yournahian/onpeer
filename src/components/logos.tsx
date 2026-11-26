@@ -156,24 +156,31 @@ export function CountryFlag({ code, size = 28 }: { code: string; size?: number }
 /** Original blockchain network logo for Arc, Ethereum, Base, Arbitrum, Optimism, Avalanche, and Polygon. */
 export function ChainLogo({ chain, size = 18 }: { chain: string; size?: number }) {
   switch (chain) {
+    case 'Arc':
     case 'Arc_Testnet':
     case 'arc':
       return <NetworkArc variant="branded" size={size} className="shrink-0" />
+    case 'Ethereum':
     case 'Ethereum_Sepolia':
     case 'ethereum':
       return <NetworkEthereum variant="branded" size={size} className="shrink-0" />
+    case 'Base':
     case 'Base_Sepolia':
     case 'base':
       return <NetworkBase variant="branded" size={size} className="shrink-0" />
+    case 'Arbitrum':
     case 'Arbitrum_Sepolia':
     case 'arbitrum':
       return <NetworkArbitrumOne variant="branded" size={size} className="shrink-0" />
+    case 'Optimism':
     case 'Optimism_Sepolia':
     case 'optimism':
       return <NetworkOptimism variant="branded" size={size} className="shrink-0" />
+    case 'Avalanche':
     case 'Avalanche_Fuji':
     case 'avalanche':
       return <NetworkAvalanche variant="branded" size={size} className="shrink-0" />
+    case 'Polygon':
     case 'Polygon_Amoy_Testnet':
     case 'polygon':
       return <NetworkPolygon variant="branded" size={size} className="shrink-0" />

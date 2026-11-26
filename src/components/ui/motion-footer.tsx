@@ -28,7 +28,7 @@ if (typeof window !== 'undefined') {
   gsap.registerPlugin(ScrollTrigger)
 }
 
-const DEFAULT_ESCROW_ADDRESS = '0x7f661625bC08d72E156A206ee8D24022D7463350' as const
+const DEFAULT_ESCROW_ADDRESS = '0xC073b1A5ac4004fD82cAc6BDA5548FFc5E5cB97e' as const
 
 export interface MagneticAnchorProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
   spaTo?: string

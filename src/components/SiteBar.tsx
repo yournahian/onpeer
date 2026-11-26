@@ -3,7 +3,6 @@ import { AnimatePresence, motion, useMotionValueEvent, useScroll } from 'framer-
 import {
   ArrowLeftRight,
   ArrowRight,
-  CreditCard,
   Eye,
   EyeOff,
   Menu,
@@ -28,7 +27,6 @@ import { useAdminRoles } from '@/hooks/useAdmin'
 
 const LINKS: { to: string; route: Route; label: string; icon: typeof Repeat }[] = [
   { to: '/p2p', route: 'p2p', label: 'P2P', icon: ArrowLeftRight },
-  { to: '/buy', route: 'buy', label: 'Buy USDC', icon: CreditCard },
   { to: '/swap', route: 'swap', label: 'Swap', icon: Repeat },
   { to: '/bridge', route: 'bridge', label: 'Bridge', icon: Waypoints },
   { to: '/assistant', route: 'assistant', label: 'Assistant', icon: Sparkles },

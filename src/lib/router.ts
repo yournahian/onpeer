@@ -17,7 +17,9 @@ export const APP_URL = 'https://app.onpeer.xyz'
 export const DOCS_URL = 'https://docs.onpeer.xyz'
 
 export function isAppSubdomain(): boolean {
-  return typeof window !== 'undefined' && window.location.hostname.startsWith('app.')
+  if (typeof window === 'undefined') return false
+  const h = window.location.hostname.toLowerCase()
+  return h.startsWith('app.') || h.startsWith('testnet.')
 }
 
 export function isDocsSubdomain(): boolean {

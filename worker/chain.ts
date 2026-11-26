@@ -3,6 +3,7 @@ import {
   ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
+  defineChain,
   http,
   isAddress,
   type Address,
@@ -12,7 +13,16 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { arcTestnet } from 'viem/chains'
 import { p2pEscrowAbi } from '../src/abi/p2pEscrow'
 import { requireChain } from '../src/onchain-facts'
-import { CHAIN_ID, type Env } from './env'
+import { activeChainId, isTestnetEnv, type Env } from './env'
+
+const arcMainnet = defineChain({
+  id: 5042,
+  name: 'Arc',
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  rpcUrls: { default: { http: ['https://rpc.mainnet.arc.io'] } },
+  blockExplorers: { default: { name: 'Arc Explorer', url: 'https://explorer.arc.io' } },
+  testnet: false,
+})
 
 export const BACKUP_ARBITER_DELAY_SECONDS = 7 * 24 * 60 * 60 // 7 days (matches contract BACKUP_ARBITER_DELAY)
 export const ARBITER_PAID_DELAY_SECONDS = 15 * 60 // 15 minutes after paidAt
@@ -20,7 +30,8 @@ export const ORDER_RETENTION_SECONDS = 90 * 24 * 60 * 60 // 90 days post-complet
 export const EURC_ID_OFFSET = 1_000_000_000_000n
 export const CIRBTC_ID_OFFSET = 2_000_000_000_000n
 export const WETH_ID_OFFSET = 3_000_000_000_000n
-const DEFAULT_EURC_ESCROW = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
+const DEFAULT_MAINNET_EURC_ESCROW = '0xd0dca77625992d3851748B365Ace63803c5d1759' as Address
+const DEFAULT_TESTNET_EURC_ESCROW = '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9' as Address
 const DEFAULT_CIRBTC_ESCROW = '0x6ba3b81833b6354f08483740211af3ddda396b39' as Address
 const DEFAULT_WETH_ESCROW = '0xbd79693411ee47e2acbba14e9353e7e0c43bf6f3' as Address
 
@@ -134,7 +145,11 @@ export function requireEscrowAddress(env: Env): Address {
 
 export function resolveEurcEscrowAddress(env: Env): Address {
   const raw = env.VITE_P2P_EURC_ESCROW_ADDRESS?.trim()
-  return raw && isAddress(raw) ? raw : DEFAULT_EURC_ESCROW
+  return raw && isAddress(raw)
+    ? raw
+    : isTestnetEnv(env)
+      ? DEFAULT_TESTNET_EURC_ESCROW
+      : DEFAULT_MAINNET_EURC_ESCROW
 }
 
 export function resolveCirbtcEscrowAddress(env: Env): Address {
@@ -217,16 +232,18 @@ export function formatScopedOrderLabel(orderId: bigint): string {
   return `#${orderId.toString()}`
 }
 
-export function createArcPublicClient() {
-  const rpcUrl = requireChain(CHAIN_ID).rpcUrls[0]
+export function createArcPublicClient(env?: Env) {
+  const chainId = env ? activeChainId(env) : 5042
+  const chain = chainId === 5042002 ? arcTestnet : arcMainnet
+  const rpcUrl = requireChain(chainId).rpcUrls[0]
   return createPublicClient({
-    chain: arcTestnet,
+    chain,
     transport: http(rpcUrl, { timeout: 10_000 }),
   })
 }
 
 /**
- * Create a live Arc Testnet ChainReader for one HTTP request / scheduled run.
+ * Create a live Arc (Mainnet or Testnet) ChainReader for one HTTP request / scheduled run.
  * Roles are memoized only within this single reader instance (one request), never across requests.
  */
 export function createChainReader(env: Env): ChainReader {
@@ -234,7 +251,7 @@ export function createChainReader(env: Env): ChainReader {
   const eurcEscrow = resolveEurcEscrowAddress(env)
   const cirbtcEscrow = resolveCirbtcEscrowAddress(env)
   const wethEscrow = resolveWethEscrowAddress(env)
-  const client = createArcPublicClient()
+  const client = createArcPublicClient(env)
   let rolesPromise: Promise<ChainRoles> | null = null
 
   const decodeScoped = (scopedId: bigint): { target: Address; offset: bigint; rawId: bigint } => {
@@ -522,11 +539,13 @@ export async function createVerifierClients(env: Env, roles: ChainRoles) {
   if (roles.verifier !== addr) {
     throw new Error('verifier_not_appointed_onchain')
   }
-  const rpcUrl = requireChain(CHAIN_ID).rpcUrls[0]
-  const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpcUrl, { timeout: 15_000 }) })
+  const chainId = activeChainId(env)
+  const chain = chainId === 5042002 ? arcTestnet : arcMainnet
+  const rpcUrl = requireChain(chainId).rpcUrls[0]
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl, { timeout: 15_000 }) })
   const walletClient = createWalletClient({
     account,
-    chain: arcTestnet,
+    chain,
     transport: http(rpcUrl, { timeout: 15_000 }),
   })
   const escrow = requireEscrowAddress(env)

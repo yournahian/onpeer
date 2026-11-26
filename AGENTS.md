@@ -128,8 +128,15 @@ npx oxlint src worker server   # 0 warnings, 0 errors
 
 ## Deployed contracts
 
-- P2PEscrow v2.3 (Arc Testnet — USDC): `0x7f661625bC08d72E156A206ee8D24022D7463350` (deployed at block 74250625, tx `0x3f69a386b98d4dc40ed635cf1195cb15c4b6b53960fbb80202a3ba508dd32724`).
-- P2PEscrow v2.3 (Arc Testnet — EURC): `0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9` (deployed at block 74250630, tx `0x2247ef67af45b2d94915694bcf037e60fd9a79d6f46f13651788b3a8aaae4ee7`). Owner, primary arbiter, initial backup arbiter and feeRecipient: `0x54190a788EEf66d9AbddcF7d135B09B4D2b72F3A`. Verifier: `0xeebd29441AF1a931C4a6eEc2265B0757fd992f5e`. Native multi-arbiter via `setExtraArbiter(account, roleMask)` and `arbiterRole(account)`.
+- **Arc Mainnet (Chain ID 5042) — P2PEscrow v2.3 (LIVE on `app.onpeer.xyz`):**
+  - USDC Escrow: `0xC073b1A5ac4004fD82cAc6BDA5548FFc5E5cB97e` (block `33297066`, tx `0x92a4dae319134083535e614675f4321253d5689a520403ad97361a655de42cac`)
+  - EURC Escrow: `0xd0dca77625992d3851748B365Ace63803c5d1759` (block `33297066`, tx `0x309bf63f724f0b82e351f7d9752fe21e1c6229319b7211905edf8671df45933c`)
+  - Owner / FeeRecipient: `0x81eA9AdE2805e310E9f884a75B3a24Ab74557C69`
+  - Primary & Backup Arbiter: `0xb213Dc9a65d3d748B6Ec5cCaCCb9b6EC82A40A33`
+  - Verifier: `0x74605c85676E9F514BA33B9B3005e0EE561DAfDd`
+- **Arc Testnet (Chain ID 5042002) — P2PEscrow v2.3 (LIVE on `testnet.onpeer.xyz`):**
+  - USDC Escrow: `0x7f661625bC08d72E156A206ee8D24022D7463350` (block `74250625`)
+  - EURC Escrow: `0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9` (block `74250630`)
 - Superseded v2.2: USDC `0x1929e33D2866d06E547eb02A1DDFcAc6bA2304fE` (block 74214615), EURC `0xDf8dC07030A0e578d475CA9582F2E87b29EeBa3d` (block 74214619).
 - Superseded v2.1: USDC `0xf719ebbc5080aee09e38909764b897e0bf01a9b0` (block 72902228), EURC `0x0db2fbf8357617172a3b852bc2ac3054dba1d402` (block 73721819).
 - Deprecated / superseded: 0x22f28c481f2842c5a68028944a4f3fa7ebdf58de (v2.0, block 72788405, deprecated), 0x271b519275380f60fa100d0cff101800893a8fa0 (v1, block 72230487, deprecated), 0xb257939153215ae7eb5a02057877b1ae5f5b04e5 (earlier version, unused).

@@ -1004,14 +1004,31 @@ function withSecurityHeaders(res: Response, isApi: boolean, env: Env): Response 
   })
 }
 
+function resolveRequestEnv(url: URL, env: Env): Env {
+  if (url.hostname.toLowerCase().startsWith('testnet.')) {
+    return {
+      ...env,
+      ARC_NETWORK: 'testnet',
+      VITE_ARC_NETWORK: 'testnet',
+      VITE_P2P_ESCROW_ADDRESS: '0x7f661625bC08d72E156A206ee8D24022D7463350',
+      VITE_P2P_DEPLOY_BLOCK: '74250625',
+      VITE_P2P_EURC_ESCROW_ADDRESS: '0x26Ef2B69AC928457E348BeEd72Bf116dB81438B9',
+      VITE_P2P_EURC_DEPLOY_BLOCK: '74250630',
+      PUBLIC_APP_URL: `https://${url.hostname}`,
+    }
+  }
+  return env
+}
+
 export function createWorkerApp(deps?: WorkerDependencies) {
   return {
     async fetch(
       request: Request,
-      env: Env,
+      rawEnv: Env,
       ctx: WorkerExecutionContext = { waitUntil: () => undefined },
     ): Promise<Response> {
       const url = new URL(request.url)
+      const env = resolveRequestEnv(url, rawEnv)
 
       // Never redirect /api on app.onpeer.xyz, onpeer.xyz, or any host
       if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {

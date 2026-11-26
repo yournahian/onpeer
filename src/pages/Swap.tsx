@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
-import { arcTestnet } from 'viem/chains'
+import { ACTIVE_CHAIN_ID, ARC_KIT_CHAIN, ARC_NETWORK_LABEL } from '@/lib/network'
 import type { SwapEstimate } from '@circle-fin/app-kit'
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -39,7 +39,7 @@ function useTokenBalance(token: SwapToken) {
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [address as Address],
-    chainId: arcTestnet.id,
+    chainId: ACTIVE_CHAIN_ID,
     query: { enabled: !!address && !!tokenAddress, refetchInterval: 10_000 },
   })
   return res.data
@@ -124,7 +124,7 @@ export default function SwapPage() {
 
   const prepare = async () => {
     if (!connector) throw new Error('Wallet not connected')
-    if (chainId !== arcTestnet.id) await switchChainAsync({ chainId: arcTestnet.id })
+    if (chainId !== ACTIVE_CHAIN_ID) await switchChainAsync({ chainId: ACTIVE_CHAIN_ID })
     return adapterFromConnector(connector)
   }
 
@@ -135,7 +135,7 @@ export default function SwapPage() {
     try {
       const adapter = await prepare()
       const estimate = await appKit.estimateSwap({
-        from: { adapter, chain: 'Arc_Testnet' },
+        from: { adapter, chain: ARC_KIT_CHAIN },
         tokenIn: toSwapKitToken(tokenIn),
         tokenOut: toSwapKitToken(tokenOut),
         amountIn: amount,
@@ -157,7 +157,7 @@ export default function SwapPage() {
     try {
       const adapter = await prepare()
       const result = await appKit.swap({
-        from: { adapter, chain: 'Arc_Testnet' },
+        from: { adapter, chain: ARC_KIT_CHAIN },
         tokenIn: toSwapKitToken(tokenIn),
         tokenOut: toSwapKitToken(tokenOut),
         amountIn: amount,
@@ -284,8 +284,8 @@ export default function SwapPage() {
               <span style={{ color: 'var(--subtle)' }}>Network</span>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 font-semibold">
-                  <ChainLogo chain="Arc_Testnet" size={16} />
-                  Arc Testnet
+                  <ChainLogo chain={ARC_KIT_CHAIN} size={16} />
+                  {ARC_NETWORK_LABEL}
                 </span>
                 <motion.button
                   type="button"

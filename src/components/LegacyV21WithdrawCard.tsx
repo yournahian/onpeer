@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { formatUnits, type Address } from 'viem'
 import { useAccount, usePublicClient, useSwitchChain, useWriteContract } from 'wagmi'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
+import { IS_TESTNET } from '@/lib/network'
 import { CHAIN_ID } from '@/lib/p2p'
 
 const LEGACY_ESCROWS: readonly { version: 'v2.2' | 'v2.1'; address: Address; short: string }[] = [
@@ -181,7 +182,7 @@ export function LegacyV21WithdrawCard() {
     0n,
   )
 
-  if (!address || totalRecoverable === 0n) return null
+  if (!IS_TESTNET || !address || totalRecoverable === 0n) return null
 
   const ensureArcChain = async () => {
     if (chainId !== CHAIN_ID) {
