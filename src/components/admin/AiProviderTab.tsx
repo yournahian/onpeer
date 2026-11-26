@@ -201,6 +201,11 @@ export function AiProviderTab() {
             )
           })}
         </div>
+        {error && !current && (
+          <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }} role="alert">
+            {error}
+          </p>
+        )}
       </Panel>
 
       {current && (

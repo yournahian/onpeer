@@ -377,25 +377,52 @@ export interface WorkerDependencies {
   makeChain?: (env: Env) => ChainReader
 }
 
+type ResolveAdminResult =
+  | { ok: true; wallet: `0x${string}` }
+  | { ok: false; status: 401 | 403 | 502 | 503; error: 'unauthorized' | 'not_admin' | 'rpc_error' | 'service_unavailable' }
+
 async function resolveAdminWallet(
   req: Request,
   env: Env,
   chain: ChainReader,
+  makeChainFn: (env: Env) => ChainReader,
   runWithDb: <T>(env: Env, fn: (db: Queryable) => Promise<T>) => Promise<T>,
-): Promise<`0x${string}` | null> {
+): Promise<ResolveAdminResult> {
   const auth = req.headers.get('authorization') ?? ''
   const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
-  if (!bearer || !/^[0-9a-f]{64}$/.test(bearer)) return null
+  if (!bearer || !/^[0-9a-f]{64}$/.test(bearer)) {
+    return { ok: false, status: 401, error: 'unauthorized' }
+  }
 
   // H-06: Enforce DB-backed revocable `public.sessions` tokens exclusively (no non-revocable stateless HMAC tokens)
+  let sess: Awaited<ReturnType<typeof getSession>>
   try {
-    const sess = await runWithDb(env, (db) => getSession(req, db))
-    if (!sess) return null
-    const admin = await checkAdminAccess(chain, sess.wallet)
-    return admin.allowed ? sess.wallet : null
-  } catch {
-    return null
+    sess = await runWithDb(env, (db) => getSession(req, db))
+  } catch (err) {
+    console.error('[admin/auth] db error', err instanceof Error ? err.message : String(err))
+    return { ok: false, status: 503, error: 'service_unavailable' }
   }
+  if (!sess) {
+    console.error('[admin/auth] session missing or expired')
+    return { ok: false, status: 401, error: 'unauthorized' }
+  }
+
+  let admin: Awaited<ReturnType<typeof checkAdminAccess>>
+  try {
+    admin = await checkAdminAccess(chain, sess.wallet)
+  } catch (firstErr) {
+    console.error('[admin/auth] rpc check failed, retrying once', firstErr instanceof Error ? firstErr.message : String(firstErr))
+    try {
+      admin = await checkAdminAccess(makeChainFn(env), sess.wallet)
+    } catch (secondErr) {
+      console.error('[admin/auth] rpc check retry failed', secondErr instanceof Error ? secondErr.message : String(secondErr))
+      return { ok: false, status: 502, error: 'rpc_error' }
+    }
+  }
+  if (!admin.allowed) {
+    return { ok: false, status: 403, error: 'not_admin' }
+  }
+  return { ok: true, wallet: sess.wallet }
 }
 
 async function handleApi(
@@ -707,8 +734,9 @@ async function handleApi(
 
     if (path.startsWith('/admin/')) {
       const chain = makeChain(env)
-      const adminWallet = await resolveAdminWallet(req, env, chain, runDb)
-      if (!adminWallet) return json(401, { error: 'unauthorized' })
+      const adminAuth = await resolveAdminWallet(req, env, chain, makeChain, runDb)
+      if (!adminAuth.ok) return json(adminAuth.status, { error: adminAuth.error })
+      const adminWallet = adminAuth.wallet
 
       // M8: Scheduled job health & queue counters for Admin panel (with head - cursor lag + verifier gas balance)
       if (req.method === 'GET' && path === '/admin/health') {
@@ -963,8 +991,8 @@ async function handleApi(
     // ---- Admin 1-click Telegram Bot Webhook + Menu Button Setup (/api/admin/telegram/setup) ----
     if (req.method === 'POST' && path === '/admin/telegram/setup') {
       const chain = makeChain(env)
-      const adminWallet = await resolveAdminWallet(req, env, chain, runDb)
-      if (!adminWallet) return json(401, { error: 'unauthorized' })
+      const adminAuth = await resolveAdminWallet(req, env, chain, makeChain, runDb)
+      if (!adminAuth.ok) return json(adminAuth.status, { error: adminAuth.error })
       const result = await setupTelegramBotWebhook(env, new URL(req.url))
       if (!result.ok) {
         return json(result.error === 'telegram_not_configured' ? 503 : 502, { error: result.error })
