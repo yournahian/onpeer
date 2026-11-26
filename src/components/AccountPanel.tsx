@@ -1455,7 +1455,7 @@ export function AccountPanel({
                   Your Account Tier &amp; Trading Limits
                 </h3>
                 <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
-                  Per-order caps scale automatically with your completed trade history, account age, Merchant Margin, and KYC level.
+                  Per-order caps scale automatically with qualifying trades (≥ 10 {selectedAsset} each with unique counterparties), account age, Merchant Margin, and KYC level.
                 </p>
               </div>
               {renderAssetSelectorPills()}
@@ -1506,17 +1506,17 @@ export function AccountPanel({
                 <thead className="border-b border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] text-[11px] uppercase tracking-wider text-[var(--p2p-muted)]">
                   <tr>
                     <th className="px-4 py-2.5 font-bold">Tier</th>
-                    <th className="px-4 py-2.5 font-bold">Qualification Criteria (Unique Wallets)</th>
+                    <th className="px-4 py-2.5 font-bold">Qualification Criteria (≥ 10 {selectedAsset}, Unique Wallets)</th>
                     <th className="px-4 py-2.5 font-bold">Per-Order Cap</th>
                     <th className="px-4 py-2.5 text-right font-bold">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--p2p-border)]">
                   {[
-                    { tier: 0, name: 'Tier 0 — Starter', criteria: 'New wallet (0 unique counterparties)', cap: `200 ${selectedAsset}` },
-                    { tier: 1, name: 'Tier 1 — Active', criteria: '1+ unique counterparty trade OR 100+ USDC Merchant Margin', cap: `500 ${selectedAsset}` },
-                    { tier: 2, name: 'Tier 2 — Established', criteria: '5+ unique counterparty trades & ≥ 7 days account age', cap: `2,000 ${selectedAsset}` },
-                    { tier: 3, name: 'Tier 3 — Trusted', criteria: '20+ unique counterparty trades & ≥ 14 days account age', cap: 'Uncapped' },
+                    { tier: 0, name: 'Tier 0 — Starter', criteria: 'New wallet (0 qualifying trades)', cap: `200 ${selectedAsset}` },
+                    { tier: 1, name: 'Tier 1 — Active', criteria: `1+ qualifying trade (≥ 10 ${selectedAsset}) OR 100+ ${selectedAsset} Merchant Margin`, cap: `500 ${selectedAsset}` },
+                    { tier: 2, name: 'Tier 2 — Established', criteria: `5+ qualifying trades (≥ 10 ${selectedAsset}, unique wallets) & ≥ 7 days age`, cap: `2,000 ${selectedAsset}` },
+                    { tier: 3, name: 'Tier 3 — Trusted', criteria: `20+ qualifying trades (≥ 10 ${selectedAsset}, unique wallets) & ≥ 14 days age`, cap: 'Uncapped' },
                   ].map((row) => {
                     const isCurrent = (account?.tier ?? 0) === row.tier
                     const unlocked = (account?.tier ?? 0) >= row.tier

@@ -286,7 +286,7 @@ unchecked {
         id: 'progressive-tiers',
         title: 'Progressive Account Tiers',
         paragraphs: [
-          'To protect sellers against order-lock griefing and chargeback fraud, taker order sizes scale automatically with unique-counterparty trade history and account age:',
+          'To protect sellers against order-lock griefing and chargeback fraud, taker order sizes scale automatically with qualifying trades (≥ 10 USDC/EURC each with unique counterparties) and account age:',
         ],
         table: {
           headers: ['Tier', 'Qualification Criteria', 'USDC / EURC Cap'],
