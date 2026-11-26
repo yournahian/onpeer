@@ -57,36 +57,52 @@ const memoryAdTerms = new Map<string, string>()
 const memoryPresence = new Map<string, number>()
 const PRESENCE_ONLINE_MS = 90_000
 
-async function recordPresence(env: Env, wallet: string): Promise<void> {
+async function recordPresence(db: { query: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<{ rows: T[] }> }, wallet: string): Promise<void> {
   const w = wallet.toLowerCase()
-  const now = Date.now()
-  memoryPresence.set(w, now)
-  if (env.AI_SETTINGS_KV) {
-    try {
-      await env.AI_SETTINGS_KV.put(`presence:${w}`, JSON.stringify({ at: now }))
-    } catch {
-      /* non-fatal */
-    }
+  memoryPresence.set(w, Date.now())
+  try {
+    await db.query(
+      `INSERT INTO public.rate_limits (bucket, count, reset_at)
+       VALUES ($1, 1, now() + interval '90 seconds')
+       ON CONFLICT (bucket) DO UPDATE SET reset_at = now() + interval '90 seconds'`,
+      [`presence:${w}`],
+    )
+  } catch {
+    /* non-fatal: memory fallback */
   }
 }
 
-async function readPresence(env: Env, wallet: string): Promise<boolean> {
-  const w = wallet.toLowerCase()
+async function readPresenceMap(
+  env: Env,
+  wallets: string[],
+): Promise<Record<string, boolean>> {
+  const result: Record<string, boolean> = {}
+  if (wallets.length === 0) return result
   const now = Date.now()
-  const mem = memoryPresence.get(w)
-  if (mem && now - mem <= PRESENCE_ONLINE_MS) return true
-  if (env.AI_SETTINGS_KV) {
-    try {
-      const val = (await env.AI_SETTINGS_KV.get(`presence:${w}`, 'json')) as { at?: number } | null
-      if (typeof val?.at === 'number' && now - val.at <= PRESENCE_ONLINE_MS) {
-        memoryPresence.set(w, val.at)
-        return true
-      }
-    } catch {
-      /* ignore */
-    }
+  for (const w of wallets) {
+    const mem = memoryPresence.get(w)
+    result[w] = Boolean(mem && now - mem <= PRESENCE_ONLINE_MS)
   }
-  return false
+  try {
+    const buckets = wallets.map((w) => `presence:${w}`)
+    const rows = await runDb(env, async (db) => {
+      const res = await db.query<{ bucket: string }>(
+        `SELECT bucket FROM public.rate_limits WHERE bucket = ANY($1::text[]) AND reset_at > now()`,
+        [buckets],
+      )
+      return res.rows
+    })
+    for (const r of rows) {
+      const w = r.bucket.replace(/^presence:/, '')
+      if (w in result) {
+        result[w] = true
+        memoryPresence.set(w, now)
+      }
+    }
+  } catch {
+    /* keep memory fallback */
+  }
+  return result
 }
 
 async function getStoredAdTerms(env: Env, adId: string): Promise<string | null> {
@@ -425,9 +441,13 @@ async function handleApi(
 
     // ---- Website-wide real browser presence heartbeat (/api/presence/ping & /api/presence) ----
     if (req.method === 'POST' && path === '/presence/ping') {
-      const session = await runDb(env, (db) => getSession(req, db))
-      if (!session) return json(401, { error: 'unauthorized' })
-      await recordPresence(env, session.wallet)
+      const ok = await runDb(env, async (db) => {
+        const session = await getSession(req, db)
+        if (!session) return false
+        await recordPresence(db, session.wallet)
+        return true
+      })
+      if (!ok) return json(401, { error: 'unauthorized' })
       return json(200, { ok: true })
     }
 
@@ -438,10 +458,8 @@ async function handleApi(
         .map((w) => w.trim().toLowerCase())
         .filter((w) => /^0x[0-9a-f]{40}$/.test(w))
         .slice(0, 50)
-      const entries = await Promise.all(
-        wallets.map(async (w) => [w, await readPresence(env, w)] as const),
-      )
-      return json(200, { online: Object.fromEntries(entries) })
+      const online = await readPresenceMap(env, wallets)
+      return json(200, { online })
     }
 
     // ---- Public extended Advertisers' Terms (up to 1,000 bytes, not encrypted) ----

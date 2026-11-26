@@ -11,29 +11,42 @@ const CHAT_RETENTION_SECONDS = 90 * 24 * 3600 // 90 days
 
 const memoryChatRead = new Map<string, string>()
 
-async function markChatRead(env: Env, orderId: string, role: 'buyer' | 'seller'): Promise<void> {
+async function markChatRead(db: Queryable, orderId: string, role: 'buyer' | 'seller'): Promise<void> {
   const key = `chat_read:${orderId}:${role}`
   const nowIso = new Date().toISOString()
   memoryChatRead.set(key, nowIso)
-  if (env.AI_SETTINGS_KV) {
-    try {
-      await env.AI_SETTINGS_KV.put(key, JSON.stringify({ at: nowIso }))
-    } catch {
-      /* non-fatal */
-    }
+  try {
+    await db.query(
+      `INSERT INTO public.rate_limits (bucket, count, reset_at)
+       VALUES ($1, 1, now() + interval '90 days')
+       ON CONFLICT (bucket) DO UPDATE SET reset_at = now() + interval '90 days'`,
+      [key],
+    )
+  } catch {
+    /* non-fatal: memory fallback handles unit tests without rate_limits mock */
   }
 }
 
-async function getCounterpartyReadAt(env: Env, orderId: string, role: 'buyer' | 'seller'): Promise<string | null> {
+async function getCounterpartyReadAt(
+  db: Queryable,
+  orderId: string,
+  role: 'buyer' | 'seller',
+): Promise<string | null> {
   const otherRole = role === 'buyer' ? 'seller' : 'buyer'
   const key = `chat_read:${orderId}:${otherRole}`
-  if (env.AI_SETTINGS_KV) {
-    try {
-      const val = (await env.AI_SETTINGS_KV.get(key, 'json')) as { at?: string } | null
-      if (typeof val?.at === 'string') return val.at
-    } catch {
-      /* fallback */
-    }
+  try {
+    const res = await db.query<{ read_at: string | Date }>(
+      `SELECT (reset_at - interval '90 days') AS read_at
+         FROM public.rate_limits
+        WHERE bucket = $1
+        LIMIT 1`,
+      [key],
+    )
+    const raw = res.rows[0]?.read_at
+    if (raw instanceof Date) return raw.toISOString()
+    if (typeof raw === 'string' && raw.length > 0) return new Date(raw).toISOString()
+  } catch {
+    /* fallback to memory */
   }
   return memoryChatRead.get(key) ?? null
 }
@@ -287,8 +300,8 @@ export async function handleChatRoutes(
 
     let counterpartyReadAt: string | null = null
     if (access.role === 'buyer' || access.role === 'seller') {
-      await markChatRead(env, orderId.toString(), access.role)
-      counterpartyReadAt = await getCounterpartyReadAt(env, orderId.toString(), access.role)
+      await markChatRead(db, orderId.toString(), access.role)
+      counterpartyReadAt = await getCounterpartyReadAt(db, orderId.toString(), access.role)
     }
 
     return json(200, {
