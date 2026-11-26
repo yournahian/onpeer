@@ -12,7 +12,7 @@ import {
 } from './auth'
 import { handleAccountRoutes, maskEmail } from './accounts'
 import { checkAdminAccess, createArcPublicClient, createChainReader, type ChainReader } from './chain'
-import { CryptoTamperError, openText, VaultConfigError } from './crypto'
+import { CryptoTamperError, openText, sealText, VaultConfigError } from './crypto'
 import { DbUnavailableError, withDb, writeAudit, type Queryable } from './db'
 import { handleKycRoutes, processOnchainJobsBatch } from './kyc'
 import { handleChatRoutes } from './chat'
@@ -128,20 +128,79 @@ async function setStoredAdTerms(env: Env, adId: string, terms: string): Promise<
   }
 }
 
+const AI_SETTINGS_SENTINEL_ORDER_ID = -1
+const AI_SETTINGS_SENTINEL_AUTHOR = '0x0000000000000000000000000000000000000000'
+const AI_SETTINGS_AAD = 'system:ai-settings:v1'
+
 async function loadSettings(env: Env): Promise<SavedSettings> {
-  if (!env.AI_SETTINGS_KV) return memorySettings
-  try {
-    const raw = (await env.AI_SETTINGS_KV.get(KV_KEY, 'json')) as SavedSettings | null
-    return raw ? { active: raw.active, providers: raw.providers ?? {} } : { providers: {} }
-  } catch {
-    return { providers: {} }
+  // Primary: encrypted Postgres storage (immune to Cloudflare KV free-tier limits)
+  if (env.HYPERDRIVE) {
+    try {
+      const row = await runDb(env, async (db) => {
+        const res = await db.query<{ body_enc: string }>(
+          `SELECT body_enc
+             FROM public.chat_messages
+            WHERE order_id = $1 AND author = $2
+            ORDER BY id DESC
+            LIMIT 1`,
+          [AI_SETTINGS_SENTINEL_ORDER_ID, AI_SETTINGS_SENTINEL_AUTHOR],
+        )
+        return res.rows[0] ?? null
+      })
+      if (row?.body_enc) {
+        const plain = await openText(env, row.body_enc, AI_SETTINGS_AAD)
+        const parsed = JSON.parse(plain) as SavedSettings
+        const normalized = { active: parsed.active, providers: parsed.providers ?? {} }
+        memorySettings = normalized
+        return normalized
+      }
+    } catch {
+      /* fallback to KV or memory */
+    }
   }
+  if (env.AI_SETTINGS_KV) {
+    try {
+      const raw = (await env.AI_SETTINGS_KV.get(KV_KEY, 'json')) as SavedSettings | null
+      if (raw) {
+        const normalized = { active: raw.active, providers: raw.providers ?? {} }
+        memorySettings = normalized
+        return normalized
+      }
+    } catch {
+      /* fallback to memory */
+    }
+  }
+  return memorySettings
 }
 
 async function saveSettings(env: Env, next: SavedSettings): Promise<void> {
   memorySettings = next
+  let savedToDb = false
+  if (env.HYPERDRIVE) {
+    try {
+      const enc = await sealText(env, JSON.stringify(next), AI_SETTINGS_AAD)
+      await runDb(env, async (db) => {
+        await db.query(
+          `DELETE FROM public.chat_messages WHERE order_id = $1 AND author = $2`,
+          [AI_SETTINGS_SENTINEL_ORDER_ID, AI_SETTINGS_SENTINEL_AUTHOR],
+        )
+        await db.query(
+          `INSERT INTO public.chat_messages (order_id, author, body_enc, delete_after)
+           VALUES ($1, $2, $3, NULL)`,
+          [AI_SETTINGS_SENTINEL_ORDER_ID, AI_SETTINGS_SENTINEL_AUTHOR, enc],
+        )
+      })
+      savedToDb = true
+    } catch {
+      /* fall through to KV fallback */
+    }
+  }
   if (env.AI_SETTINGS_KV) {
-    await env.AI_SETTINGS_KV.put(KV_KEY, JSON.stringify(next))
+    try {
+      await env.AI_SETTINGS_KV.put(KV_KEY, JSON.stringify(next))
+    } catch {
+      if (!savedToDb) throw new Error('settings_storage_unavailable')
+    }
   }
 }
 
