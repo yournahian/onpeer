@@ -1,5 +1,5 @@
 import { formatEther, isAddress, verifyMessage } from 'viem'
-import { SYSTEM_PROMPT, TOOLS } from '../server/agent'
+import { getSystemPrompt, getTools } from '../server/agent'
 import type { ProviderId, SavedSettings } from '../server/settings'
 import {
   AuthConfigError,
@@ -28,6 +28,7 @@ import { checkRateLimit } from './db'
 import {
   CHAIN_ID,
   clientIp,
+  isTestnetEnv,
   json,
   normalizeWallet,
   readJsonBody,
@@ -610,8 +611,11 @@ async function handleApi(
           body: JSON.stringify({
             model: cfg.model,
             temperature: 0.1,
-            messages: [{ role: 'system', content: SYSTEM_PROMPT + contextLine(body.context) }, ...messages],
-            tools: TOOLS,
+            messages: [
+              { role: 'system', content: getSystemPrompt(isTestnetEnv(env)) + contextLine(body.context) },
+              ...messages,
+            ],
+            tools: getTools(isTestnetEnv(env)),
             tool_choice: 'auto',
           }),
           signal: AbortSignal.timeout(60_000),

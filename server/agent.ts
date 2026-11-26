@@ -1,8 +1,44 @@
-export const SYSTEM_PROMPT = `You are the assistant inside "OnPeer", a testnet app with these features:
-- P2P (/p2p): peer-to-peer trading of USDC and EURC against South Asian currencies (INR, PKR, BDT, LKR, NPR, BTN, MVR, AFN) on Arc Testnet. Tokens are held in escrow by dedicated non-custodial smart contracts. Fiat is paid outside the app.
+const MAINNET_CHAINS = [
+  'Arc',
+  'Ethereum',
+  'Base',
+  'Arbitrum',
+  'Optimism',
+  'Avalanche',
+  'Polygon',
+]
+
+const TESTNET_CHAINS = [
+  'Arc_Testnet',
+  'Ethereum_Sepolia',
+  'Base_Sepolia',
+  'Arbitrum_Sepolia',
+  'Optimism_Sepolia',
+  'Avalanche_Fuji',
+  'Polygon_Amoy_Testnet',
+]
+
+export function getSystemPrompt(isTestnet = false): string {
+  const networkName = isTestnet ? 'Arc Testnet' : 'Arc'
+  const appKind = isTestnet ? 'a testnet app on Arc Testnet' : 'a live non-custodial stablecoin app on Arc Mainnet'
+  const bridgeDesc = isTestnet
+    ? 'USDC across all 7 EVM testnets (Arc Testnet, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia, Avalanche Fuji, Polygon Amoy) via Circle CCTP, plus EURC, cirBTC, and WETH via Circle CCTPx.'
+    : 'USDC across 7 EVM networks (Arc, Ethereum, Base, Arbitrum, Optimism, Avalanche, Polygon) via Circle CCTP, plus EURC, cirBTC, and WETH via Circle CCTPx.'
+  const chainMapping = isTestnet
+    ? '"Arc" means Arc_Testnet, "Base" means Base_Sepolia, "Ethereum" means Ethereum_Sepolia, "Arbitrum" means Arbitrum_Sepolia, "Optimism" means Optimism_Sepolia, "Avalanche" means Avalanche_Fuji, "Polygon" means Polygon_Amoy_Testnet.'
+    : '"Arc" means Arc, "Base" means Base, "Ethereum" means Ethereum, "Arbitrum" means Arbitrum, "Optimism" means Optimism, "Avalanche" means Avalanche, "Polygon" means Polygon.'
+  const bridgeExample = isTestnet
+    ? 'propose_bridge(from Arc_Testnet, to Base_Sepolia, amount 20)'
+    : 'propose_bridge(from Arc, to Base, amount 20)'
+  const closingNote = isTestnet
+    ? 'This instance runs on Arc Testnet (demo funds).'
+    : 'This instance runs live on Arc Mainnet with real USDC and EURC.'
+
+  return `You are the assistant inside "OnPeer", ${appKind} with these features:
+- P2P (/p2p): peer-to-peer trading of USDC and EURC against South Asian currencies (INR, PKR, BDT, LKR, NPR, BTN, MVR, AFN) on ${networkName}. Tokens are held in escrow by dedicated non-custodial smart contracts. Fiat is paid outside the app.
 - Cash out (/p2p?mode=sell): sell crypto for local currency via OnPeer P2P escrow (sell against Buy ads or post a sell ad). Direct third-party bank withdrawal providers are not integrated yet — never promise or name any third-party off-ramp provider.
-- Swap (/swap): USDC, EURC, cirBTC, and WETH on Arc Testnet.
-- Bridge (/bridge): USDC across all 7 EVM testnets (Arc Testnet, Ethereum Sepolia, Base Sepolia, Arbitrum Sepolia, Optimism Sepolia, Avalanche Fuji, Polygon Amoy) via Circle CCTP, plus EURC, cirBTC, and WETH via Circle CCTPx.
+- Swap (/swap): USDC, EURC, cirBTC, and WETH on ${networkName}.
+- Bridge (/bridge): ${bridgeDesc}
 
 How you work:
 - You search, explain and prepare actions. You cannot sign or send transactions and you never hold keys. For any action, call a propose_* tool: it shows the user a card; for swaps and bridges they can finish right in the chat (quote, confirm, sign) or open the page, and for P2P orders they review and sign on the page. Never say an action is done, sent or completed. Say it is ready for their review.
@@ -23,19 +59,10 @@ How you work:
 - If the user's message already contains the details (amount, token, chains, currency), call the tool immediately. Do not ask for details you already have, and remember details given earlier in the conversation.
 - After a propose_* tool succeeds, the app shows the card and the next step by itself. Do not explain where to click.
 - If the session says the wallet is not connected, tell the user to connect their wallet on the page they open.
-- Chain names: "Arc" means Arc_Testnet, "Base" means Base_Sepolia, "Ethereum" means Ethereum_Sepolia, "Arbitrum" means Arbitrum_Sepolia, "Optimism" means Optimism_Sepolia, "Avalanche" means Avalanche_Fuji, "Polygon" means Polygon_Amoy_Testnet.
-- Examples: "swap 5 USDC to EURC" -> propose_swap(token_in USDC, amount 5). "bridge 20 USDC from Arc to Base" -> propose_bridge(from Arc_Testnet, to Base_Sepolia, amount 20). "buy 100 USDC in India with UPI" -> search_p2p_ads(action buy, currency INR, payment_method UPI, usdc_amount 100). "cash out USDC to INR" -> propose_cashout(currency INR). "show my orders" -> get_my_orders.
-- This is a testnet demo. Answer briefly, in plain language, without markdown headings. Use short lists only when comparing options. Do not mention which AI model or provider you are.`
-
-const CHAINS = [
-  'Arc_Testnet',
-  'Ethereum_Sepolia',
-  'Base_Sepolia',
-  'Arbitrum_Sepolia',
-  'Optimism_Sepolia',
-  'Avalanche_Fuji',
-  'Polygon_Amoy_Testnet',
-]
+- Chain names: ${chainMapping}
+- Examples: "swap 5 USDC to EURC" -> propose_swap(token_in USDC, amount 5). "bridge 20 USDC from Arc to Base" -> ${bridgeExample}. "buy 100 USDC in India with UPI" -> search_p2p_ads(action buy, currency INR, payment_method UPI, usdc_amount 100). "cash out USDC to INR" -> propose_cashout(currency INR). "show my orders" -> get_my_orders.
+- ${closingNote} Answer briefly, in plain language, without markdown headings. Use short lists only when comparing options. Do not mention which AI model or provider you are.`
+}
 
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[]) => ({
   type: 'function' as const,
@@ -46,66 +73,73 @@ const fn = (name: string, description: string, properties: Record<string, unknow
   },
 })
 
-export const TOOLS = [
-  fn(
-    'search_p2p_ads',
-    'Search live P2P ads. action "buy" means the user wants to BUY USDC (matches sell ads); "sell" means the user wants to SELL USDC (matches buy ads). Returns up to 5 best-priced ads.',
-    {
-      action: { type: 'string', enum: ['buy', 'sell'] },
-      currency: { type: 'string', enum: ['INR', 'PKR', 'BDT', 'LKR', 'NPR', 'BTN', 'MVR', 'AFN'] },
-      payment_method: { type: 'string', description: 'Optional, e.g. UPI, bKash, Raast, eSewa, Bank transfer' },
-      usdc_amount: { type: 'string', description: 'Optional USDC amount the user wants to trade, to filter by limits' },
-    },
-    ['action', 'currency'],
-  ),
-  fn('get_wallet_summary', 'Get the connected wallet address and its USDC, EURC, cirBTC, and WETH balances on Arc Testnet.', {}, []),
-  fn('get_my_orders', "List the connected wallet's most recent P2P orders with status, role, amount and deadline.", {}, []),
-  fn(
-    'propose_swap',
-    'Prepare a swap on Arc Testnet. The user reviews the quote and signs on the Swap page.',
-    {
-      token_in: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'] },
-      token_out: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Optional output token' },
-      amount: { type: 'string', description: 'Amount of token_in, decimal string' },
-    },
-    ['token_in', 'amount'],
-  ),
-  fn(
-    'propose_bridge',
-    'Prepare a token bridge (USDC via CCTP, or EURC / cirBTC / WETH via CCTPx). The user reviews fees and signs on the Bridge page.',
-    {
-      from_chain: { type: 'string', enum: CHAINS },
-      to_chain: { type: 'string', enum: CHAINS },
-      token: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Token to bridge (default USDC)' },
-      amount: { type: 'string', description: 'Token amount, decimal string' },
-    },
-    ['from_chain', 'to_chain', 'amount'],
-  ),
-  fn(
-    'propose_p2p_trade',
-    'Prepare a P2P order against an ad found with search_p2p_ads. The user reviews and signs in the trade sheet.',
-    {
-      ad_id: { type: 'string', description: 'Ad id from search_p2p_ads' },
-      usdc_amount: { type: 'string', description: 'USDC amount to trade, decimal string' },
-    },
-    ['ad_id', 'usdc_amount'],
-  ),
-  fn(
-    'open_order',
-    'Show the user an existing P2P order by id so they can pay, release, message or dispute there.',
-    { order_id: { type: 'string' } },
-    ['order_id'],
-  ),
-  fn(
-    'propose_cashout',
-    'Prepare a card to open /p2p?mode=sell so the user can sell USDC for local currency via OnPeer P2P escrow.',
-    {
-      currency: {
-        type: 'string',
-        enum: ['INR', 'PKR', 'BDT', 'LKR', 'NPR', 'BTN', 'MVR', 'AFN'],
-        description: 'Optional local currency code',
+export function getTools(isTestnet = false) {
+  const networkName = isTestnet ? 'Arc Testnet' : 'Arc'
+  const chains = isTestnet ? TESTNET_CHAINS : MAINNET_CHAINS
+  return [
+    fn(
+      'search_p2p_ads',
+      'Search live P2P ads. action "buy" means the user wants to BUY USDC (matches sell ads); "sell" means the user wants to SELL USDC (matches buy ads). Returns up to 5 best-priced ads.',
+      {
+        action: { type: 'string', enum: ['buy', 'sell'] },
+        currency: { type: 'string', enum: ['INR', 'PKR', 'BDT', 'LKR', 'NPR', 'BTN', 'MVR', 'AFN'] },
+        payment_method: { type: 'string', description: 'Optional, e.g. UPI, bKash, Raast, eSewa, Bank transfer' },
+        usdc_amount: { type: 'string', description: 'Optional USDC amount the user wants to trade, to filter by limits' },
       },
-    },
-    [],
-  ),
-]
+      ['action', 'currency'],
+    ),
+    fn('get_wallet_summary', `Get the connected wallet address and its USDC, EURC, cirBTC, and WETH balances on ${networkName}.`, {}, []),
+    fn('get_my_orders', "List the connected wallet's most recent P2P orders with status, role, amount and deadline.", {}, []),
+    fn(
+      'propose_swap',
+      `Prepare a swap on ${networkName}. The user reviews the quote and signs on the Swap page.`,
+      {
+        token_in: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'] },
+        token_out: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Optional output token' },
+        amount: { type: 'string', description: 'Amount of token_in, decimal string' },
+      },
+      ['token_in', 'amount'],
+    ),
+    fn(
+      'propose_bridge',
+      'Prepare a token bridge (USDC via CCTP, or EURC / cirBTC / WETH via CCTPx). The user reviews fees and signs on the Bridge page.',
+      {
+        from_chain: { type: 'string', enum: chains },
+        to_chain: { type: 'string', enum: chains },
+        token: { type: 'string', enum: ['USDC', 'EURC', 'cirBTC', 'WETH'], description: 'Token to bridge (default USDC)' },
+        amount: { type: 'string', description: 'Token amount, decimal string' },
+      },
+      ['from_chain', 'to_chain', 'amount'],
+    ),
+    fn(
+      'propose_p2p_trade',
+      'Prepare a P2P order against an ad found with search_p2p_ads. The user reviews and signs in the trade sheet.',
+      {
+        ad_id: { type: 'string', description: 'Ad id from search_p2p_ads' },
+        usdc_amount: { type: 'string', description: 'USDC amount to trade, decimal string' },
+      },
+      ['ad_id', 'usdc_amount'],
+    ),
+    fn(
+      'open_order',
+      'Show the user an existing P2P order by id so they can pay, release, message or dispute there.',
+      { order_id: { type: 'string' } },
+      ['order_id'],
+    ),
+    fn(
+      'propose_cashout',
+      'Prepare a card to open /p2p?mode=sell so the user can sell USDC for local currency via OnPeer P2P escrow.',
+      {
+        currency: {
+          type: 'string',
+          enum: ['INR', 'PKR', 'BDT', 'LKR', 'NPR', 'BTN', 'MVR', 'AFN'],
+          description: 'Optional local currency code',
+        },
+      },
+      [],
+    ),
+  ]
+}
+
+export const SYSTEM_PROMPT = getSystemPrompt(false)
+export const TOOLS = getTools(false)

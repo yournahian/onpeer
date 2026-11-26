@@ -9,7 +9,12 @@ import {
   defaultSwapCounterpart,
   type SwapToken,
 } from '@/hooks/useSwapFlow'
-import { BRIDGE_TOKEN_DECIMALS, type BridgeChainName, type BridgeToken } from '@/hooks/useBridgeFlow'
+import {
+  BRIDGE_CHAINS as ACTIVE_BRIDGE_CHAINS,
+  BRIDGE_TOKEN_DECIMALS,
+  type BridgeChainName,
+  type BridgeToken,
+} from '@/hooks/useBridgeFlow'
 import {
   CHAIN_ID,
   COUNTRIES,
@@ -48,18 +53,8 @@ export type ToolContext = { client: PublicClient; address?: Address }
 export type ToolOutcome = { result: unknown; proposal?: Proposal }
 
 const AMOUNT = /^\d+(\.\d{1,6})?$/
-const BRIDGE_CHAINS = [
-  'Arc_Testnet',
-  'Ethereum_Sepolia',
-  'Base_Sepolia',
-  'Arbitrum_Sepolia',
-  'Optimism_Sepolia',
-  'Avalanche_Fuji',
-  'Polygon_Amoy_Testnet',
-]
+const BRIDGE_CHAINS: string[] = ACTIVE_BRIDGE_CHAINS.map((c) => c.kit)
 const CHAIN_LABEL = (c: string) => c.replace(/_/g, ' ')
-
-const eurc = (import.meta.env.VITE_ARC_TESTNET_EURC_ADDRESS as string | undefined)?.trim()
 
 const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 const toRaw = (v: string): bigint => {
@@ -156,17 +151,21 @@ async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
   const usdc = getUsdc(CHAIN_ID)?.address as Address | undefined
   const read = async (token: Address | undefined, dec = 6, frac = 2) => {
     if (!token) return null
-    const raw = await ctx.client.readContract({
-      address: token,
-      abi: erc20Abi,
-      functionName: 'balanceOf',
-      args: [ctx.address as Address],
-    })
-    return formatUnitsFixed(raw, dec, frac)
+    try {
+      const raw = await ctx.client.readContract({
+        address: token,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [ctx.address as Address],
+      })
+      return formatUnitsFixed(raw, dec, frac)
+    } catch {
+      return null
+    }
   }
   const [u, e, btc, weth, account, kycOk] = await Promise.all([
     read(usdc, 6, 2),
-    read(eurc && /^0x[0-9a-fA-F]{40}$/.test(eurc) ? (eurc as Address) : SWAP_TOKEN_ADDRESS.EURC, 6, 2),
+    read(SWAP_TOKEN_ADDRESS.EURC, 6, 2),
     read(SWAP_TOKEN_ADDRESS.cirBTC, 8, 6),
     read(SWAP_TOKEN_ADDRESS.WETH, 18, 6),
     ESCROW_ADDRESS
