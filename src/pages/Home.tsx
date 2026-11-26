@@ -37,7 +37,7 @@ const PRODUCTS = [
     icon: Waypoints,
     title: 'Bridge',
     tagline: 'Move USDC across chains',
-    body: 'Send USDC between Arc and Ethereum, Base, Arbitrum, Optimism, Avalanche or Polygon testnets with Circle CCTP.',
+    body: 'Send USDC between Arc and Ethereum, Base, Arbitrum, Optimism, Avalanche or Polygon with Circle CCTP.',
     cta: 'Open bridge',
   },
 ] as const

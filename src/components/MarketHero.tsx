@@ -56,7 +56,7 @@ export function MarketHero({
             className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]"
             style={{ background: 'var(--fill-3)', color: 'var(--accent)' }}
           >
-            <span className="live-dot" style={{ background: 'var(--success)' }} /> P2P market · Arc Testnet
+            <span className="live-dot" style={{ background: 'var(--success)' }} /> P2P market · Arc
           </p>
           <motion.h1
             className="display text-gradient mt-3 text-balance text-4xl font-bold sm:text-5xl"

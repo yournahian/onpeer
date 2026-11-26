@@ -26,7 +26,7 @@ const QUESTIONS = [
   },
   {
     q: 'Is this real money?',
-    a: 'Not yet. OnPeer runs on Arc Testnet with test funds. Use the Get test USDC button in the Arc Studio sidebar to try it.',
+    a: 'Yes. OnPeer runs live on Arc Mainnet (Chain ID 5042) with real USDC and EURC. A separate test environment is available at testnet.onpeer.xyz.',
   },
   {
     q: 'What powers the swap and the bridge?',

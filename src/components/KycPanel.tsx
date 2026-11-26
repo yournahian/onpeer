@@ -93,7 +93,7 @@ export function KycPanel() {
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#FF5A00]" />
           <p>
             <strong className="text-[#FF5A00]">Sandbox Test Mode:</strong> Pick a deterministic Didit test scenario
-            below. Never submit real identity documents on Arc Testnet.
+            below. Keep your identity document clear and well-lit.
           </p>
         </div>
       )}

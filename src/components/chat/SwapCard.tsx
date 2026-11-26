@@ -26,8 +26,8 @@ export function SwapCard({
         <span>{tokenIn} to</span>
         <CoinLogo symbol={tokenOut} size={16} />
         <span>{tokenOut} on</span>
-        <ChainLogo chain="Arc_Testnet" size={16} />
-        <span>Arc Testnet</span>
+        <ChainLogo chain="Arc" size={16} />
+        <span>Arc</span>
       </p>
 
       {phase === 'quoted' && estimate && (

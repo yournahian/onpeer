@@ -41,7 +41,7 @@ const DOC_SLUGS: DocSlugMeta[] = [
     slug: 'quickstart',
     title: 'Quickstart Guide | Connect Wallet, Swap, Bridge & Trade P2P — OnPeer Docs',
     description:
-      'Step-by-step quickstart to connect an EVM wallet on Arc Testnet (Chain ID 5042002), pay gas in native USDC, and complete your first P2P escrow order, token swap, or cross-chain bridge.',
+      'Step-by-step quickstart to connect an EVM wallet on Arc Mainnet (Chain ID 5042), pay gas in native USDC, and complete your first P2P escrow order, token swap, or cross-chain bridge.',
     section: 'Getting Started',
   },
   {
@@ -88,9 +88,9 @@ const DOC_SLUGS: DocSlugMeta[] = [
   },
   {
     slug: 'contracts',
-    title: 'Deployed Smart Contracts & Token Addresses on Arc Testnet — OnPeer Docs',
+    title: 'Deployed Smart Contracts & Token Addresses on Arc — OnPeer Docs',
     description:
-      'Verified contract addresses on Arc Testnet (Chain ID 5042002) for P2PEscrow v2.1 (USDC, EURC, cirBTC, WETH), ERC-20 tokens, Circle CCTPx router, and KYC verifier.',
+      'Verified contract addresses on Arc Mainnet (Chain ID 5042) for P2PEscrow v2.3 (USDC, EURC), ERC-20 tokens, Circle CCTP/CCTPx router, and KYC verifier.',
     section: 'Developers & Reference',
   },
   {
@@ -131,7 +131,7 @@ const CORE_FAQS = [
   {
     question: 'Which blockchain does OnPeer run on and what token pays for gas?',
     answer:
-      'OnPeer runs on Arc (Chain ID 5042002 on Arc Testnet), Circle Layer-1 EVM blockchain where USDC is the native gas token. Users never need ETH or a separate volatile gas token to approve, escrow, swap, or bridge.',
+      'OnPeer runs on Arc Mainnet (Chain ID 5042), Circle Layer-1 EVM blockchain where USDC is the native gas token. Users never need ETH or a separate volatile gas token to approve, escrow, swap, or bridge.',
   },
 ]
 
@@ -591,14 +591,14 @@ OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhuta
 ## Documentation Pages
 
 - [Introduction](https://docs.onpeer.xyz/): Protocol overview and design principles.
-- [Quickstart Guide](https://docs.onpeer.xyz/quickstart): Wallet setup on Arc Testnet (Chain ID \`5042002\`) and first trade.
+- [Quickstart Guide](https://docs.onpeer.xyz/quickstart): Wallet setup on Arc Mainnet (Chain ID \`5042\`) and first trade.
 - [Arc Network & Gas](https://docs.onpeer.xyz/arc-network): Native USDC gas and sub-second deterministic finality.
 - [P2P Marketplace](https://docs.onpeer.xyz/p2p-marketplace): Supported crypto assets, fiat corridors, and auto-filled payment methods.
 - [Escrow Smart Contract](https://docs.onpeer.xyz/escrow): \`P2PEscrow v2.1\` state machine, 0% trade fee, tiered caps, and merchant margin.
 - [Swap & Bridge (CCTP / CCTPx)](https://docs.onpeer.xyz/swap-and-bridge): Multi-token swaps and cross-chain routes.
 - [KYC & Encrypted Vault](https://docs.onpeer.xyz/kyc-and-vault): Didit identity verification and AES-256-GCM payment vault.
 - [Dispute Resolution](https://docs.onpeer.xyz/disputes): 30-minute cooling-off, 2-phone video proof, and asymmetric bonds.
-- [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Testnet.
+- [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Mainnet.
 - [Security & API Reference](https://docs.onpeer.xyz/security-and-api): Non-custodial guarantees, CSP, and Worker endpoints.
 `
 
@@ -606,7 +606,7 @@ export const LLMS_FULL_TXT = `# OnPeer — Full Technical & Product Reference (G
 
 > Canonical URLs: https://onpeer.xyz | https://app.onpeer.xyz | https://docs.onpeer.xyz
 > Official X (Twitter): https://x.com/onpeerapp (@onpeerapp)
-> Network: Arc Testnet (Chain ID: 5042002, Native Gas Token: USDC)
+> Network: Arc Mainnet (Chain ID: 5042, Native Gas Token: USDC)
 
 ## 1. Executive Summary
 
@@ -633,7 +633,7 @@ OnPeer is a non-custodial peer-to-peer (P2P) crypto marketplace, swap terminal, 
   - **Ad Refresh, Chat & Dispute Filing:** \`0%\` (free)
   - **Ad Listing Fee:** Flat ~\`$0.05\` equivalent per new ad (\`0.05 USDC\`, \`0.05 EURC\`, \`0.00000050 cirBTC\`, or \`0.00002 WETH\`) to prevent order-book spam.
 
-## 2. Deployed Smart Contracts on Arc Testnet (Chain ID: 5042002)
+## 2. Deployed Smart Contracts on Arc Mainnet (Chain ID: 5042)
 
 | Contract | Address | Deploy Block | Purpose |
 | --- | --- | --- | --- |

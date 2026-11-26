@@ -70,11 +70,11 @@ const HELP_COLLECTIONS: HelpCollection[] = [
         ],
       },
       {
-        id: 'testnet-notice',
-        title: 'Is OnPeer currently on Testnet?',
-        summary: 'Arc Testnet sandbox environment details.',
+        id: 'network-notice',
+        title: 'What network does OnPeer run on?',
+        summary: 'Arc Mainnet live network details.',
         body: [
-          'Yes. OnPeer currently runs on Arc Testnet (Chain ID 5042002) using test tokens only.',
+          'OnPeer runs live on Arc Mainnet (Chain ID 5042) with USDC as the native gas token. A separate testnet sandbox is also available at testnet.onpeer.xyz.',
           'Never send real mainnet funds or upload real identity documents while testing in sandbox mode.',
         ],
       },

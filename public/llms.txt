@@ -21,7 +21,7 @@ OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhuta
 ## Documentation Pages
 
 - [Introduction](https://docs.onpeer.xyz/): Protocol overview and design principles.
-- [Quickstart Guide](https://docs.onpeer.xyz/quickstart): Wallet setup on Arc Testnet (Chain ID `5042002`) and first trade.
+- [Quickstart Guide](https://docs.onpeer.xyz/quickstart): Wallet setup on Arc Mainnet (Chain ID `5042`) and first trade.
 - [Arc Network & Gas](https://docs.onpeer.xyz/arc-network): Native USDC gas and sub-second deterministic finality.
 - [P2P Marketplace](https://docs.onpeer.xyz/p2p-marketplace): Supported crypto assets, fiat corridors, and auto-filled payment methods.
 - [Escrow Smart Contract](https://docs.onpeer.xyz/escrow): `P2PEscrow v2.1` state machine, 0% trade fee, tiered caps, and merchant margin.
@@ -29,5 +29,5 @@ OnPeer enables users across Bangladesh, India, Pakistan, Sri Lanka, Nepal, Bhuta
 - [Fiat Onramp](https://docs.onpeer.xyz/fiat-onramp): Circle Onramp integration and session security.
 - [KYC & Encrypted Vault](https://docs.onpeer.xyz/kyc-and-vault): Didit identity verification and AES-256-GCM payment vault.
 - [Dispute Resolution](https://docs.onpeer.xyz/disputes): 30-minute cooling-off, 2-phone video proof, and asymmetric bonds.
-- [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Testnet.
+- [Deployed Contracts](https://docs.onpeer.xyz/contracts): Verified contract and token addresses on Arc Mainnet.
 - [Security & API Reference](https://docs.onpeer.xyz/security-and-api): Non-custodial guarantees, CSP, and Worker endpoints.

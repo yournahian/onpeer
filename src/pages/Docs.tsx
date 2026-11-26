@@ -161,7 +161,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
         id: 'connect-wallet',
         title: '1. Connect Your Wallet',
         paragraphs: [
-          'Open app.onpeer.xyz and connect MetaMask, Rabby, Rainbow, or any WalletConnect-compatible EVM wallet. When prompted, approve switching to Arc Testnet (Chain ID: 5042002).',
+          'Open app.onpeer.xyz and connect MetaMask, Rabby, Rainbow, or any WalletConnect-compatible EVM wallet. When prompted, approve switching to Arc Mainnet (Chain ID: 5042).',
           'Always keep at least 0.50–1.00 USDC in your wallet on Arc Testnet so you can sign approvals, mark payments, or post ads smoothly.',
         ],
       },
@@ -188,7 +188,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
           filename: 'arc-network-config.json',
           language: 'json',
           code: `{
-  "chainId": 5042002,
+  "chainId": 5042,
   "chainName": "Arc Testnet",
   "nativeCurrency": { "name": "USDC", "symbol": "USDC", "decimals": 18 },
   "rpcUrls": ["https://rpc.testnet.arc.io"],
@@ -379,7 +379,7 @@ unchecked {
   {
     slug: 'swap',
     title: 'Instant Token Swap',
-    shortDescription: 'Swap between USDC, EURC, cirBTC, and WETH on Arc Testnet with explicit quote review and slippage bounds.',
+    shortDescription: 'Swap between USDC, EURC, cirBTC, and WETH on Arc with explicit quote review and slippage bounds.',
     badge: 'App Kit',
     category: 'Cross-Chain & Liquidity',
     sections: [
@@ -387,7 +387,7 @@ unchecked {
         id: 'how-swap-works',
         title: 'Keyless Browser Swaps on Arc',
         paragraphs: [
-          'The /swap page and inline AI Assistant SwapCard use Circle App Kit (@circle-fin/app-kit) with the Viem v2 browser wallet adapter to quote and execute swaps between USDC, EURC, cirBTC, and WETH on Arc Testnet.',
+          'The /swap page and inline AI Assistant SwapCard use Circle App Kit (@circle-fin/app-kit) with the Viem v2 browser wallet adapter to quote and execute swaps between USDC, EURC, cirBTC, and WETH on Arc.',
           'Every swap enforces a strict two-step flow: first estimateSwap() fetches expected output and provider fees; only an explicit user click on the Swap button signs and broadcasts swap().',
         ],
         code: {
@@ -483,15 +483,15 @@ const result = await appKit.bridge({
   {
     slug: 'smart-contracts',
     title: 'Smart Contracts & Deployments',
-    shortDescription: 'Verified contract addresses on Arc Testnet (Chain ID 5042002) for all P2P Escrows, ERC-20 tokens, and CCTP/CCTPx.',
+    shortDescription: 'Verified contract addresses on Arc Mainnet (Chain ID 5042) for all P2P Escrows, ERC-20 tokens, and CCTP/CCTPx.',
     badge: 'Solidity',
     category: 'Architecture & Reference',
     sections: [
       {
         id: 'deployed-contracts',
-        title: 'Live Arc Testnet Contract Registry',
+        title: 'Live Arc Mainnet Contract Registry',
         paragraphs: [
-          'All OnPeer P2P Escrow contracts are non-custodial Solidity 0.8.28 deployments on Arc Testnet (Chain ID: 5042002). Governance cannot sweep escrowed trade funds, and blocklisted recipients degrade gracefully into withdrawable claimable balances so one bad actor never bricks another user’s order.',
+          'All OnPeer P2P Escrow contracts are non-custodial Solidity 0.8.28 deployments on Arc Mainnet (Chain ID: 5042). Governance cannot sweep escrowed trade funds, and blocklisted recipients degrade gracefully into withdrawable claimable balances so one bad actor never bricks another user’s order.',
         ],
         renderCustom: 'contracts',
       },
@@ -941,7 +941,7 @@ export default function DocsPage() {
       const cfg = getEscrowConfig(asset)
       return {
         label: `${asset} Token (ERC-20)`,
-        role: `${cfg.decimals}-decimal ERC-20 contract on Arc Testnet`,
+        role: `${cfg.decimals}-decimal ERC-20 contract on Arc`,
         address: cfg.tokenAddress,
         asset,
       }
@@ -951,7 +951,7 @@ export default function DocsPage() {
       ...tokens,
       {
         label: 'CrossChainTokenService (CCTPx)',
-        role: 'Circle CCTPx cross-chain token router on Arc Testnet (Domain 26)',
+        role: 'Circle CCTPx cross-chain token router on Arc (Domain 26)',
         address: '0x63753E722bd2C2A5DF6EE19C5106662208B81077',
         asset: undefined,
       },
@@ -1078,7 +1078,7 @@ export default function DocsPage() {
           {[
             { label: 'Arc Network Docs', href: 'https://docs.arc.io' },
             { label: 'Circle CCTP & CCTPx', href: 'https://developers.circle.com/cctp' },
-            { label: 'Arc Testnet Explorer', href: 'https://explorer.testnet.arc.io' },
+            { label: 'Arc Explorer', href: 'https://explorer.arc.io' },
             {
               label: 'Privacy & Encryption',
               href: isDocsSubdomain() ? `${LANDING_URL}/privacy` : '/privacy',

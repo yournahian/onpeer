@@ -380,7 +380,7 @@ export default function SwapPage() {
           )}
           {insufficient && (
             <p className="mt-3 text-xs font-medium" style={{ color: 'var(--danger)' }}>
-              Not enough {tokenIn}.{tokenIn === 'USDC' ? ' Use "Get test USDC" in the Arc Studio sidebar.' : ''}
+              Not enough {tokenIn}.
             </p>
           )}
 

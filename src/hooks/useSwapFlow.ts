@@ -96,11 +96,7 @@ export function useSwapFlow({
             args: [address],
           })
           if (balance < parseUnitsExact(amount, decimals)) {
-            setError(
-              `Not enough ${tokenIn}: you have ${formatUnitsExact(balance, decimals)}.${
-                tokenIn === 'USDC' ? ' Use "Get test USDC" in the Arc Studio sidebar.' : ''
-              }`,
-            )
+            setError(`Not enough ${tokenIn}: you have ${formatUnitsExact(balance, decimals)}.`)
             setPhase('error')
             return
           }

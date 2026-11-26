@@ -588,7 +588,7 @@ export function AccountPanel({
     if (!account || !escrowAddress) {
       return (
         <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-6 text-xs text-[var(--p2p-muted)]">
-          Loading onchain Merchant Security Margin from Arc Testnet...
+          Loading onchain Merchant Security Margin from Arc...
         </div>
       )
     }
@@ -785,7 +785,7 @@ export function AccountPanel({
     const guides = [
       {
         title: '1. How to Buy & Sell USDC on OnPeer P2P',
-        body: 'Select Buy or Sell in the P2P market, choose your local currency (BDT, INR, PKR, etc.), enter an amount, and place an order. Every trade locks USDC directly inside the verified Arc Testnet P2PEscrow smart contract with 0 platform trade fee.',
+        body: 'Select Buy or Sell in the P2P market, choose your local currency (BDT, INR, PKR, etc.), enter an amount, and place an order. Every trade locks USDC directly inside the verified Arc P2PEscrow smart contract with 0 platform trade fee.',
       },
       {
         title: '2. Placing an Order & Auto-Filled Payment Methods',

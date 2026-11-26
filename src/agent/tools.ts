@@ -2,7 +2,7 @@ import { erc20Abi, type Address, type PublicClient } from 'viem'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { getUsdc } from '@/onchain-facts'
 import { formatUnitsFixed } from '@/onchain-money'
-import { arcTestnet } from 'viem/chains'
+import { ACTIVE_ARC_CHAIN, ARC_NETWORK_LABEL } from '@/lib/network'
 import {
   SWAP_TOKEN_ADDRESS,
   SWAP_TOKEN_DECIMALS,
@@ -184,7 +184,7 @@ async function walletSummary(ctx: ToolContext): Promise<ToolOutcome> {
     result: {
       connected: true,
       address: ctx.address,
-      network: arcTestnet.name,
+      network: ACTIVE_ARC_CHAIN.name,
       usdc_balance: u,
       eurc_balance: e,
       cirbtc_balance: btc,
@@ -259,7 +259,7 @@ function proposeSwap(args: Record<string, unknown>, ctx: ToolContext): ToolOutco
     proposal: {
       kind: 'swap',
       title: `Swap ${amount} ${token} to ${out}`,
-      lines: ['Network: Arc Testnet', 'You will see the live quote and fees before signing', ...walletLine(ctx)],
+      lines: [`Network: ${ARC_NETWORK_LABEL}`, 'You will see the live quote and fees before signing', ...walletLine(ctx)],
       url: `/swap?tokenIn=${token}&tokenOut=${out}&amount=${amount}`,
       cta: 'Review swap',
       inline: { kind: 'swap', tokenIn: token, tokenOut: out, amount },

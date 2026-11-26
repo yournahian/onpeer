@@ -222,7 +222,7 @@ export function PlanetHero() {
           style={{ color: '#8b8988' }}
         >
           The first fully integrated South Asian USDC marketplace. Trade P2P with local payment apps, swap stablecoins,
-          and bridge across chains directly from your wallet on Arc Testnet.
+          and bridge across chains directly from your wallet on Arc.
         </motion.p>
 
         <motion.div

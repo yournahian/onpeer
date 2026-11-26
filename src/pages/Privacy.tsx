@@ -38,7 +38,7 @@ export default function PrivacyPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.12em]" style={{ color: 'var(--accent)' }}>
-              OnPeer P2P • Arc Testnet
+              OnPeer P2P • Arc Mainnet
             </p>
             <h1 className="display mt-1 text-3xl font-bold sm:text-4xl">Privacy &amp; Encryption Notice</h1>
           </div>
@@ -56,9 +56,8 @@ export default function PrivacyPage() {
         >
           <ShieldAlert className="mt-0.5 size-5 shrink-0" style={{ color: 'var(--warn)' }} />
           <p>
-            <strong>Testnet &amp; Sandbox Demo Only:</strong> OnPeer currently operates on <strong>Arc Testnet</strong>{' '}
-            using test USDC and <strong>Didit Sandbox (&ldquo;Test KYC&rdquo;)</strong>. Never upload real government ID
-            documents, real bank credentials, or real funds during testnet evaluation. Swap and Bridge never require an
+            <strong>Non-Custodial Onchain Escrow:</strong> OnPeer operates on <strong>Arc Mainnet</strong> (Chain ID 5042)
+            with USDC as the native gas token. Swap and Bridge never require an account or personal information.
             account or KYC.
           </p>
         </div>
@@ -88,7 +87,7 @@ export default function PrivacyPage() {
 
         <Section icon={Database} title="2. Identity Verification (Didit Sandbox) & Name Matching">
           <p>
-            P2P identity verification is processed by <strong>Didit</strong> (in sandbox mode during testnet). Identity
+            P2P identity verification is processed by <strong>Didit</strong>. Identity
             documents and liveness checks stay with Didit under Didit&apos;s privacy terms; OnPeer never stores ID
             document images.
           </p>
@@ -126,7 +125,7 @@ export default function PrivacyPage() {
             chat, evidence, or dispute filings verifies your wallet session and reads the live order roles (
             <code className="mono">buyer</code>, <code className="mono">seller</code>,{' '}
             <code className="mono">arbiter</code>, or 7-day <code className="mono">backupArbiter</code>) directly from
-            the Arc Testnet escrow contract.
+            the Arc escrow contract.
           </p>
         </Section>
 
@@ -152,7 +151,7 @@ export default function PrivacyPage() {
             name, revokes active sessions, cancels queued alerts, queues an onchain verification revocation if your
             wallet was verified, <strong>immediately deletes your unbound vault blobs</strong>, and shortens retention
             on your remaining order-bound vault blobs, chat messages, and dispute filings to <strong>7 days</strong>.
-            Public blockchain transactions and events on Arc Testnet are immutable and cannot be erased.
+            Public blockchain transactions and events on Arc are immutable and cannot be erased.
           </p>
         </Section>
       </main>

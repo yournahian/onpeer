@@ -20,7 +20,7 @@ const STEPS = [
   {
     icon: Wallet,
     title: 'Connect your wallet',
-    body: 'Use any wallet on Arc Testnet. USDC is the gas token, so one balance covers trades and fees.',
+    body: 'Use any wallet on Arc. USDC is the gas token, so one balance covers trades and fees.',
   },
   {
     icon: Search,
@@ -102,7 +102,7 @@ function Visual({ step }: { step: number }) {
                 </p>
               </div>
             </div>
-            <ChainLogo chain="Arc_Testnet" size={24} />
+            <ChainLogo chain="Arc" size={24} />
           </div>
 
           {/* Live Wallet Balance Readout */}
