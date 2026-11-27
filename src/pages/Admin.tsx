@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
+import { useSignMessage } from 'wagmi'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
-import { Activity, BarChart3, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
+import { Activity, BarChart3, Gavel, KeyRound, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
 import { zeroAddress } from 'viem'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
-import { apiFetch, useBackendSession } from '@/lib/api'
+import { apiFetch, clearBackendSession, getBackendSession, signInWithWallet, signOutFromBackend, useBackendSession } from '@/lib/api'
+import { clearSession, setSession } from '@/components/admin/aiApi'
 import {
   CHAIN_ID,
   ESCROW_ADDRESS,
@@ -78,13 +80,53 @@ function Gate({ title, body, connect }: { title: string; body: string; connect?:
 
 export default function AdminPage() {
   const session = useBackendSession()
+  const { signMessageAsync } = useSignMessage()
   const roles = useAdminRoles()
+  const [unlocking, setUnlocking] = useState(false)
+  const [unlockError, setUnlockError] = useState<string | null>(null)
   const { orders, isLoading } = useOrders()
   const { ads } = useAllAds()
   const paused = usePaused('USDC')
   const feeConfig = useFeeConfig('USDC')
   const verifier = useVerifier('USDC')
   const [tab, setTabState] = useState<Tab>(() => initialAdminTab())
+
+  // Clear admin session immediately when leaving /admin (and revoke server-side)
+  useEffect(() => {
+    return () => {
+      clearSession()
+      if (getBackendSession()) {
+        void signOutFromBackend()
+      }
+    }
+  }, [])
+
+  // If connected wallet switches to a different address, clear the stale session
+  useEffect(() => {
+    if (session && roles.address && session.wallet.toLowerCase() !== roles.address.toLowerCase()) {
+      clearSession()
+      clearBackendSession()
+    }
+  }, [roles.address, session])
+
+  const hasValidAdminSession =
+    !!session && !!roles.address && session.wallet.toLowerCase() === roles.address.toLowerCase()
+
+  const handleAdminUnlock = async () => {
+    if (!roles.address) return
+    setUnlocking(true)
+    setUnlockError(null)
+    try {
+      const next = await signInWithWallet(roles.address, signMessageAsync)
+      const remainingSec = Math.max(60, Math.floor((next.expiresAtMs - Date.now()) / 1000))
+      setSession(next.token, remainingSec)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Sign-in was cancelled.'
+      setUnlockError(msg)
+    } finally {
+      setUnlocking(false)
+    }
+  }
   const setTab = (next: Tab) => {
     setTabState(next)
     if (typeof window !== 'undefined') {
@@ -183,6 +225,33 @@ export default function AdminPage() {
         <Gate title="Admin access only" body={`This area is for the contract owner and the dispute arbiter. You are connected as ${shortAddr(roles.address ?? '')}.`} />
       </>
     )
+
+  if (!roles.loading && roles.isAdmin && !hasValidAdminSession) {
+    return (
+      <div className="min-h-dvh">
+        <SiteBar />
+        <div className="mx-auto mt-16 max-w-md px-4 text-center">
+          <div className="glass rounded-3xl p-8">
+            <span className="mx-auto flex size-14 items-center justify-center rounded-2xl" style={{ background: 'var(--fill-2)', color: 'var(--accent)' }}>
+              <KeyRound className="size-6" />
+            </span>
+            <h1 className="display mt-4 text-2xl font-bold">Unlock Admin Panel</h1>
+            <p className="mt-2 text-sm text-pretty" style={{ color: 'var(--muted)' }}>
+              Sign once with your admin wallet ({shortAddr(roles.address ?? '')}) to unlock all admin tabs — Analytics, Accounts, Filings, Disputes, Controls, and AI Provider. Your session ends automatically when you leave this page.
+            </p>
+            <Button className="mt-6 w-full" loading={unlocking} onClick={() => void handleAdminUnlock()}>
+              <KeyRound className="size-4" /> Sign in once to unlock
+            </Button>
+            {unlockError && (
+              <p className="mt-3 text-xs" style={{ color: 'var(--danger)' }} role="alert">
+                {unlockError}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   const tabs: { id: Tab; label: string; icon: typeof Users; badge?: number }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },

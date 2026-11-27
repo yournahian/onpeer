@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { getBackendSession, useBackendSession } from '@/lib/api'
 
 export type ProviderId = 'openrouter' | 'groq' | 'gemini' | 'custom'
 
@@ -49,7 +50,8 @@ export function clearSession() {
 const unlocked = () => !!token && Date.now() < expiresAt
 
 export function useUnlocked(): boolean {
-  return useSyncExternalStore(
+  const backendSession = useBackendSession()
+  const localUnlocked = useSyncExternalStore(
     (cb) => {
       listeners.add(cb)
       return () => listeners.delete(cb)
@@ -57,6 +59,7 @@ export function useUnlocked(): boolean {
     unlocked,
     () => false,
   )
+  return localUnlocked || !!backendSession
 }
 
 export class AdminApiError extends Error {
@@ -66,13 +69,14 @@ export class AdminApiError extends Error {
 }
 
 export async function adminFetch<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  const activeToken = token ?? getBackendSession()?.token ?? null
   let res: Response
   try {
     res = await fetch(`/api${path}`, {
       method: init?.method ?? 'GET',
       headers: {
         ...(init?.body !== undefined ? { 'content-type': 'application/json' } : {}),
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(activeToken ? { authorization: `Bearer ${activeToken}` } : {}),
       },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     })
