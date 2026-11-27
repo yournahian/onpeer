@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { isAddress, type Address } from 'viem'
+import { useAccount, useSignMessage } from 'wagmi'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import {
@@ -36,7 +37,7 @@ import {
   shortAddr,
   type P2pAsset,
 } from '@/lib/p2p'
-import { apiFetch, useBackendSession } from '@/lib/api'
+import { apiFetch, signInWithWallet, useBackendSession } from '@/lib/api'
 import {
   useAccounts,
   useAllAds,
@@ -707,7 +708,10 @@ function AccountDetailProfile({
 }
 
 export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrite?: boolean; canRevokeKyc?: boolean }) {
+  const { address: connectedWallet } = useAccount()
+  const { signMessageAsync } = useSignMessage()
   const session = useBackendSession()
+  const [signingIn, setSigningIn] = useState(false)
   const [selectedAsset, setSelectedAsset] = useState<P2pAsset>('USDC')
   const [applyAllAssets, setApplyAllAssets] = useState(false)
   const [query, setQuery] = useState('')
@@ -735,6 +739,19 @@ export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrit
       setDirLoading(false)
     }
   }, [session])
+
+  const handleSignIn = useCallback(async () => {
+    if (!connectedWallet) return
+    setSigningIn(true)
+    setDirError(null)
+    try {
+      await signInWithWallet(connectedWallet, signMessageAsync)
+    } catch {
+      setDirError('Wallet sign-in was cancelled or failed. Try again to load registered users.')
+    } finally {
+      setSigningIn(false)
+    }
+  }, [connectedWallet, signMessageAsync])
 
   useEffect(() => {
     // eslint-disable-next-line react/set-state-in-effect
@@ -1016,6 +1033,25 @@ export function AccountsTab({ canWrite = true, canRevokeKyc = false }: { canWrit
             ))}
           </div>
         </div>
+
+        {!session && (
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3 text-xs"
+            style={{ background: 'var(--fill-2)', border: '1px solid var(--border-strong)' }}
+          >
+            <span style={{ color: 'var(--muted)' }}>
+              Sign in with your admin wallet to load registered accounts, KYC status, and offchain profiles.
+            </span>
+            <Button
+              className="min-h-9 px-4 text-xs"
+              loading={signingIn}
+              disabled={!connectedWallet}
+              onClick={() => void handleSignIn()}
+            >
+              Sign in to load users
+            </Button>
+          </div>
+        )}
 
         {dirError && (
           <p className="rounded-2xl px-4 py-3 text-xs" style={{ background: 'var(--fill-2)', color: 'var(--warn)' }}>
