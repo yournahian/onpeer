@@ -6,7 +6,6 @@ import { p2pEscrowAbi } from '@/abi/p2pEscrow'
 import {
   CHAIN_ID,
   COUNTRIES,
-  P2P_ASSETS,
   VISIBLE_P2P_ASSETS,
   currencyToHex,
   formatUsdcAmount,
@@ -165,7 +164,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
   })
 
   const targetAddresses = applyAllAssets
-    ? P2P_ASSETS.map((a) => getEscrowConfig(a).escrowAddress)
+    ? VISIBLE_P2P_ASSETS.map((a) => getEscrowConfig(a).escrowAddress)
     : [escrowAddress]
 
   const execAcrossTargets = (
@@ -173,7 +172,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
     label: string,
     callFor: (addr: Address) => Promise<`0x${string}`>,
   ) =>
-    run(key, applyAllAssets ? `${label} (all 4 markets)` : `${label} (${selectedAsset})`, async () => {
+    run(key, applyAllAssets ? `${label} (all ${VISIBLE_P2P_ASSETS.length} markets)` : `${label} (${selectedAsset})`, async () => {
       let lastHash: `0x${string}` = '0x0'
       for (const addr of targetAddresses) {
         lastHash = await callFor(addr)
@@ -214,7 +213,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
             onChange={(e) => setApplyAllAssets(e.target.checked)}
             className="size-4"
           />
-          <span>Sync global governance switches across all 4 asset contracts</span>
+          <span>Sync global governance switches across all {VISIBLE_P2P_ASSETS.length} escrow contracts ({VISIBLE_P2P_ASSETS.join(' & ')})</span>
         </label>
       )}
     </div>
