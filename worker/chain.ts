@@ -249,13 +249,16 @@ export function formatScopedOrderLabel(orderId: bigint): string {
   return `#${orderId.toString()}`
 }
 
+const ROLES_CACHE_TTL_MS = 60_000
+const isolateRolesCache = new Map<string, { roles: ChainRoles; expiresAt: number }>()
+
 export function createArcPublicClient(env?: Env) {
   const chainId = env ? activeChainId(env) : 5042
   const chain = chainId === 5042002 ? arcTestnet : arcMainnet
   const rpcUrl = requireChain(chainId).rpcUrls[0]
   return createPublicClient({
     chain,
-    transport: http(rpcUrl, { timeout: 10_000, batch: true }),
+    transport: http(rpcUrl, { timeout: 10_000, batch: true, retryCount: 2, retryDelay: 500 }),
   })
 }
 
@@ -286,6 +289,11 @@ export function createChainReader(env: Env): ChainReader {
 
   return {
     getRoles(): Promise<ChainRoles> {
+      const cacheKey = `${activeChainId(env)}:${escrow.toLowerCase()}`
+      const cached = isolateRolesCache.get(cacheKey)
+      if (cached && cached.expiresAt > Date.now()) {
+        return Promise.resolve(cached.roles)
+      }
       if (!rolesPromise) {
         rolesPromise = Promise.all([
           client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'owner' }),
@@ -295,15 +303,19 @@ export function createChainReader(env: Env): ChainReader {
           client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'kycRequired' }),
           client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'sealedEnabled' }),
           client.readContract({ address: escrow, abi: p2pEscrowAbi, functionName: 'payerProofRequired' }),
-        ]).then(([owner, arbiter, backupArbiter, verifier, kycRequired, sealedEnabled, payerProofRequired]) => ({
-          owner: lowerAddr(owner),
-          arbiter: lowerAddr(arbiter),
-          backupArbiter: lowerAddr(backupArbiter),
-          verifier: lowerAddr(verifier),
-          kycRequired,
-          sealedEnabled,
-          payerProofRequired,
-        }))
+        ]).then(([owner, arbiter, backupArbiter, verifier, kycRequired, sealedEnabled, payerProofRequired]) => {
+          const roles: ChainRoles = {
+            owner: lowerAddr(owner),
+            arbiter: lowerAddr(arbiter),
+            backupArbiter: lowerAddr(backupArbiter),
+            verifier: lowerAddr(verifier),
+            kycRequired,
+            sealedEnabled,
+            payerProofRequired,
+          }
+          isolateRolesCache.set(cacheKey, { roles, expiresAt: Date.now() + ROLES_CACHE_TTL_MS })
+          return roles
+        })
       }
       return rolesPromise
     },

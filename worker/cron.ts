@@ -261,7 +261,7 @@ export async function scanChainEvents(
   queued: number
 }> {
   const targets = getConfiguredEscrows(env)
-  const client: ChainLogClient = rpcClient ?? createArcPublicClient()
+  const client: ChainLogClient = rpcClient ?? createArcPublicClient(env)
   const latestBlock = await client.getBlockNumber()
 
   const startedAt = Date.now()
@@ -281,10 +281,17 @@ export async function scanChainEvents(
 
     let startBlock: bigint
     if (curRes.rows[0]) {
-      startBlock = BigInt(curRes.rows[0].last_block) + 1n
+      const stored = BigInt(curRes.rows[0].last_block)
+      // Auto-heal stale testnet cursor blocks (> latestBlock + 10_000) after switching to Mainnet
+      if (stored > latestBlock + 10_000n) {
+        const recentFloor = latestBlock > 200n ? latestBlock - 200n : 0n
+        startBlock = target.deployBlock > recentFloor && target.deployBlock <= latestBlock ? target.deployBlock : recentFloor
+      } else {
+        startBlock = stored + 1n
+      }
     } else {
       const recentFloor = latestBlock > 200n ? latestBlock - 200n : 0n
-      startBlock = target.deployBlock > recentFloor ? target.deployBlock : recentFloor
+      startBlock = target.deployBlock > recentFloor && target.deployBlock <= latestBlock ? target.deployBlock : recentFloor
     }
 
     if (tIdx === 0) {
