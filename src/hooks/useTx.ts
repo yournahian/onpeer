@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { erc20Abi, type Hash, type TransactionReceipt } from 'viem'
 import { toast } from 'sonner'
 import { buildTxExplorerUrl } from '@/onchain-facts'
+import { feeUsdFromReceipt, trackTx } from '@/lib/analytics'
 import { CHAIN_ID, getEscrowConfig, parseTxError, type P2pAsset } from '@/lib/p2p'
 import { isTelegramMiniApp, openExternalUrl } from '@/lib/telegram'
 import { getSavedTelegramWalletLaunchUrl } from '@/components/TelegramWalletModal'
@@ -14,7 +15,7 @@ import { useP2pAsset } from '@/hooks/useEscrow'
  * refreshes all reads, and reports honest success or failure.
  */
 export function useTx(assetOverride?: P2pAsset) {
-  const { chainId } = useAccount()
+  const { address, chainId } = useAccount()
   const [activeAsset] = useP2pAsset()
   const targetAsset = assetOverride ?? activeAsset
   const cfg = getEscrowConfig(targetAsset)
@@ -43,9 +44,33 @@ export function useTx(assetOverride?: P2pAsset) {
         }
         const toastId = toast.loading(`${label}: confirming...`)
         const receipt = await publicClient!.waitForTransactionReceipt({ hash })
+        const feeUsd = feeUsdFromReceipt(receipt)
         if (receipt.status !== 'success') {
+          if (address) {
+            trackTx({
+              kind: 'p2p',
+              action: key,
+              wallet: address,
+              token: cfg.asset,
+              networkFeeUsd: feeUsd,
+              status: 'failed',
+              txHash: hash,
+              note: `${label} reverted onchain`,
+            })
+          }
           toast.error(`${label} failed onchain.`, { id: toastId })
           return null
+        }
+        if (address) {
+          trackTx({
+            kind: 'p2p',
+            action: key,
+            wallet: address,
+            token: cfg.asset,
+            networkFeeUsd: feeUsd,
+            status: 'success',
+            txHash: hash,
+          })
         }
         const url = buildTxExplorerUrl(CHAIN_ID, hash)
         toast.success(`${label}: confirmed`, {
@@ -62,14 +87,26 @@ export function useTx(assetOverride?: P2pAsset) {
         return receipt
       } catch (err) {
         const copy = parseTxError(err)
-        if (copy) toast.error(copy)
+        if (copy) {
+          if (address) {
+            trackTx({
+              kind: 'p2p',
+              action: key,
+              wallet: address,
+              token: cfg.asset,
+              status: 'failed',
+              note: copy,
+            })
+          }
+          toast.error(copy)
+        }
         return null
       } finally {
         if (nudgeTimer !== null) window.clearTimeout(nudgeTimer)
         setPendingKey(null)
       }
     },
-    [chainId, switchChainAsync, publicClient, queryClient],
+    [address, cfg.asset, chainId, switchChainAsync, publicClient, queryClient],
   )
 
   const run = useCallback(

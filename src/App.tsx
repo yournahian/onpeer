@@ -3,6 +3,7 @@ import { MotionConfig } from 'framer-motion'
 import { APP_URL, isLandingDomain, useRoute, useSearch } from '@/lib/router'
 import { useTelegramMiniAppBridge } from '@/lib/telegram'
 import { useTheme } from '@/lib/theme'
+import { trackVisit } from '@/lib/analytics'
 import { usePresenceHeartbeat } from '@/hooks/usePresence'
 import { AgentChat } from '@/components/AgentChat'
 import { TelegramWalletModal } from '@/components/TelegramWalletModal'
@@ -33,6 +34,10 @@ export default function App() {
   const { resolved, helixVisible, helixBlurred, setHelixBlurred } = useTheme()
 
   useTelegramMiniAppBridge(route, search, resolved)
+
+  useEffect(() => {
+    trackVisit(route)
+  }, [route])
 
   useEffect(() => {
     if (route !== 'swap' && route !== 'bridge') {

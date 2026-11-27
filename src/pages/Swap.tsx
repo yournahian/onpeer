@@ -4,6 +4,7 @@ import { useAccount, usePublicClient, useReadContract, useSendTransaction, useSw
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
 import { buildTxExplorerUrl } from '@/onchain-facts'
+import { feeUsdFromReceipt, trackTx } from '@/lib/analytics'
 import { ACTIVE_CHAIN_ID, ARC_KIT_CHAIN, ARC_NETWORK_LABEL, IS_TESTNET } from '@/lib/network'
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -251,9 +252,26 @@ export default function SwapPage() {
           gas: built.tx.gas ? BigInt(built.tx.gas) : undefined,
           chainId: ACTIVE_CHAIN_ID,
         })
-        if (publicClient) await publicClient.waitForTransactionReceipt({ hash: txHash })
+        const receipt = publicClient ? await publicClient.waitForTransactionReceipt({ hash: txHash }) : null
+        const formattedOut = formatUnitsExact(BigInt(built.amountOut), decimalsOut)
+        const estUsd =
+          tokenIn === 'USDC' || tokenIn === 'EURC'
+            ? Number(amount)
+            : tokenOut === 'USDC' || tokenOut === 'EURC'
+              ? Number(formattedOut)
+              : Number(amount)
+        trackTx({
+          kind: 'swap',
+          action: `${tokenIn}->${tokenOut}`,
+          wallet: address,
+          token: tokenIn,
+          amountUsd: Number.isFinite(estUsd) ? estUsd : 0,
+          networkFeeUsd: feeUsdFromReceipt(receipt),
+          status: receipt && receipt.status !== 'success' ? 'failed' : 'success',
+          txHash,
+        })
         setDone({
-          amountOut: formatUnitsExact(BigInt(built.amountOut), decimalsOut),
+          amountOut: formattedOut,
           tokenOut,
           explorerUrl: buildTxExplorerUrl(ACTIVE_CHAIN_ID, txHash),
           status: 'DONE',
@@ -282,7 +300,19 @@ export default function SwapPage() {
       setAmount('')
       toast.success('Swap submitted')
     } catch (err) {
-      setError(err instanceof AchSwapError ? err.message : kitErrorMessage(err))
+      const msg = err instanceof AchSwapError ? err.message : kitErrorMessage(err)
+      if (msg && address) {
+        trackTx({
+          kind: 'swap',
+          action: `${tokenIn}->${tokenOut}`,
+          wallet: address,
+          token: tokenIn,
+          amountUsd: Number(amount) || 0,
+          status: 'failed',
+          note: msg,
+        })
+      }
+      setError(msg)
     } finally {
       setBusy(null)
     }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
-import { Activity, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
+import { Activity, BarChart3, Gavel, LayoutDashboard, Search, Settings2, Sparkles, Users } from 'lucide-react'
 import { zeroAddress } from 'viem'
 import { buildAddressExplorerUrl } from '@/onchain-facts'
 import { apiFetch, useBackendSession } from '@/lib/api'
@@ -28,12 +28,13 @@ import { DisputeCard, type AdminPartyProfile } from '@/components/admin/DisputeC
 import { AccountsTab } from '@/components/admin/AccountsTab'
 import { ControlsTab } from '@/components/admin/ControlsTab'
 import { AiProviderTab } from '@/components/admin/AiProviderTab'
+import { AnalyticsTab } from '@/components/admin/AnalyticsTab'
 import { FilingsTab } from '@/components/admin/FilingsTab'
 import { JobHealthCard } from '@/components/admin/JobHealthCard'
 
-type Tab = 'overview' | 'disputes' | 'filings' | 'accounts' | 'controls' | 'ai'
+type Tab = 'overview' | 'analytics' | 'disputes' | 'filings' | 'accounts' | 'controls' | 'ai'
 
-const VALID_TABS: readonly Tab[] = ['overview', 'disputes', 'filings', 'accounts', 'controls', 'ai']
+const VALID_TABS: readonly Tab[] = ['overview', 'analytics', 'disputes', 'filings', 'accounts', 'controls', 'ai']
 
 function initialAdminTab(): Tab {
   if (typeof window === 'undefined') return 'overview'
@@ -185,6 +186,7 @@ export default function AdminPage() {
 
   const tabs: { id: Tab; label: string; icon: typeof Users; badge?: number }[] = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'disputes', label: 'Disputes', icon: Gavel, badge: disputed.length },
     { id: 'filings', label: 'Filings', icon: Gavel },
     { id: 'accounts', label: 'Accounts', icon: Users },
@@ -444,6 +446,8 @@ export default function AdminPage() {
             />
           )}
           {tab === 'controls' && <ControlsTab isOwner={roles.isOwner} />}
+          {tab === 'analytics' && <AnalyticsTab />}
+
           {tab === 'ai' && <AiProviderTab />}
         </div>
       </main>

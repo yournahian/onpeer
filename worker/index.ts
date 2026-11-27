@@ -22,6 +22,7 @@ import { handleSocialRoutes } from './social'
 import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
 import { handleTelegramRoutes, setupTelegramBotWebhook } from './telegram'
 import { handleAchSwapRoutes } from './achswap'
+import { handleAdminAnalyticsQuery, handlePublicAnalyticsRoutes } from './analytics'
 import { handleSeoFileRequest, injectSeoIntoHtmlResponse } from './seo'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
@@ -507,6 +508,12 @@ async function handleApi(
       return res ?? json(404, { error: 'not_found' })
     }
 
+    // ---- Analytics ingestion (/api/analytics/visit, /api/analytics/tx) ----
+    if (path === '/analytics/visit' || path === '/analytics/tx') {
+      const res = await runDb(env, (db) => handlePublicAnalyticsRoutes(req, env, db, path))
+      return res ?? json(404, { error: 'not_found' })
+    }
+
     // ---- AchSwap DEX Aggregator proxy on Arc Mainnet (/api/swap/quote, /api/swap/build) ----
     if (path === '/swap/quote' || path === '/swap/build') {
       const res = await runDb(env, (db) => handleAchSwapRoutes(req, env, db, path)).catch((err) => {
@@ -813,6 +820,10 @@ async function handleApi(
             }
           }),
         })
+      }
+
+      if (req.method === 'GET' && path === '/admin/analytics') {
+        return await runDb(env, (db) => handleAdminAnalyticsQuery(req, db))
       }
 
       if (req.method === 'GET' && path === '/admin/users') {
