@@ -7,6 +7,27 @@ import { BackendApiError } from '@/lib/api'
 import { CHAIN_ID } from '@/lib/p2p'
 import { useKycStatus } from '@/hooks/useAccount'
 
+const kycUrlKey = (sessionId: string) => `onpeer:kyc:url:${sessionId}`
+
+function readStoredKycUrl(sessionId: string | undefined): string | null {
+  if (!sessionId || typeof window === 'undefined') return null
+  try {
+    const val = window.localStorage.getItem(kycUrlKey(sessionId))
+    return val && val.startsWith('https://') ? val : null
+  } catch {
+    return null
+  }
+}
+
+function writeStoredKycUrl(sessionId: string, url: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(kycUrlKey(sessionId), url)
+  } catch {
+    /* ignore quota errors */
+  }
+}
+
 export function KycPanel() {
   const { isSignedIn, data, isLoading, refetch, startKyc, starting } = useKycStatus()
   const [scenario, setScenario] = useState('approve')
@@ -22,6 +43,7 @@ export function KycPanel() {
   const isSandbox = data.mode === 'sandbox'
   const titleLabel = isSandbox ? 'Test KYC (Didit Sandbox)' : 'Identity Verification (KYC)'
   const hasConsent = data.hasConsent || consentChecked
+  const activeUrl = hostedUrl ?? readStoredKycUrl(data.latestSession?.sessionId)
 
   const handleStart = async () => {
     if (!hasConsent) {
@@ -34,6 +56,7 @@ export function KycPanel() {
         ...(isSandbox && scenario ? { sandboxScenario: scenario } : {}),
       })
       setHostedUrl(res.url)
+      if (res.sessionId) writeStoredKycUrl(res.sessionId, res.url)
       window.open(res.url, '_blank', 'noopener,noreferrer')
       toast.success(
         isSandbox
@@ -155,17 +178,42 @@ export function KycPanel() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--p2p-border-active)] bg-[var(--p2p-tint)] px-4 py-3 text-xs text-[var(--p2p-ink)]">
           <span className="inline-flex items-center gap-2 font-semibold text-[#FF5A00]">
             <Clock className="size-4 shrink-0" />
-            Verification session is {data.kycStatus === 'in_review' ? 'in review' : 'in progress'}.
+            Verification session is {data.kycStatus === 'in_review' ? 'under review' : 'in progress'}.
           </span>
-          {hostedUrl && (
-            <a
-              href={hostedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3.5 py-2 text-xs font-bold text-white"
-            >
-              Continue Verification <ExternalLink className="size-3.5" />
-            </a>
+          {data.kycStatus === 'pending' && (
+            <div className="flex flex-wrap items-center gap-2">
+              {activeUrl ? (
+                <>
+                  <a
+                    href={activeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3.5 text-xs font-bold text-white hover:opacity-90"
+                  >
+                    Continue Verification <ExternalLink className="size-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    disabled={starting}
+                    onClick={() => void handleStart()}
+                    className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] px-3 text-xs font-semibold text-[var(--p2p-muted)] hover:border-[#FF5A00] hover:text-[var(--p2p-ink)] disabled:opacity-40"
+                  >
+                    {starting ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                    Start New Session
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={starting}
+                  onClick={() => void handleStart()}
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#FF5A00] px-3.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40"
+                >
+                  {starting ? <Loader2 className="size-3.5 animate-spin" /> : <ExternalLink className="size-3.5" />}
+                  {starting ? 'Opening Session...' : 'Continue Verification'}
+                </button>
+              )}
+            </div>
           )}
         </div>
       ) : (
@@ -199,7 +247,7 @@ export function KycPanel() {
                 className="mt-0.5 size-4 shrink-0 accent-[#FF5A00]"
               />
               <span>
-                I consent to share test verification data with Didit under Didit&apos;s privacy notice and the{' '}
+                I consent to share {isSandbox ? 'test ' : ''}verification data with Didit under Didit&apos;s privacy notice and the{' '}
                 <AppLink to="/privacy" className="font-semibold text-[#FF5A00] underline">
                   OnPeer Privacy &amp; Encryption Notice
                 </AppLink>

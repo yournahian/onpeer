@@ -1447,7 +1447,54 @@ export function AccountPanel({
 
       {desktopTab === 'tier_kyc' && (
         <div className="space-y-5">
-          {/* Current Account Tier & KYC Summary */}
+          {/* 1. Live KYC Action Panel */}
+          <KycPanel />
+
+          {/* 2. KYC Verification Levels Guide */}
+          <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-5 space-y-3.5">
+            <div>
+              <h3 className="text-sm font-extrabold text-[var(--p2p-ink)]">
+                KYC Verification Levels (Onchain)
+              </h3>
+              <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
+                Only your verification level &amp; expiry are recorded onchain — your personal documents are never stored on the blockchain.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                {
+                  level: 'L1 — Basic Verified',
+                  badge: 'Standard',
+                  desc: 'Identity verified onchain. Satisfies KYC gating when enabled and displays the Verified badge on your ads.',
+                },
+                {
+                  level: 'L2 — Full KYC (ID + Liveness)',
+                  badge: '+1 Tier Boost',
+                  desc: 'Completed via Didit ID & face check. Automatically boosts Tier 0, Tier 1, or Tier 2 accounts by +1 tier.',
+                },
+                {
+                  level: 'L3 — Business / KYB',
+                  badge: 'Coming Soon',
+                  desc: 'Reserved for institutional & high-volume verified desks with custom merchant verification.',
+                },
+              ].map((item) => (
+                <div
+                  key={item.level}
+                  className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold text-[var(--p2p-ink)]">{item.level}</span>
+                    <span className="rounded-full bg-[var(--p2p-tint)] px-2 py-0.5 text-[10px] font-bold text-[#FF5A00]">
+                      {item.badge}
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[var(--p2p-muted)]">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Current Account Tier & Trading Limits */}
           <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1543,53 +1590,6 @@ export function AccountPanel({
               </table>
             </div>
           </div>
-
-          {/* KYC Verification Levels Guide */}
-          <div className="rounded-2xl border border-[var(--p2p-border)] bg-[var(--p2p-surface)] p-5 space-y-3.5">
-            <div>
-              <h3 className="text-sm font-extrabold text-[var(--p2p-ink)]">
-                KYC Verification Levels (Onchain)
-              </h3>
-              <p className="mt-0.5 text-xs text-[var(--p2p-muted)]">
-                Only your verification level &amp; expiry are recorded onchain — your personal documents are never stored on the blockchain.
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              {[
-                {
-                  level: 'L1 — Basic Verified',
-                  badge: 'Standard',
-                  desc: 'Identity verified onchain. Satisfies KYC gating when enabled and displays the Verified badge on your ads.',
-                },
-                {
-                  level: 'L2 — Full KYC (ID + Liveness)',
-                  badge: '+1 Tier Boost',
-                  desc: 'Completed via Didit ID & face check. Automatically boosts Tier 0, Tier 1, or Tier 2 accounts by +1 tier.',
-                },
-                {
-                  level: 'L3 — Business / KYB',
-                  badge: 'Coming Soon',
-                  desc: 'Reserved for institutional & high-volume verified desks with custom merchant verification.',
-                },
-              ].map((item) => (
-                <div
-                  key={item.level}
-                  className="rounded-xl border border-[var(--p2p-border)] bg-[var(--p2p-input-bg)] p-3.5 space-y-1.5"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-extrabold text-[var(--p2p-ink)]">{item.level}</span>
-                    <span className="rounded-full bg-[var(--p2p-tint)] px-2 py-0.5 text-[10px] font-bold text-[#FF5A00]">
-                      {item.badge}
-                    </span>
-                  </div>
-                  <p className="text-[11px] leading-relaxed text-[var(--p2p-muted)]">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Live KYC Action Panel */}
-          <KycPanel />
         </div>
       )}
     </div>
