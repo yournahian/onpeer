@@ -298,7 +298,7 @@ export async function handleAdminAnalyticsQuery(
            COUNT(*)::text AS total,
            COUNT(*) FILTER (WHERE n.status = 'sent')::text AS sent
          FROM public.notifications_outbox n
-         LEFT JOIN public.accounts a ON a.wallet = n.recipient_wallet
+         LEFT JOIN public.accounts a ON a.wallet = n.wallet
          WHERE n.created_at >= now() - make_interval(days => $1)
            AND ($2::text IS NULL OR COALESCE(NULLIF(UPPER(a.country), ''), 'XX') = $2)
          GROUP BY 1
@@ -335,7 +335,7 @@ export async function handleAdminAnalyticsQuery(
            COUNT(*) FILTER (WHERE n.status = 'sent')::text AS sent,
            COUNT(*) FILTER (WHERE n.status = 'failed')::text AS failed
          FROM public.notifications_outbox n
-         LEFT JOIN public.accounts a ON a.wallet = n.recipient_wallet
+         LEFT JOIN public.accounts a ON a.wallet = n.wallet
          WHERE n.created_at >= now() - make_interval(days => $1)
            AND ($2::text IS NULL OR COALESCE(NULLIF(UPPER(a.country), ''), 'XX') = $2)`,
         [days, countryFilter],
@@ -344,7 +344,7 @@ export async function handleAdminAnalyticsQuery(
       db.query<{ total: string }>(
         `SELECT COUNT(*)::text AS total
          FROM public.notifications_outbox n
-         LEFT JOIN public.accounts a ON a.wallet = n.recipient_wallet
+         LEFT JOIN public.accounts a ON a.wallet = n.wallet
          WHERE n.created_at >= now() - make_interval(days => $1)
            AND n.created_at <  now() - make_interval(days => $2)
            AND ($3::text IS NULL OR COALESCE(NULLIF(UPPER(a.country), ''), 'XX') = $3)`,

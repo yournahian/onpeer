@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  Check,
+  ChevronDown,
   Download,
   ExternalLink,
   Globe2,
@@ -487,6 +489,101 @@ function DifferenceComparisonChart({
   )
 }
 
+function CountryDropdown({
+  value,
+  options,
+  onChange,
+}: {
+  value: string
+  options: string[]
+  onChange: (code: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const label = value === 'ALL' ? COUNTRY_NAMES.ALL : `${value} — ${COUNTRY_NAMES[value] ?? value}`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="inline-flex h-10 min-w-[210px] items-center justify-between gap-2.5 rounded-xl border px-3.5 text-xs font-semibold transition-colors hover:border-[var(--border-strong)]"
+        style={{
+          background: 'var(--inner-bg)',
+          borderColor: open ? 'var(--border-strong)' : 'var(--border)',
+          color: 'var(--ink)',
+        }}
+      >
+        <span className="flex items-center gap-2 truncate">
+          <Globe2 className="size-4 shrink-0" style={{ color: 'var(--accent)' }} />
+          <span className="truncate">{label}</span>
+        </span>
+        <ChevronDown
+          className={`size-4 shrink-0 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          style={{ color: 'var(--muted)' }}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label="Filter by country"
+          className="absolute left-0 top-[calc(100%+6px)] z-50 max-h-72 w-64 overflow-y-auto rounded-2xl border p-1.5 shadow-2xl"
+          style={{
+            background: 'var(--panel-solid)',
+            borderColor: 'var(--border-strong)',
+            boxShadow: 'var(--panel-shadow)',
+          }}
+        >
+          {options.map((code) => {
+            const selected = code === value
+            const itemLabel = code === 'ALL' ? COUNTRY_NAMES.ALL : `${code} — ${COUNTRY_NAMES[code] ?? code}`
+            return (
+              <button
+                key={code}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => {
+                  onChange(code)
+                  setOpen(false)
+                }}
+                className="flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[var(--fill-2)]"
+                style={{
+                  background: selected ? 'var(--fill-3)' : 'transparent',
+                  color: selected ? 'var(--accent)' : 'var(--ink)',
+                }}
+              >
+                <span className="truncate">{itemLabel}</span>
+                {selected && <Check className="size-3.5 shrink-0" style={{ color: 'var(--accent)' }} />}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function AnalyticsTab() {
   const { address: connectedWallet } = useAccount()
   const { signMessageAsync } = useSignMessage()
@@ -654,21 +751,9 @@ export function AnalyticsTab() {
   return (
     <div className="space-y-5">
       {/* Global / Country + Range Controls */}
-      <div className="glass flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Globe2 className="size-4" style={{ color: 'var(--accent)' }} />
-          <select
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            aria-label="Filter by country"
-            className={`${inputClass} h-9 w-auto min-w-[190px] py-1 text-xs font-semibold`}
-          >
-            {countryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c === 'ALL' ? COUNTRY_NAMES.ALL : `${c} — ${COUNTRY_NAMES[c] ?? c}`}
-              </option>
-            ))}
-          </select>
+      <div className="glass relative z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <CountryDropdown value={country} options={countryOptions} onChange={setCountry} />
 
           <div className="flex gap-1 rounded-xl p-1" style={{ background: 'var(--fill-2)' }}>
             {(['7d', '30d', '90d', 'all'] as const).map((r) => (
