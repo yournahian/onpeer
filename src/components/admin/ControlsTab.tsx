@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Coins, Lock, PauseCircle, PlayCircle, ShieldCheck, UserCheck, UserCog } from 'lucide-react'
+import { Coins, Loader2, PauseCircle, PlayCircle, ShieldCheck, UserCog } from 'lucide-react'
 import { useReadContracts } from 'wagmi'
 import { isAddress, zeroAddress, type Address } from 'viem'
 import { p2pEscrowAbi } from '@/abi/p2pEscrow'
@@ -39,11 +39,88 @@ const parseFee = (v: string, decimals: number): bigint | null => {
 
 function Panel({ title, body, children }: { title: string; body: string; children: React.ReactNode }) {
   return (
-    <section className="glass rounded-3xl p-4 sm:p-5">
+    <section className="glass overflow-hidden rounded-3xl p-4 sm:p-5">
       <h3 className="display text-lg font-bold">{title}</h3>
       <p className="mt-1 text-sm text-pretty" style={{ color: 'var(--muted)' }}>{body}</p>
       <div className="mt-4">{children}</div>
     </section>
+  )
+}
+
+function OnchainSwitchRow({
+  title,
+  description,
+  enabled,
+  loading,
+  disabled,
+  onToggle,
+}: {
+  title: string
+  description: string
+  enabled: boolean
+  loading: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div
+      className="inner flex items-center justify-between gap-4 rounded-xl px-3.5 py-3 text-sm"
+      style={enabled ? { borderColor: 'rgba(126, 241, 179, 0.28)' } : undefined}
+    >
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-semibold">{title}</p>
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+            style={
+              enabled
+                ? {
+                    background: 'rgba(126, 241, 179, 0.14)',
+                    color: 'var(--success)',
+                    border: '1px solid rgba(126, 241, 179, 0.32)',
+                  }
+                : {
+                    background: 'var(--fill-2)',
+                    color: 'var(--subtle)',
+                    border: '1px solid var(--border)',
+                  }
+            }
+          >
+            <span
+              className="size-1.5 rounded-full"
+              style={{ background: enabled ? 'var(--success)' : 'var(--subtle)' }}
+            />
+            {enabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        <p className="mt-0.5 text-xs" style={{ color: 'var(--subtle)' }}>
+          {description}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        aria-label={`${title}: currently ${enabled ? 'on' : 'off'}`}
+        disabled={disabled || loading}
+        onClick={onToggle}
+        className="relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-50"
+        style={
+          enabled
+            ? { background: 'var(--success)', borderColor: 'var(--success)' }
+            : { background: 'var(--fill-3)', borderColor: 'var(--border)' }
+        }
+      >
+        <span
+          className={`inline-flex size-5 items-center justify-center rounded-full shadow-sm transition-transform duration-200 ${
+            enabled ? 'translate-x-6' : 'translate-x-1'
+          }`}
+          style={{ background: enabled ? '#061a10' : 'var(--ink)' }}
+        >
+          {loading && <Loader2 className="size-3 animate-spin" style={{ color: enabled ? '#7ef1b3' : 'var(--bg)' }} />}
+        </span>
+      </button>
+    </div>
   )
 }
 
@@ -293,16 +370,14 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
         title="KYC verifier & enforcement"
         body={`The verifier key can only record or revoke KYC status and can never move funds. Current verifier (${selectedAsset}): ${hasVerifier ? shortAddr(verifier) : 'Not set'}`}
       >
-        <div className="inner mb-3 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">
-          <div>
-            <p className="font-semibold">Require KYC for new ads &amp; orders</p>
-            <p className="text-xs" style={{ color: 'var(--subtle)' }}>Both maker &amp; taker must hold non-expired KYC (exits never blocked)</p>
-          </div>
-          <Button
-            variant={privacy.kycRequired ? 'danger' : 'ghost'}
-            disabled={privacy.isLoading}
+        <div className="mb-3">
+          <OnchainSwitchRow
+            title="Require KYC for new ads & orders"
+            description="Both maker & taker must hold non-expired KYC (exits never blocked)"
+            enabled={privacy.kycRequired}
             loading={pendingKey === 'kyc-switch'}
-            onClick={() =>
+            disabled={privacy.isLoading}
+            onToggle={() =>
               void execAcrossTargets('kyc-switch', `${privacy.kycRequired ? 'Disable' : 'Enable'} KYC requirement`, (addr) =>
                 writeContractAsync({
                   address: addr,
@@ -313,10 +388,7 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
                 }),
               )
             }
-          >
-            <UserCheck className="size-4" />
-            {privacy.kycRequired ? 'Turn Off' : 'Off (Enable)'}
-          </Button>
+          />
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row">
@@ -352,57 +424,43 @@ export function ControlsTab({ isOwner }: { isOwner: boolean }) {
         title="Privacy & proof switches"
         body="Phase 2 encrypted vault and order chat are live on the Cloudflare Worker. Toggle these onchain switches to enforce sealed payment details or mandatory transfer proofs."
       >
-        <div className="space-y-2">
-          <div className="inner flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">
-            <div>
-              <p className="font-semibold">Sealed payment details (modes 1 &amp; 2)</p>
-              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Enables 10m handshake &amp; autoReveal vault details</p>
-            </div>
-            <Button
-              variant={privacy.sealedEnabled ? 'danger' : 'ghost'}
-              disabled={privacy.isLoading}
-              loading={pendingKey === 'sealed-switch'}
-              onClick={() =>
-                void execAcrossTargets('sealed-switch', `${privacy.sealedEnabled ? 'Disable' : 'Enable'} sealed details`, (addr) =>
-                  writeContractAsync({
-                    address: addr,
-                    abi: p2pEscrowAbi,
-                    chainId: CHAIN_ID,
-                    functionName: 'setSealedEnabled',
-                    args: [!privacy.sealedEnabled],
-                  }),
-                )
-              }
-            >
-              <Lock className="size-4" />
-              {privacy.sealedEnabled ? 'Turn Off' : 'Off (Enable)'}
-            </Button>
-          </div>
-          <div className="inner flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm">
-            <div>
-              <p className="font-semibold">Require payer proof on all payments</p>
-              <p className="text-xs" style={{ color: 'var(--subtle)' }}>Late marks always require a transfer ID hash even when Off</p>
-            </div>
-            <Button
-              variant={privacy.payerProofRequired ? 'danger' : 'ghost'}
-              disabled={privacy.isLoading}
-              loading={pendingKey === 'payer-proof-switch'}
-              onClick={() =>
-                void execAcrossTargets('payer-proof-switch', `${privacy.payerProofRequired ? 'Disable' : 'Enable'} payer proof`, (addr) =>
-                  writeContractAsync({
-                    address: addr,
-                    abi: p2pEscrowAbi,
-                    chainId: CHAIN_ID,
-                    functionName: 'setPayerProofRequired',
-                    args: [!privacy.payerProofRequired],
-                  }),
-                )
-              }
-            >
-              <Lock className="size-4" />
-              {privacy.payerProofRequired ? 'Turn Off' : 'Off (Enable)'}
-            </Button>
-          </div>
+        <div className="space-y-2.5">
+          <OnchainSwitchRow
+            title="Sealed payment details (Mode 2 vault)"
+            description="Encrypts payment details in the vault and auto-reveals only to the order counterparty"
+            enabled={privacy.sealedEnabled}
+            loading={pendingKey === 'sealed-switch'}
+            disabled={privacy.isLoading}
+            onToggle={() =>
+              void execAcrossTargets('sealed-switch', `${privacy.sealedEnabled ? 'Disable' : 'Enable'} sealed details`, (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setSealedEnabled',
+                  args: [!privacy.sealedEnabled],
+                }),
+              )
+            }
+          />
+          <OnchainSwitchRow
+            title="Require payer proof on all payments"
+            description="Late marks always require a transfer ID hash even when Off"
+            enabled={privacy.payerProofRequired}
+            loading={pendingKey === 'payer-proof-switch'}
+            disabled={privacy.isLoading}
+            onToggle={() =>
+              void execAcrossTargets('payer-proof-switch', `${privacy.payerProofRequired ? 'Disable' : 'Enable'} payer proof`, (addr) =>
+                writeContractAsync({
+                  address: addr,
+                  abi: p2pEscrowAbi,
+                  chainId: CHAIN_ID,
+                  functionName: 'setPayerProofRequired',
+                  args: [!privacy.payerProofRequired],
+                }),
+              )
+            }
+          />
         </div>
       </Panel>
 
