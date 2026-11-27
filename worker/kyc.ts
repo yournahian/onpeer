@@ -240,7 +240,19 @@ const defaultDiditSessionCreator: DiditSessionCreator = async ({
     signal: AbortSignal.timeout(12_000),
   })
   if (!res.ok) {
-    throw new Error(`didit_session_http_${res.status}`)
+    let reason = ''
+    try {
+      const raw = await res.text()
+      if (raw) {
+        const parsed = JSON.parse(raw) as { detail?: string; error?: string; message?: string }
+        const msg = parsed.detail ?? parsed.error ?? parsed.message ?? raw
+        if (typeof msg === 'string' && msg.trim()) reason = msg.trim().slice(0, 140)
+      }
+    } catch {
+      /* ignore non-JSON body */
+    }
+    console.error('[kyc/start] didit http error', res.status, reason)
+    throw new Error(`HTTP ${res.status}${reason ? `: ${reason}` : ''}`)
   }
   const data = (await res.json()) as Record<string, unknown>
   const sessionId = typeof data.session_id === 'string' ? data.session_id.trim() : ''
@@ -925,8 +937,10 @@ export async function handleKycRoutes(
         callbackUrl,
         sandboxScenario,
       })
-    } catch {
-      return json(502, { error: 'kyc_provider_error' })
+    } catch (err) {
+      const detail = err instanceof Error && err.message.startsWith('HTTP ') ? err.message : undefined
+      console.error('[kyc/start] createDiditSession failed', err instanceof Error ? err.message : String(err))
+      return json(502, detail ? { error: 'kyc_provider_error', detail } : { error: 'kyc_provider_error' })
     }
 
     await withTx(db, async (tx) => {

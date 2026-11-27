@@ -13,7 +13,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: 'Please sign in with your wallet first.',
   forbidden: 'This wallet does not have permission for that resource.',
   rate_limited: 'Too many requests. Please wait a moment and try again.',
-  consent_required: 'Accept the privacy and sandbox KYC notice before saving.',
+  consent_required: 'Accept the privacy and KYC notice before saving.',
   invalid_display_name: 'Display name must be 1–48 plain characters.',
   invalid_country: 'Choose a valid country code.',
   invalid_email: 'Enter a valid email address.',
@@ -55,8 +55,10 @@ export class BackendApiError extends Error {
   constructor(
     public code: string,
     public status: number,
+    public detail?: string,
   ) {
-    super(ERROR_MESSAGES[code] ?? 'Request failed. Please try again.')
+    const base = ERROR_MESSAGES[code] ?? 'Request failed. Please try again.'
+    super(detail ? `${base} (${detail})` : base)
   }
 }
 
@@ -182,12 +184,12 @@ export async function apiFetch<T>(
     throw new BackendApiError('offline', 0)
   }
 
-  const data = (await res.json().catch(() => ({}))) as { error?: string }
+  const data = (await res.json().catch(() => ({}))) as { error?: string; detail?: string }
   if (!res.ok) {
     if (res.status === 401 && init?.auth !== false) {
       clearBackendSession()
     }
-    throw new BackendApiError(data.error ?? 'server_error', res.status)
+    throw new BackendApiError(data.error ?? 'server_error', res.status, typeof data.detail === 'string' ? data.detail : undefined)
   }
   return data as T
 }
