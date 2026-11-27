@@ -17,6 +17,8 @@
     "VITE_ARC_MAINNET_EURC_ADDRESS": "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
     "VITE_ARC_TESTNET_EURC_ADDRESS": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
     "DIDIT_MODE": "live",
+    "ACHSWAP_FEE_BPS": "5",
+    "ACHSWAP_FEE_RECIPIENT": "0x81eA9AdE2805e310E9f884a75B3a24Ab74557C69",
     "PUBLIC_APP_URL": "https://app.onpeer.xyz",
     "ONRAMP_API_BASE_URL": "https://api-test.circle.com",
     "ONRAMP_WIDGET_BASE_URL": "https://onramp-sandbox.arc.io",
