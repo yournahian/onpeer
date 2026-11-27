@@ -1,10 +1,18 @@
 import { useCallback, useRef, useState } from 'react'
-import { useAccount, usePublicClient, useSwitchChain } from 'wagmi'
+import { useAccount, usePublicClient, useSendTransaction, useSwitchChain, useWriteContract } from 'wagmi'
 import { erc20Abi, type Address } from 'viem'
 import type { SwapEstimate } from '@circle-fin/app-kit'
-import { getUsdc } from '@/onchain-facts'
+import { buildTxExplorerUrl, getUsdc } from '@/onchain-facts'
 import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import {
+  AchSwapError,
+  fetchAchSwapBuild,
+  fetchAchSwapQuote,
+  formatAchSwapFees,
+  toAchSwapInput,
+  toAchSwapOutput,
+} from '@/lib/achswap'
 import { ACTIVE_CHAIN_ID, ARC_KIT_CHAIN, IS_TESTNET } from '@/lib/network'
 
 export const SWAP_TOKENS = ['USDC', 'EURC', 'cirBTC', 'WETH'] as const
@@ -16,7 +24,11 @@ const DEFAULT_EURC_ADDR = (
     ? '0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a'
     : '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1'
 ) as Address
-const DEFAULT_CIRBTC_ADDR = '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF' as Address
+const DEFAULT_CIRBTC_ADDR = (
+  IS_TESTNET
+    ? '0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF'
+    : '0x171A4217b86A807A64eB94757Db6849fb4bDbAA0'
+) as Address
 const DEFAULT_WETH_ADDR = '0x2c4047028a72803939b6fb674D01bC059B5C4961' as Address
 
 export const SWAP_TOKEN_DECIMALS: Record<SwapToken, number> = {
@@ -64,6 +76,8 @@ export function useSwapFlow({
 }) {
   const { address, connector, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
+  const { sendTransactionAsync } = useSendTransaction()
+  const { writeContractAsync } = useWriteContract()
   const client = usePublicClient({ chainId: ACTIVE_CHAIN_ID })
   const [phase, setPhase] = useState<SwapPhase>('idle')
   const [estimate, setEstimate] = useState<SwapEstimate | null>(null)
@@ -88,6 +102,8 @@ export function useSwapFlow({
       try {
         const tokenAddress = SWAP_TOKEN_ADDRESS[tokenIn]
         const decimals = SWAP_TOKEN_DECIMALS[tokenIn]
+        const decimalsOut = SWAP_TOKEN_DECIMALS[tokenOut]
+        const amountRaw = parseUnitsExact(amount, decimals)
         if (client && address && tokenAddress) {
           const balance = await client.readContract({
             address: tokenAddress,
@@ -95,12 +111,32 @@ export function useSwapFlow({
             functionName: 'balanceOf',
             args: [address],
           })
-          if (balance < parseUnitsExact(amount, decimals)) {
+          if (balance < amountRaw) {
             setError(`Not enough ${tokenIn}: you have ${formatUnitsExact(balance, decimals)}.`)
             setPhase('error')
             return
           }
         }
+
+        if (!IS_TESTNET) {
+          const { tokenIn: achIn, amountIn: achAmount } = toAchSwapInput(tokenIn, tokenAddress, amountRaw)
+          const achOut = toAchSwapOutput(tokenOut, SWAP_TOKEN_ADDRESS[tokenOut])
+          const q = await fetchAchSwapQuote({
+            tokenIn: achIn,
+            tokenOut: achOut,
+            amountIn: achAmount,
+            slippageBps: bps,
+          })
+          const synthetic = {
+            estimatedOutput: { amount: formatUnitsExact(BigInt(q.amountOut), decimalsOut), token: tokenOut },
+            fees: formatAchSwapFees(q.fees, tokenOut, decimalsOut),
+          } as unknown as SwapEstimate
+          reviewedAccount.current = address
+          setEstimate(synthetic)
+          setPhase('quoted')
+          return
+        }
+
         const adapter = await prepare()
         const result = await appKit.estimateSwap({
           from: { adapter, chain: ARC_KIT_CHAIN },
@@ -113,7 +149,7 @@ export function useSwapFlow({
         setEstimate(result)
         setPhase('quoted')
       } catch (err) {
-        const msg = kitErrorMessage(err)
+        const msg = err instanceof AchSwapError ? err.message : kitErrorMessage(err)
         setError(msg)
         setPhase(msg === null ? 'idle' : 'error')
       }
@@ -130,6 +166,62 @@ export function useSwapFlow({
     setPhase('swapping')
     setError(null)
     try {
+      if (!IS_TESTNET) {
+        if (!address) throw new Error('Wallet not connected')
+        if (chainId !== ACTIVE_CHAIN_ID) await switchChainAsync({ chainId: ACTIVE_CHAIN_ID })
+        const decimals = SWAP_TOKEN_DECIMALS[tokenIn]
+        const decimalsOut = SWAP_TOKEN_DECIMALS[tokenOut]
+        const amountRaw = parseUnitsExact(amount, decimals)
+        const { tokenIn: achIn, amountIn: achAmount } = toAchSwapInput(tokenIn, SWAP_TOKEN_ADDRESS[tokenIn], amountRaw)
+        const achOut = toAchSwapOutput(tokenOut, SWAP_TOKEN_ADDRESS[tokenOut])
+        const built = await fetchAchSwapBuild({
+          tokenIn: achIn,
+          tokenOut: achOut,
+          amountIn: achAmount,
+          slippageBps: slippage,
+          sender: address,
+        })
+        if (built.approval) {
+          const currentAllowance = client
+            ? await client.readContract({
+                address: built.approval.token,
+                abi: erc20Abi,
+                functionName: 'allowance',
+                args: [address, built.approval.spender],
+              })
+            : 0n
+          const needed = BigInt(built.approval.amount)
+          if (currentAllowance < needed) {
+            const approveHash = await writeContractAsync({
+              address: built.approval.token,
+              abi: erc20Abi,
+              functionName: 'approve',
+              args: [built.approval.spender, needed],
+              chainId: ACTIVE_CHAIN_ID,
+            })
+            if (client) await client.waitForTransactionReceipt({ hash: approveHash })
+          }
+        }
+        const txHash = await sendTransactionAsync({
+          to: built.tx.to,
+          data: built.tx.data,
+          value: BigInt(built.tx.value || '0'),
+          gas: built.tx.gas ? BigInt(built.tx.gas) : undefined,
+          chainId: ACTIVE_CHAIN_ID,
+        })
+        if (client) await client.waitForTransactionReceipt({ hash: txHash })
+        const formattedOut = formatUnitsExact(BigInt(built.amountOut), decimalsOut)
+        const info = {
+          amountOut: formattedOut,
+          explorerUrl: buildTxExplorerUrl(ACTIVE_CHAIN_ID, txHash),
+          status: 'DONE',
+        }
+        setDone(info)
+        setPhase('done')
+        onSettled?.(`Swap complete: ${amount} ${tokenIn} to ${formattedOut} ${tokenOut}.`)
+        return
+      }
+
       const adapter = await prepare()
       const result = await appKit.swap({
         from: { adapter, chain: ARC_KIT_CHAIN },
@@ -147,11 +239,25 @@ export function useSwapFlow({
           : `Swap submitted: ${amount} ${tokenIn} to ${tokenOut}.`,
       )
     } catch (err) {
-      const message = kitErrorMessage(err)
+      const message = err instanceof AchSwapError ? err.message : kitErrorMessage(err)
       setError(message)
       setPhase(message === null ? 'quoted' : 'error')
     }
-  }, [address, amount, onSettled, phase, prepare, slippage, tokenIn, tokenOut])
+  }, [
+    address,
+    amount,
+    chainId,
+    client,
+    onSettled,
+    phase,
+    prepare,
+    sendTransactionAsync,
+    slippage,
+    switchChainAsync,
+    tokenIn,
+    tokenOut,
+    writeContractAsync,
+  ])
 
   const reset = useCallback(() => {
     setPhase('idle')

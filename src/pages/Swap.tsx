@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useAccount, useReadContract, useSwitchChain } from 'wagmi'
+import { useAccount, usePublicClient, useReadContract, useSendTransaction, useSwitchChain, useWriteContract } from 'wagmi'
 import { ConnectWalletCustom } from '@/components/TelegramWalletModal'
 import { erc20Abi, type Address } from 'viem'
-import { ACTIVE_CHAIN_ID, ARC_KIT_CHAIN, ARC_NETWORK_LABEL } from '@/lib/network'
-import type { SwapEstimate } from '@circle-fin/app-kit'
+import { buildTxExplorerUrl } from '@/onchain-facts'
+import { ACTIVE_CHAIN_ID, ARC_KIT_CHAIN, ARC_NETWORK_LABEL, IS_TESTNET } from '@/lib/network'
 import { ArrowDownUp, Check, ChevronDown, ExternalLink, Info, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatUnitsExact, parseUnitsExact } from '@/onchain-money'
 import { appKit, adapterFromConnector, kitErrorMessage } from '@/lib/appkit'
+import {
+  AchSwapError,
+  fetchAchSwapBuild,
+  fetchAchSwapQuote,
+  formatAchSwapFees,
+  formatAchSwapRouteSummary,
+  toAchSwapInput,
+  toAchSwapOutput,
+} from '@/lib/achswap'
 import {
   SLIPPAGE_OPTIONS,
   SWAP_TOKENS,
@@ -55,7 +64,16 @@ function normalizeSwapToken(raw: string | null): SwapToken | null {
   return null
 }
 
-type Reviewed = { key: string; estimate: SwapEstimate }
+type NormalizedEstimate = {
+  amountOut: string
+  minAmountOut?: string
+  priceImpactBps?: number | null
+  routeSummary?: string | null
+  provider: 'achswap' | 'swapkit'
+  fees: Array<{ type: string; amount: string; token: string }>
+}
+
+type Reviewed = { key: string; estimate: NormalizedEstimate }
 type Done = { amountOut?: string; tokenOut: SwapToken; explorerUrl?: string; status: string }
 
 const initial = () => {
@@ -75,6 +93,9 @@ const initial = () => {
 export default function SwapPage() {
   const { address, isConnected, connector, chainId } = useAccount()
   const { switchChainAsync } = useSwitchChain()
+  const { sendTransactionAsync } = useSendTransaction()
+  const { writeContractAsync } = useWriteContract()
+  const publicClient = usePublicClient({ chainId: ACTIVE_CHAIN_ID })
   const { helixBlurred, setHelixBlurred } = useTheme()
   const cardRef = useRef<HTMLElement>(null)
 
@@ -133,6 +154,29 @@ export default function SwapPage() {
     setError(null)
     setDone(null)
     try {
+      if (!IS_TESTNET) {
+        const { tokenIn: achIn, amountIn: achAmount } = toAchSwapInput(tokenIn, SWAP_TOKEN_ADDRESS[tokenIn], amountRaw)
+        const achOut = toAchSwapOutput(tokenOut, SWAP_TOKEN_ADDRESS[tokenOut])
+        const q = await fetchAchSwapQuote({
+          tokenIn: achIn,
+          tokenOut: achOut,
+          amountIn: achAmount,
+          slippageBps: slippage,
+        })
+        setReviewed({
+          key,
+          estimate: {
+            amountOut: formatUnitsExact(BigInt(q.amountOut), decimalsOut),
+            minAmountOut: formatUnitsExact(BigInt(q.minAmountOut), decimalsOut),
+            priceImpactBps: q.priceImpactBps,
+            routeSummary: formatAchSwapRouteSummary(q.route),
+            provider: 'achswap',
+            fees: formatAchSwapFees(q.fees, tokenOut, decimalsOut),
+          },
+        })
+        return
+      }
+
       const adapter = await prepare()
       const estimate = await appKit.estimateSwap({
         from: { adapter, chain: ARC_KIT_CHAIN },
@@ -141,10 +185,21 @@ export default function SwapPage() {
         amountIn: amount,
         config: { slippageBps: slippage },
       })
-      setReviewed({ key, estimate })
+      setReviewed({
+        key,
+        estimate: {
+          amountOut: String(estimate.estimatedOutput.amount),
+          provider: 'swapkit',
+          fees: (estimate.fees ?? []).map((f) => ({
+            type: f.type,
+            amount: String(f.amount ?? '0'),
+            token: f.token,
+          })),
+        },
+      })
     } catch (err) {
       setReviewed(null)
-      setError(kitErrorMessage(err))
+      setError(err instanceof AchSwapError ? err.message : kitErrorMessage(err))
     } finally {
       setBusy(null)
     }
@@ -155,6 +210,60 @@ export default function SwapPage() {
     setBusy('swap')
     setError(null)
     try {
+      if (!IS_TESTNET) {
+        if (!address) throw new Error('Wallet not connected')
+        if (chainId !== ACTIVE_CHAIN_ID) await switchChainAsync({ chainId: ACTIVE_CHAIN_ID })
+        const { tokenIn: achIn, amountIn: achAmount } = toAchSwapInput(tokenIn, SWAP_TOKEN_ADDRESS[tokenIn], amountRaw)
+        const achOut = toAchSwapOutput(tokenOut, SWAP_TOKEN_ADDRESS[tokenOut])
+        const built = await fetchAchSwapBuild({
+          tokenIn: achIn,
+          tokenOut: achOut,
+          amountIn: achAmount,
+          slippageBps: slippage,
+          sender: address,
+        })
+        if (built.approval) {
+          const currentAllowance = publicClient
+            ? await publicClient.readContract({
+                address: built.approval.token,
+                abi: erc20Abi,
+                functionName: 'allowance',
+                args: [address, built.approval.spender],
+              })
+            : 0n
+          const needed = BigInt(built.approval.amount)
+          if (currentAllowance < needed) {
+            toast.info(`Approve ${tokenIn} spending in your wallet...`)
+            const approveHash = await writeContractAsync({
+              address: built.approval.token,
+              abi: erc20Abi,
+              functionName: 'approve',
+              args: [built.approval.spender, needed],
+              chainId: ACTIVE_CHAIN_ID,
+            })
+            if (publicClient) await publicClient.waitForTransactionReceipt({ hash: approveHash })
+          }
+        }
+        const txHash = await sendTransactionAsync({
+          to: built.tx.to,
+          data: built.tx.data,
+          value: BigInt(built.tx.value || '0'),
+          gas: built.tx.gas ? BigInt(built.tx.gas) : undefined,
+          chainId: ACTIVE_CHAIN_ID,
+        })
+        if (publicClient) await publicClient.waitForTransactionReceipt({ hash: txHash })
+        setDone({
+          amountOut: formatUnitsExact(BigInt(built.amountOut), decimalsOut),
+          tokenOut,
+          explorerUrl: buildTxExplorerUrl(ACTIVE_CHAIN_ID, txHash),
+          status: 'DONE',
+        })
+        setReviewed(null)
+        setAmount('')
+        toast.success('Swap completed')
+        return
+      }
+
       const adapter = await prepare()
       const result = await appKit.swap({
         from: { adapter, chain: ARC_KIT_CHAIN },
@@ -173,7 +282,7 @@ export default function SwapPage() {
       setAmount('')
       toast.success('Swap submitted')
     } catch (err) {
-      setError(kitErrorMessage(err))
+      setError(err instanceof AchSwapError ? err.message : kitErrorMessage(err))
     } finally {
       setBusy(null)
     }
@@ -341,6 +450,28 @@ export default function SwapPage() {
                     {busy === 'quote' ? 'Refreshing...' : 'Refresh quote'}
                   </button>
                 </div>
+                {reviewed.estimate.minAmountOut && (
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--subtle)' }}>Min received</span>
+                    <span className="font-medium tabular-nums">
+                      {reviewed.estimate.minAmountOut} {tokenOut}
+                    </span>
+                  </div>
+                )}
+                {reviewed.estimate.routeSummary && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span style={{ color: 'var(--subtle)' }}>Route</span>
+                    <span className="truncate font-medium">{reviewed.estimate.routeSummary}</span>
+                  </div>
+                )}
+                {reviewed.estimate.priceImpactBps !== undefined && reviewed.estimate.priceImpactBps !== null && (
+                  <div className="flex items-center justify-between">
+                    <span style={{ color: 'var(--subtle)' }}>Price impact</span>
+                    <span className="font-medium tabular-nums">
+                      {(reviewed.estimate.priceImpactBps / 100).toFixed(2)}%
+                    </span>
+                  </div>
+                )}
                 {(reviewed.estimate.fees ?? []).map((f, i) => (
                   <div key={i} className="flex items-center justify-between">
                     <span className="capitalize" style={{ color: 'var(--subtle)' }}>
@@ -353,7 +484,9 @@ export default function SwapPage() {
                 ))}
                 <p className="flex items-start gap-1.5 pt-1 text-[11px] leading-relaxed" style={{ color: 'var(--subtle)' }}>
                   <Info className="mt-0.5 size-3 shrink-0" />
-                  Routed via Circle Swap aggregator subject to provider terms. Final output can vary within your slippage tolerance.
+                  {reviewed.estimate.provider === 'achswap'
+                    ? 'Routed via AchSwap DEX aggregator on Arc. Final output can vary within your slippage tolerance.'
+                    : 'Routed via Circle Swap aggregator subject to provider terms. Final output can vary within your slippage tolerance.'}
                 </p>
               </>
             )}
@@ -367,7 +500,7 @@ export default function SwapPage() {
             </div>
             <div className="mt-1.5 flex items-center justify-between gap-3">
               <p className="display w-full min-w-0 truncate text-2xl font-bold tabular-nums sm:text-3xl" style={{ opacity: isReviewed ? 1 : 0.65 }}>
-                <RollingNumber value={isReviewed ? String(reviewed.estimate.estimatedOutput.amount) : '0.00'} />
+                <RollingNumber value={isReviewed ? reviewed.estimate.amountOut : '0.00'} />
               </p>
               <SwapTokenSelect value={tokenOut} onChange={handleSelectOut} label="Select output token" />
             </div>

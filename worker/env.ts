@@ -60,6 +60,9 @@ export interface Env {
 
   // Legacy / AI assistant secrets
   ADMIN_SESSION_SECRET?: string
+  ACHSWAP_API_KEY?: string
+  ACHSWAP_FEE_BPS?: string
+  ACHSWAP_FEE_RECIPIENT?: string
   AI_PROVIDER?: string
   OPENROUTER_API_KEY?: string
   OPENROUTER_MODEL?: string

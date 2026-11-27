@@ -21,6 +21,7 @@ import { handleDisputeRoutes } from './disputes'
 import { handleSocialRoutes } from './social'
 import { handleOnrampRoutes, SANDBOX_API_BASE_URL, SANDBOX_WIDGET_BASE_URL } from './onramp'
 import { handleTelegramRoutes, setupTelegramBotWebhook } from './telegram'
+import { handleAchSwapRoutes } from './achswap'
 import { handleSeoFileRequest, injectSeoIntoHtmlResponse } from './seo'
 import { processNotificationsOutbox } from './notify'
 import { recordCronHealth, runAllCronJobs, scanChainEvents } from './cron'
@@ -503,6 +504,17 @@ async function handleApi(
     // ---- Telegram Mini App & Live Order Notification Bot (/api/telegram/*) ----
     if (path.startsWith('/telegram/')) {
       const res = await runDb(env, (db) => handleTelegramRoutes(req, env, db, path))
+      return res ?? json(404, { error: 'not_found' })
+    }
+
+    // ---- AchSwap DEX Aggregator proxy on Arc Mainnet (/api/swap/quote, /api/swap/build) ----
+    if (path === '/swap/quote' || path === '/swap/build') {
+      const res = await runDb(env, (db) => handleAchSwapRoutes(req, env, db, path)).catch((err) => {
+        if (!env.HYPERDRIVE && err instanceof DbUnavailableError) {
+          return handleAchSwapRoutes(req, env, null, path)
+        }
+        throw err
+      })
       return res ?? json(404, { error: 'not_found' })
     }
 
