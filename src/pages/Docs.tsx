@@ -115,8 +115,8 @@ const DOC_PAGES: DocPageItem[] = [
         ],
         bullets: [
           'P2P Marketplace (/p2p): Multi-asset escrow orderbook supporting USDC and EURC across 8 South Asian fiat corridors with 0% trade fees.',
-          'Instant Token Swap (/swap): Permissionless on-chain swaps between USDC, EURC, cirBTC, and WETH on Arc Testnet powered by Circle App Kit.',
-          'Cross-Chain Bridge (/bridge): Native burn-and-mint USDC transfers across 7 EVM networks via Circle CCTP, plus EURC, cirBTC, and WETH bridging via Circle CCTPx.',
+          'Instant Token Swap (/swap): On-chain swaps on Arc Mainnet powered by AchSwap (and Circle App Kit on Arc Testnet) with live quotes and slippage controls.',
+          'Cross-Chain Bridge (/bridge): Native burn-and-mint USDC transfers across EVM networks via Circle CCTP v2, plus EURC bridging via Circle CCTPx.',
           'AI Trading Assistant (/assistant): Natural-language P2P ad discovery, swap, and bridge preparation that never touches private keys.',
         ],
       },
@@ -130,12 +130,10 @@ const DOC_PAGES: DocPageItem[] = [
           filename: 'read-escrow.ts',
           language: 'typescript',
           code: `import { createPublicClient, http } from "viem";
-import { arcTestnet } from "viem/chains";
 import { p2pEscrowAbi } from "@/abi/p2pEscrow";
 
 const client = createPublicClient({
-  chain: arcTestnet,
-  transport: http("https://rpc.testnet.arc.io"),
+  transport: http("https://rpc.mainnet.arc.io"),
 });
 
 export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigint) {
@@ -154,7 +152,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
   {
     slug: 'quickstart',
     title: 'Quickstart Guide',
-    shortDescription: 'Connect an EVM wallet on Arc Testnet, fund gas in USDC, add payment rails, and complete your first trade.',
+    shortDescription: 'Connect an EVM wallet on Arc Mainnet, fund gas in USDC, add payment rails, and complete your first trade.',
     category: 'Getting Started',
     sections: [
       {
@@ -162,7 +160,7 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
         title: '1. Connect Your Wallet',
         paragraphs: [
           'Open app.onpeer.xyz and connect MetaMask, Rabby, Rainbow, or any WalletConnect-compatible EVM wallet. When prompted, approve switching to Arc Mainnet (Chain ID: 5042).',
-          'Always keep at least 0.50–1.00 USDC in your wallet on Arc Testnet so you can sign approvals, mark payments, or post ads smoothly.',
+          'Always keep at least 0.50–1.00 USDC in your wallet on Arc Mainnet so you can sign approvals, mark payments, or post ads smoothly.',
         ],
       },
       {
@@ -189,10 +187,10 @@ export async function fetchOrderSummary(escrow: \`0x\${string}\`, orderId: bigin
           language: 'json',
           code: `{
   "chainId": 5042,
-  "chainName": "Arc Testnet",
+  "chainName": "Arc Mainnet",
   "nativeCurrency": { "name": "USDC", "symbol": "USDC", "decimals": 18 },
-  "rpcUrls": ["https://rpc.testnet.arc.io"],
-  "blockExplorerUrls": ["https://explorer.testnet.arc.io"]
+  "rpcUrls": ["https://rpc.mainnet.arc.io"],
+  "blockExplorerUrls": ["https://arc.etherscan.io", "https://explorer.arc.io"]
 }`,
         },
       },
@@ -483,16 +481,21 @@ const result = await appKit.bridge({
   {
     slug: 'smart-contracts',
     title: 'Smart Contracts & Deployments',
-    shortDescription: 'Verified contract addresses on Arc Mainnet (Chain ID 5042) for all P2P Escrows, ERC-20 tokens, and CCTP/CCTPx.',
-    badge: 'Solidity',
+    shortDescription: 'Verified P2PEscrow v2.3 contract addresses on Arc Mainnet (Chain ID 5042) with ArcScan Exact Match & Arc Explorer links.',
+    badge: 'v2.3 Verified',
     category: 'Architecture & Reference',
     sections: [
       {
         id: 'deployed-contracts',
         title: 'Live Arc Mainnet Contract Registry',
         paragraphs: [
-          'All OnPeer P2P Escrow contracts are non-custodial Solidity 0.8.28 deployments on Arc Mainnet (Chain ID: 5042). Governance cannot sweep escrowed trade funds, and blocklisted recipients degrade gracefully into withdrawable claimable balances so one bad actor never bricks another user’s order.',
+          'All OnPeer P2P Escrow contracts (v2.3) are immutable, non-custodial Solidity 0.8.28 deployments on Arc Mainnet (Chain ID: 5042), verified with Exact Match on ArcScan (arc.etherscan.io) and mirrored on Sourcify & Arc Explorer. Governance cannot sweep escrowed trade funds, and blocklisted recipients degrade gracefully into withdrawable claimable balances so one bad actor never bricks another user’s order.',
         ],
+        callout: {
+          kind: 'note',
+          title: 'Compiler & Verification Details (Exact Match on ArcScan)',
+          body: 'Compiled with Solidity v0.8.28+commit.7893614a (evm_version: cancun, via_ir: true, optimizer_runs: 1, MIT license) with bytecode_hash = "none" and cbor_metadata = false to stay under the 24 KB EVM bytecode size limit. ArcScan verifies the deployed bytecode as an Exact Match; Blockscout/Sourcify label all metadata-stripped contracts as "partial match" solely because CBOR metadata is intentionally omitted, even though executable bytecode is 100% identical.',
+        },
         renderCustom: 'contracts',
       },
       {
@@ -928,15 +931,28 @@ export default function DocsPage() {
   }, [searchQuery])
 
   const contractRows = useMemo(() => {
+    const isMainnet = CHAIN_ID === 5042
     const escrows = VISIBLE_P2P_ASSETS.map((asset: P2pAsset) => {
       const cfg = getEscrowConfig(asset)
       return {
-        label: `P2PEscrow (${asset})`,
-        role: `Non-custodial ${asset} P2P escrow v2.1 (Block ${cfg.deployBlock.toString()})`,
+        label: `P2PEscrow v2.3 (${asset})`,
+        role: `Non-custodial ${asset} P2P escrow contract (Block ${cfg.deployBlock.toString()})`,
         address: cfg.escrowAddress,
         asset,
+        verifiedArcScan: isMainnet,
       }
     })
+    const libraries = isMainnet
+      ? [
+          {
+            label: 'P2PEscrowDebtLib (Library)',
+            role: 'Linked Solidity library handling FIFO dispute bond debt & settlement accounting (Block 33297066)',
+            address: '0x3a00ccA2AE0dA3E9c45B49A166b60b4527475552',
+            asset: undefined,
+            verifiedArcScan: true,
+          },
+        ]
+      : []
     const tokens = VISIBLE_P2P_ASSETS.map((asset: P2pAsset) => {
       const cfg = getEscrowConfig(asset)
       return {
@@ -944,24 +960,50 @@ export default function DocsPage() {
         role: `${cfg.decimals}-decimal ERC-20 contract on Arc`,
         address: cfg.tokenAddress,
         asset,
+        verifiedArcScan: false,
       }
     })
-    return [
-      ...escrows,
-      ...tokens,
-      {
-        label: 'CrossChainTokenService (CCTPx)',
-        role: 'Circle CCTPx cross-chain token router on Arc (Domain 26)',
-        address: '0x63753E722bd2C2A5DF6EE19C5106662208B81077',
-        asset: undefined,
-      },
-      {
-        label: 'Verifier Relayer Wallet',
-        role: 'Attests Didit KYC status on-chain (zero fund custody)',
-        address: '0xeebd29441AF1a931C4a6eEc2265B0757fd992f5e',
-        asset: undefined,
-      },
-    ]
+    const governance = isMainnet
+      ? [
+          {
+            label: 'Owner / Fee Recipient',
+            role: 'Protocol governance & listing-fee recipient (cannot sweep escrowed user funds)',
+            address: '0x81eA9AdE2805e310E9f884a75B3a24Ab74557C69',
+            asset: undefined,
+            verifiedArcScan: false,
+          },
+          {
+            label: 'Primary & Backup Arbiter',
+            role: 'Dispute resolution authority with 7-day backup arbiter fail-safe',
+            address: '0xb213Dc9a65d3d748B6Ec5cCaCCb9b6EC82A40A33',
+            asset: undefined,
+            verifiedArcScan: false,
+          },
+          {
+            label: 'KYC Verifier Relayer',
+            role: 'Attests Didit KYC status on-chain only (zero fund custody)',
+            address: '0x74605c85676E9F514BA33B9B3005e0EE561DAfDd',
+            asset: undefined,
+            verifiedArcScan: false,
+          },
+        ]
+      : [
+          {
+            label: 'CrossChainTokenService (CCTPx)',
+            role: 'Circle CCTPx cross-chain token router on Arc Testnet (Domain 26)',
+            address: '0x63753E722bd2C2A5DF6EE19C5106662208B81077',
+            asset: undefined,
+            verifiedArcScan: false,
+          },
+          {
+            label: 'Verifier Relayer Wallet (Testnet)',
+            role: 'Attests Didit KYC status on-chain (zero fund custody)',
+            address: '0xeebd29441AF1a931C4a6eEc2265B0757fd992f5e',
+            asset: undefined,
+            verifiedArcScan: false,
+          },
+        ]
+    return [...escrows, ...libraries, ...tokens, ...governance]
   }, [])
 
   const renderSidebarContent = () => (
@@ -1076,9 +1118,10 @@ export default function DocsPage() {
         </p>
         <ul className="mt-2 space-y-1">
           {[
+            { label: 'ArcScan (Verified Contracts)', href: 'https://arc.etherscan.io/address/0xC073b1A5ac4004fD82cAc6BDA5548FFc5E5cB97e#code' },
+            { label: 'Arc Explorer', href: 'https://explorer.arc.io' },
             { label: 'Arc Network Docs', href: 'https://docs.arc.io' },
             { label: 'Circle CCTP & CCTPx', href: 'https://developers.circle.com/cctp' },
-            { label: 'Arc Explorer', href: 'https://explorer.arc.io' },
             {
               label: 'Privacy & Encryption',
               href: isDocsSubdomain() ? `${LANDING_URL}/privacy` : '/privacy',
@@ -1196,7 +1239,7 @@ export default function DocsPage() {
                   color: 'var(--ink)',
                 }}
               >
-                <span>Docs · v2.1</span>
+                <span>Docs · v2.3</span>
                 <ChevronDown className="size-3 opacity-70" />
               </button>
               {versionOpen && (
@@ -1215,9 +1258,9 @@ export default function DocsPage() {
                     style={{ background: 'var(--fill-2)', color: 'var(--ink)' }}
                   >
                     <div>
-                      <p>v2.1 — Multi-Asset &amp; CCTPx</p>
+                      <p>v2.3 — Arc Mainnet Live</p>
                       <p className="text-[10px] font-normal" style={{ color: 'var(--muted)' }}>
-                        USDC &amp; EURC (Current)
+                        USDC &amp; EURC Verified (Current)
                       </p>
                     </div>
                     <Check className="size-3.5 text-[#FF5A00]" />
@@ -1532,11 +1575,16 @@ export default function DocsPage() {
                         style={{ background: 'var(--fill-1)', borderColor: 'var(--border)' }}
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             {row.asset && <CoinLogo symbol={row.asset} size={16} />}
                             <p className="text-xs font-bold sm:text-sm" style={{ color: 'var(--ink)' }}>
                               {row.label}
                             </p>
+                            {row.verifiedArcScan && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                                <Check className="size-3" /> Exact Match
+                              </span>
+                            )}
                           </div>
                           <p className="mt-0.5 text-xs" style={{ color: 'var(--muted)' }}>
                             {row.role}
@@ -1548,7 +1596,7 @@ export default function DocsPage() {
                             {row.address}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             onClick={() => void copyText(row.label, row.address, row.label)}
@@ -1562,6 +1610,16 @@ export default function DocsPage() {
                             )}
                             Copy
                           </button>
+                          {row.verifiedArcScan && (
+                            <a
+                              href={`https://arc.etherscan.io/address/${row.address}#code`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2.5 text-xs font-semibold text-emerald-400 transition-colors hover:bg-emerald-500/20"
+                            >
+                              ArcScan <ExternalLink className="size-3" />
+                            </a>
+                          )}
                           <a
                             href={buildAddressExplorerUrl(CHAIN_ID, row.address)}
                             target="_blank"
